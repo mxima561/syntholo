@@ -1,7 +1,36 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-const pages = ["/", "/scorecard", "/learn", "/learn/support", "/learn/business-os", "/admin"];
+const pages = [
+  "/",
+  "/scorecard",
+  "/pricing",
+  "/learn",
+  "/learn/course/growth-2",
+  "/learn/plan",
+  "/learn/workflows",
+  "/learn/support",
+  "/learn/community",
+  "/learn/business-os",
+  "/admin",
+  "/admin/provisioning",
+];
+
+const responsivePages = [
+  "/",
+  "/scorecard",
+  "/learn",
+  "/learn/course",
+  "/learn/course/growth-2",
+  "/learn/plan",
+  "/learn/workflows",
+  "/learn/support",
+  "/learn/community",
+  "/learn/business-os",
+  "/admin",
+  "/admin/customers",
+  "/admin/provisioning",
+];
 
 for (const path of pages) {
   test(`WCAG 2.1 AA scan has no detectable violations on ${path}`, async ({ page }, testInfo) => {
@@ -15,6 +44,34 @@ for (const path of pages) {
     expect(summary).toEqual([]);
   });
 }
+
+test("representative pages keep meaningful interface text at or above 11px", async ({ page }) => {
+  for (const path of pages) {
+    await page.goto(path);
+    const undersizedText = await page.locator("body *").evaluateAll((elements) =>
+      elements.flatMap((element) => {
+        const directText = [...element.childNodes]
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .map((node) => node.textContent?.trim() ?? "")
+          .filter(Boolean)
+          .join(" ");
+        const style = getComputedStyle(element);
+        const isVisible = style.display !== "none" && style.visibility !== "hidden" && element.getClientRects().length > 0;
+        const size = Number.parseFloat(style.fontSize);
+
+        if (!directText || !isVisible || size === 0 || size >= 11) return [];
+
+        return [{
+          element: `${element.tagName.toLowerCase()}${element.id ? `#${element.id}` : ""}${[...element.classList].map((name) => `.${name}`).join("")}`,
+          size,
+          text: directText.slice(0, 80),
+        }];
+      }),
+    );
+
+    expect(undersizedText, `${path} renders meaningful interface text below 11px`).toEqual([]);
+  }
+});
 
 test("scorecard can be answered with the keyboard", async ({ page }) => {
   await page.goto("/scorecard");
@@ -34,12 +91,17 @@ test("reduced-motion preference removes meaningful transitions", async ({ page }
 
 test("mobile pages avoid horizontal overflow and preserve primary touch targets", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile", "Mobile viewport check.");
-  for (const path of ["/", "/learn", "/learn/support", "/admin"]) {
+  for (const path of responsivePages) {
     await page.goto(path);
     const sizes = await page.evaluate(() => ({ documentWidth: document.documentElement.scrollWidth, viewportWidth: window.innerWidth }));
     expect(sizes.documentWidth, `${path} overflows horizontally`).toBeLessThanOrEqual(sizes.viewportWidth + 1);
   }
-  await page.goto("/");
-  const box = await page.getByRole("link", { name: "Take the free scorecard" }).first().boundingBox();
-  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+  for (const path of ["/", "/learn", "/learn/support", "/learn/business-os"]) {
+    await page.goto(path);
+    const primaryAction = page.locator(".button:visible").first();
+    await expect(primaryAction, `${path} should expose a visible primary action`).toBeVisible();
+    const box = await primaryAction.boundingBox();
+    expect(box?.height ?? 0, `${path} primary action is shorter than 44px`).toBeGreaterThanOrEqual(44);
+  }
 });

@@ -1,27 +1,32 @@
 # Accessibility audit: Syntholo platform
 
 **Standard:** WCAG 2.1 AA  
-**Date:** August 11, 2026  
-**Scope:** public homepage, scorecard, member dashboard, human support, Business OS, and administrator overview
+**Date:** August 12, 2026
+**Scope:** homepage, scorecard, pricing, member dashboard, lesson workspace, implementation plan, workflows, human support, community, Business OS, administrator overview, and provisioning
 
 ## Summary
 
-The final automated scan reports **zero detectable WCAG 2.1 A/AA violations** across all six representative product surfaces in desktop Chromium. The same component system is exercised at the mobile breakpoint with WebKit.
+The final automated scan reports **zero detectable WCAG 2.1 A/AA violations** across all 12 representative product surfaces in desktop Chromium. Mobile Chromium emulation exercises 13 public, member, support, community, Business OS, and admin routes at the 390px breakpoint.
 
-The audit initially identified low contrast in subtle gray labels, coral text, coach avatars, and paused-SLA labels. The design system now retains the bright Trusted Growth accents for decoration while using darker ink variants for text and identity badges.
+The audit identified low contrast in subtle gray labels, coral text, coach avatars, paused-SLA labels, and refreshed metadata. The design system retains the bright Trusted Growth accents for decoration while using darker ink variants for text and identity badges. It also enforces the approved 11px meaningful-text floor and 15px body-copy floor on representative reading descriptions.
 
 ## Evidence
 
 | Area | Result |
 |---|---|
-| Automated WCAG 2.1 A/AA scan | 6 representative pages pass with no detectable violations |
+| Automated WCAG 2.1 A/AA scan | 12 representative desktop routes pass with no detectable violations |
 | Keyboard scorecard response | Enter advances to the next question |
-| Reduced motion | Meaningful transitions collapse to 0.01 ms |
-| Mobile reflow | Core public, member, support, and admin pages have no document-level horizontal overflow at 390 px |
-| Primary mobile action | Scorecard call to action is at least 44 px tall |
+| Reduced motion | Global CSS removes animation, transitions, transforms, smooth scrolling, and nonessential reveals; the rendered dashboard illustration reports `animation-name: none`, `transition-duration: 0s`, and `transform: none` |
+| Mobile reflow | 13 representative routes have no document-level horizontal overflow at 390px; wide tables and support thread lists remain internally scrollable |
+| Primary mobile actions | The first visible semantic actions on the homepage, member dashboard, support inbox, and Business OS are each at least 44px tall |
+| Meaningful text floor | Visible direct interface text on all 12 scan routes is at least 11px |
+| Body-copy floor | Marketing, course, plan, workflows, support, community, Business OS, and admin overview descriptions are at least 15px |
+| Visual regression | Five routes are reviewed at desktop and mobile sizes: homepage, member dashboard, lesson workspace, support inbox, and admin overview |
 | Form labels | Scorecard, checkout, support, community, onboarding, and admin search controls have accessible names |
 | Landmarks and headings | Automated scan found no landmark or heading-order violations |
 | Focus visibility | Global three-pixel focus indicator is visible on links, buttons, and fields |
+
+The ten committed image gates live in `tests/e2e/visual-regression.spec.ts-snapshots/`. The screenshot fixture disables motion, removes only the Next.js development indicator, and places the fixed mobile navigation in its reserved bottom clearance before capturing the full page.
 
 ## Color contrast
 

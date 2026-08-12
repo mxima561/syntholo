@@ -49,5 +49,10 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .progress-fill { display: block; height: 100%; border-radius: inherit; background: var(--teal); transition: width 220ms ease; }
 
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; }
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
 }
