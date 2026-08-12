@@ -3,7 +3,7 @@
 .admin-sidebar { position: sticky; top: 0; height: 100vh; padding: 22px 14px 16px; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--surface); color: var(--navy); }
 .admin-sidebar .brand { padding: 0 8px 25px; color: var(--navy); }
 .admin-sidebar .brand-mark { background: var(--navy); color: white; }
-.admin-sidebar .brand i { margin-left: auto; padding: 5px 6px; border-radius: 5px; background: var(--teal-tint); color: var(--teal); font: normal 750 10px/1 var(--font-heading); letter-spacing: .08em; }
+.admin-sidebar .brand i { margin-left: auto; padding: 5px 6px; border-radius: 5px; background: var(--teal-tint); color: var(--teal); font: normal 750 var(--text-meta)/1 var(--font-heading); letter-spacing: .08em; }
 .admin-sidebar nav { display: grid; gap: 3px; }
 .admin-sidebar nav a, .admin-settings { min-height: 44px; padding: 0 10px; display: flex; gap: 10px; align-items: center; border-radius: var(--radius-control); color: var(--muted); font: 700 var(--text-ui)/1 var(--font-heading); transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease; }
 .admin-sidebar nav a:hover, .admin-settings:hover { background: var(--canvas); color: var(--navy); }
@@ -101,7 +101,7 @@
 .provisioning-queue > aside:first-child strong, .provisioning-queue > aside:first-child small { display: block; }
 .provisioning-queue > aside:first-child strong { color: var(--navy); font: 750 13px var(--font-heading); }
 .provisioning-queue > aside:first-child small { margin-top: 4px; color: var(--muted); font-size: var(--text-meta); }
-.provisioning-queue > aside:first-child .status-pill { font-size: 11px; }
+.provisioning-queue > aside:first-child .status-pill { font-size: var(--text-meta); }
 .provisioning-detail { min-width: 0; }
 .provisioning-detail > header { min-height: 90px; padding: 17px 20px; display: flex; justify-content: space-between; align-items: center; gap: 16px; border-bottom: 1px solid var(--border); }
 .provisioning-detail > header h2 { margin: 7px 0 4px; color: var(--navy); font: 750 20px var(--font-heading); letter-spacing: -.025em; }

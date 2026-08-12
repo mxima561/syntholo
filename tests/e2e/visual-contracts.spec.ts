@@ -107,7 +107,17 @@ test("admin remains dense but readable", async ({ page }) => {
   await page.goto("/admin");
   expect(await fontSize(page.locator(".admin-page-head p"))).toBeGreaterThanOrEqual(15);
   expect(await fontSize(page.locator(".admin-metric-grid small").first())).toBeGreaterThanOrEqual(12);
+  const adminBadgeSize = await fontSize(page.locator(".admin-sidebar .brand i"));
+  expect(adminBadgeSize).toBeGreaterThanOrEqual(12);
+  expect(adminBadgeSize).toBeLessThanOrEqual(14);
 
   await page.goto("/admin/customers");
   expect(await fontSize(page.locator(".admin-table strong").first())).toBeGreaterThanOrEqual(13);
+});
+
+test("admin provisioning statuses use the readable label floor", async ({ page }) => {
+  await page.goto("/admin/provisioning");
+  const provisioningStatusSize = await fontSize(page.locator(".provisioning-queue > aside:first-child .status-pill").first());
+  expect(provisioningStatusSize).toBeGreaterThanOrEqual(12);
+  expect(provisioningStatusSize).toBeLessThanOrEqual(14);
 });

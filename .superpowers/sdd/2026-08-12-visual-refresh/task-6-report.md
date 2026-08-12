@@ -19,3 +19,17 @@
 - `npm run typecheck` — PASS
 - `npm run lint` — PASS
 - `git diff --check` — PASS
+
+## Fix round 1
+
+### RED
+
+- Added desktop/mobile computed-size contracts for the visible ADMIN badge and the provisioning queue status labels.
+- `npm run test:e2e -- tests/e2e/visual-contracts.spec.ts` failed as expected: the ADMIN badge computed to `10px` and provisioning statuses to `11px` on both viewports.
+
+### GREEN
+
+- Raised both label selectors to `var(--text-meta)` (`12px`) without changing their text, tint, or provisioning layout.
+- `npm run test:e2e -- tests/e2e/core-journeys.spec.ts tests/e2e/visual-contracts.spec.ts` — PASS (21 passed, 1 expected desktop-only skip; desktop and mobile projects)
+- `npm run typecheck` — PASS
+- `npm run lint` — PASS
