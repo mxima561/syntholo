@@ -41,8 +41,8 @@
 .engine-row.active { border-radius: 9px; background: #f0f6f4; }
 .engine-icon { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 8px; }
 .engine-icon.coral { background: #fdefeb; color: #d85e44; }
-.engine-icon.teal { background: #e5f2f0; color: var(--teal); }
-.engine-icon.gold { background: #f7f0da; color: #9c7417; }
+.engine-icon.teal { background: var(--teal-tint); color: var(--teal); }
+.engine-icon.gold { background: var(--gold-tint); color: #9c7417; }
 .engine-row strong, .engine-row small { display: block; }
 .engine-row strong { margin-bottom: 4px; font: 700 11px var(--font-heading); }
 .engine-row small { color: var(--muted); font-size: 9px; }
@@ -288,7 +288,7 @@
 .report-action-grid h2 { font-size: 17px; }
 .report-action-grid p { font-size: 15px; }
 
-.pricing-card { padding: 28px; border-radius: var(--radius-card); }
+.pricing-card { padding: 24px; border-radius: var(--radius-card); }
 .pricing-card.featured { border-color: var(--teal); background: var(--teal-tint); }
 .plan-topline i { padding: 6px 8px; }
 .pricing-card > p,
@@ -308,7 +308,7 @@
 .checkout-card { padding: 28px; border-radius: var(--radius-card); }
 .order-line { font-size: var(--text-ui); }
 .order-line strong { font-size: var(--text-ui); }
-.checkout-disclosure { padding: 12px; background: var(--gold-tint); }
+.checkout-disclosure { padding: 12px; background: var(--gold-tint); font-size: var(--text-body); }
 .fake-card-field { font-size: var(--text-ui); }
 .claim-card { padding: 40px; border-radius: var(--radius-shell); }
 .claim-email { padding: 16px; }

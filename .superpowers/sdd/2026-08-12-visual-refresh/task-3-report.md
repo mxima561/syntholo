@@ -66,3 +66,36 @@ PASS
 ## Concerns
 
 None. Playwright emitted the environment's existing `NO_COLOR`/`FORCE_COLOR` warning while all tests passed.
+
+## Fix round 1
+
+### Findings and disposition
+
+- **Important — desktop pricing-card padding:** fixed. Desktop `.pricing-card` padding is now `24px`, within the required 16–24px range; the existing mobile override remains `20px`.
+- **Important — recurring checkout disclosure readability:** fixed. `.checkout-disclosure` now uses the 16px body type token, so recurring-billing information is readable on desktop and mobile.
+- **Minor — legacy tint near-matches:** fixed. The marketing engine's teal and gold icon backgrounds now use `var(--teal-tint)` and `var(--gold-tint)`.
+
+### Regression coverage and evidence
+
+- Extended `tests/e2e/visual-contracts.spec.ts` to inspect a pricing card's computed top padding and the recurring Operator Club checkout disclosure's computed font size in every Playwright project.
+- RED: desktop pricing padding measured `28px` (limit `24px`); mobile disclosure font measured `12px` (minimum `15px`).
+- GREEN: `npm run test:e2e -- tests/e2e/visual-contracts.spec.ts` passed on desktop and mobile after the CSS change.
+
+### Fix-round verification
+
+```text
+npm test -- src/app/page.test.tsx src/features/scorecard
+PASS — 3 files, 13 tests
+
+npm run test:e2e -- tests/e2e/core-journeys.spec.ts tests/e2e/visual-contracts.spec.ts
+PASS — 10 tests across desktop and mobile
+
+npm run typecheck
+PASS
+
+npm run lint
+PASS
+
+git diff --check
+PASS
+```
