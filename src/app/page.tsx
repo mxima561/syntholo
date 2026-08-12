@@ -82,10 +82,6 @@ export default function HomePage() {
         </div>
 
         <div className="blueprint" aria-label="A preview of the 30-day operating blueprint">
-          <div className="blueprint-topline">
-            <span>YOUR 30-DAY OPERATING BLUEPRINT</span>
-            <span className="live-status"><i /> READY TO START</span>
-          </div>
           <div className="blueprint-path" aria-hidden>
             <span className="path-line" />
             <span className="path-node active">1</span>
@@ -169,7 +165,7 @@ export default function HomePage() {
           <h2>Find your first useful AI workflow.</h2>
           <p>The free readiness scorecard takes about six minutes and gives you a practical place to begin.</p>
         </div>
-        <Button href="/scorecard" size="large" variant="secondary">
+        <Button href="/scorecard" size="large">
           Take the free scorecard <ArrowRight aria-hidden size={17} />
         </Button>
       </section>

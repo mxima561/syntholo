@@ -104,8 +104,15 @@ export function ScorecardClient() {
         <p>{question.context}</p>
         <div className="answer-list">
           {scoreOptions.map((option) => (
-            <button className="answer-option" key={option.value} onClick={() => chooseAnswer(option.value)} type="button">
-              <span>{option.value}</span><strong>{option.label}</strong><Check aria-hidden size={16} />
+            <button
+              aria-pressed={answers[question.id] === option.value}
+              className={`answer-option ${answers[question.id] === option.value ? "selected" : ""}`}
+              key={option.value}
+              onClick={() => chooseAnswer(option.value)}
+              type="button"
+            >
+              <span>{option.value}</span><strong>{option.label}</strong>
+              {answers[question.id] === option.value ? <span className="answer-status"><Check aria-hidden size={16} /> Selected</span> : <Check aria-hidden size={16} />}
             </button>
           ))}
         </div>
@@ -117,4 +124,3 @@ export function ScorecardClient() {
     </section>
   );
 }
-

@@ -23,5 +23,15 @@ describe("ScorecardClient", () => {
 
     expect(screen.getByText("Question 1 of 20")).toBeInTheDocument();
   });
-});
 
+  it("shows the selected answer when an owner returns to a question", async () => {
+    const user = userEvent.setup();
+    render(<ScorecardClient />);
+
+    await user.click(screen.getByRole("button", { name: /we have a clear plan/i }));
+    await user.click(screen.getByRole("button", { name: /back/i }));
+
+    expect(screen.getByRole("button", { name: /we have a clear plan/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("Selected")).toBeVisible();
+  });
+});

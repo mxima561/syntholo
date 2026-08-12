@@ -14,5 +14,7 @@ describe("HomePage", () => {
     for (const link of scorecardLinks) {
       expect(link).toHaveAttribute("href", "/scorecard");
     }
+    expect(screen.getByRole("link", { name: /see program options/i })).toHaveClass("button-dark");
+    expect(screen.getAllByRole("link", { name: /take the free scorecard/i })[0]).toHaveClass("button-primary");
   });
 });
