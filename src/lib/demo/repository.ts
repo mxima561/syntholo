@@ -17,9 +17,11 @@ export function getDashboard(memberId: string) {
   const completedCount = demoProgress.filter(
     (progress) => progress.memberId === member.id && progress.status === "completed",
   ).length;
-  const nextLesson = demoProgress.find(
+  const nextLessonProgress = demoProgress.find(
     (progress) => progress.memberId === member.id && progress.status === "in_progress",
   );
+  const nextLesson =
+    allLessons.find((lesson) => lesson.id === nextLessonProgress?.lessonId) ?? allLessons[0];
 
   return {
     organization: demoOrganization,
@@ -32,9 +34,12 @@ export function getDashboard(memberId: string) {
     supportThreads: demoSupportThreads,
     entitlements: demoEntitlements,
     softwareAccount: demoSoftwareAccount,
-    nextAction: getNextAction({ nextLessonId: nextLesson?.lessonId ?? "growth-2" }),
+    nextLesson,
+    nextAction: getNextAction({ nextLessonId: nextLesson.id }),
   };
 }
+
+export type DashboardView = ReturnType<typeof getDashboard>;
 
 export function getMemberCourse(memberId: string) {
   return {
@@ -62,4 +67,3 @@ export function getHumanLayer() {
 export function getBusinessOs() {
   return demoSoftwareAccount;
 }
-

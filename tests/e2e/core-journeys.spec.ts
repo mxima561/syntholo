@@ -21,8 +21,8 @@ test("public visitor can assess readiness and reach checkout", async ({ page }) 
 
 test("member can complete a lesson and ask a human coach", async ({ page }) => {
   await page.goto("/learn");
-  await expect(page.getByRole("heading", { name: /good evening, maria/i })).toBeVisible();
-  await page.getByRole("link", { name: /continue lesson/i }).click();
+  await expect(page.getByRole("heading", { name: /keep building your business os/i })).toBeVisible();
+  await page.getByRole("link", { name: /resume lesson/i }).click();
   await expect(page.getByRole("heading", { name: /respond, qualify, and route leads/i })).toBeVisible();
   await page.getByRole("button", { name: /mark lesson complete/i }).click();
   await expect(page.getByText(/lesson completed/i)).toBeVisible();

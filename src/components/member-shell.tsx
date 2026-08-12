@@ -67,7 +67,11 @@ export function MemberShell({ children }: { children: ReactNode }) {
       <div className="member-content">
         <header className="member-topbar">
           <div><span className="mobile-brand">Syntholo</span><strong>Northstar Advisory</strong><small>AI Operating System Academy</small></div>
-          <div className="topbar-support"><span className="online-dot" /> Coaches online <Link href="/learn/support">Ask for help</Link></div>
+          <div className="topbar-actions">
+            <Link className="topbar-browse" href="/learn/course">Browse lessons and templates</Link>
+            <span className="status-chip"><span className="online-dot" /> Coaches online</span>
+            <span className="status-chip status-chip-course">Academy access</span>
+          </div>
         </header>
         <main>{children}</main>
       </div>

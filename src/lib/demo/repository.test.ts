@@ -10,6 +10,14 @@ describe("demo repository", () => {
     expect(dashboard.nextAction.kind).toBe("lesson");
   });
 
+  it("returns the active lesson required by the member dashboard", () => {
+    const dashboard = getDashboard("member-maria");
+
+    expect(dashboard.nextLesson.id).toBe("growth-2");
+    expect(dashboard.nextLesson.title).toBe("Respond, qualify, and route leads");
+    expect(dashboard.nextAction.href).toBe("/learn/course/growth-2");
+  });
+
   it("keeps personal course progress separate from shared artifacts", () => {
     const course = getMemberCourse("member-maria");
 
@@ -21,4 +29,3 @@ describe("demo repository", () => {
     expect(getLesson("unknown")).toBeUndefined();
   });
 });
-
