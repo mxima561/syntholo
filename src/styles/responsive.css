@@ -44,9 +44,9 @@
   .implementation-workspace { grid-template-columns: 230px minmax(0, 1fr); }
   .review-rail { grid-column: 2; }
   .workflow-grid { grid-template-columns: 1fr 1fr; }
-  .support-inbox { grid-template-columns: 210px minmax(0, 1fr); }
-  .coach-profile { display: none; }
-  .community-layout { grid-template-columns: 155px minmax(0, 1fr); }
+  .support-inbox { grid-template-columns: 230px minmax(0, 1fr); }
+  .coach-profile { display: grid; }
+  .community-layout { grid-template-columns: 190px minmax(0, 1fr); }
   .community-rail { grid-column: 1 / -1; grid-template-columns: repeat(3, 1fr); }
   .business-os-layout { grid-template-columns: 1fr; }
   .admin-metric-grid { grid-template-columns: 1fr 1fr; }
@@ -140,6 +140,10 @@
   .conversation-panel { min-height: 570px; }
   .conversation-panel > header { align-items: flex-start; flex-direction: column; }
   .reply-composer > div > div span { display: none; }
+  .coach-profile { grid-template-columns: auto minmax(0, 1fr); }
+  .coach-profile dl, .support-standard { grid-column: 1 / -1; }
+  .coach-profile dl { padding: 14px 0 0; border-top: 1px solid var(--border); border-left: 0; }
+  .support-standard { min-width: 0; }
   .session-card { grid-template-columns: 70px 1fr; }
   .session-actions { grid-column: 1 / -1; }
   .recording-grid { grid-template-columns: 1fr; }

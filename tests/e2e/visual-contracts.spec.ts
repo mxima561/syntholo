@@ -64,3 +64,15 @@ test("core member metadata and card titles meet the refreshed type scale", async
   expect(workflowStatus).toBeGreaterThanOrEqual(11);
   expect(workflowStatus).toBeLessThanOrEqual(12);
 });
+
+test("human and community surfaces use readable conversation text", async ({ page }) => {
+  await page.goto("/learn/support");
+  expect(await fontSize(page.locator(".message-stream article p").first())).toBeGreaterThanOrEqual(15);
+  await expect(page.getByRole("button", { name: /send reply/i })).toHaveCSS(
+    "background-color",
+    "rgb(239, 125, 98)",
+  );
+
+  await page.goto("/learn/community");
+  expect(await fontSize(page.locator(".community-post > p").first())).toBeGreaterThanOrEqual(15);
+});
