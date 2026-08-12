@@ -1,6 +1,6 @@
 # Syntholo Platform Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Build a polished, responsive Syntholo platform that demonstrates every approved public, member, coach, administrator, and Business OS workflow end to end, with vendor adapters ready for production credentials.
 
@@ -34,7 +34,7 @@
 **Interfaces:**
 - Produces: `Button`, `Card`, `Progress`, CSS design tokens, and global application metadata.
 
-- [ ] **Step 1: Write a failing render test**
+- [x] **Step 1: Write a failing render test**
 
 ```tsx
 it("renders a primary action", () => {
@@ -43,10 +43,10 @@ it("renders a primary action", () => {
 });
 ```
 
-- [ ] **Step 2: Run `npm test -- button.test.tsx` and verify it fails because the component does not exist.**
-- [ ] **Step 3: Implement typed UI primitives and exact Trusted Growth CSS tokens.**
-- [ ] **Step 4: Run the unit test, typecheck, and lint; expect all to pass.**
-- [ ] **Step 5: Commit `feat: scaffold Syntholo design system`.**
+- [x] **Step 2: Run `npm test -- button.test.tsx` and verify it fails because the component does not exist.**
+- [x] **Step 3: Implement typed UI primitives and exact Trusted Growth CSS tokens.**
+- [x] **Step 4: Run the unit test, typecheck, and lint; expect all to pass.**
+- [x] **Step 5: Commit `feat: scaffold Syntholo design system`.**
 
 ### Task 2: Domain model and deterministic demo repository
 
@@ -59,17 +59,17 @@ it("renders a primary action", () => {
 - Produces: `Organization`, `Member`, `Course`, `LessonProgress`, `Artifact`, `Entitlement`, `SupportThread`, `LiveSession`, `CommunityPost`, `SoftwareAccount`.
 - Produces: `getNextAction(input: NextActionInput): NextAction` and `canAccess(kind, entitlements, now): boolean`.
 
-- [ ] **Step 1: Test access expiration and next-action precedence.**
+- [x] **Step 1: Test access expiration and next-action precedence.**
 
 ```ts
 expect(getNextAction({ accessIssue: true, waitingOnCustomer: true, nextLessonId: "l1" }).kind).toBe("access_issue");
 expect(canAccess("community_write", [{ kind: "community_write", status: "expired" }], now)).toBe(false);
 ```
 
-- [ ] **Step 2: Run the tests and verify missing exports fail.**
-- [ ] **Step 3: Implement exact union types, precedence rules, and immutable demo repository selectors.**
-- [ ] **Step 4: Run all domain tests and typecheck.**
-- [ ] **Step 5: Commit `feat: add Syntholo domain model`.**
+- [x] **Step 2: Run the tests and verify missing exports fail.**
+- [x] **Step 3: Implement exact union types, precedence rules, and immutable demo repository selectors.**
+- [x] **Step 4: Run all domain tests and typecheck.**
+- [x] **Step 5: Commit `feat: add Syntholo domain model`.**
 
 ### Task 3: Public marketing and readiness scorecard
 
@@ -83,12 +83,12 @@ expect(canAccess("community_write", [{ kind: "community_write", status: "expired
 - Consumes: design primitives.
 - Produces: `calculateScore(answers): ScorecardResult` with five dimensions, 0–100 score, band, priorities, and recommended workflow.
 
-- [ ] **Step 1: Test all-zero, midpoint, and maximum scoring plus band boundaries.**
-- [ ] **Step 2: Verify the score test fails.**
-- [ ] **Step 3: Implement the 20-question deterministic assessment and gated full report.**
-- [ ] **Step 4: Implement polished homepage and pricing content with contextual disclosures.**
-- [ ] **Step 5: Run unit and Playwright scorecard journeys.**
-- [ ] **Step 6: Commit `feat: add public acquisition experience`.**
+- [x] **Step 1: Test all-zero, midpoint, and maximum scoring plus band boundaries.**
+- [x] **Step 2: Verify the score test fails.**
+- [x] **Step 3: Implement the 20-question deterministic assessment and gated full report.**
+- [x] **Step 4: Implement polished homepage and pricing content with contextual disclosures.**
+- [x] **Step 5: Run unit and Playwright scorecard journeys.**
+- [x] **Step 6: Commit `feat: add public acquisition experience`.**
 
 ### Task 4: Member shell, command center, and course workspace
 
@@ -103,12 +103,12 @@ expect(canAccess("community_write", [{ kind: "community_write", status: "expired
 - Consumes: repository selectors and `getNextAction`.
 - Produces: `markLessonComplete`, `setVideoPosition`, and responsive member navigation.
 
-- [ ] **Step 1: Test independent member progress and preserved completion.**
-- [ ] **Step 2: Verify the test fails.**
-- [ ] **Step 3: Build the Magnific-inspired Guided Command Center with real course data.**
-- [ ] **Step 4: Build the six-stage course map and accessible lesson workspace.**
-- [ ] **Step 5: Run unit, accessibility, and course E2E tests.**
-- [ ] **Step 6: Commit `feat: build member learning experience`.**
+- [x] **Step 1: Test independent member progress and preserved completion.**
+- [x] **Step 2: Verify the test fails.**
+- [x] **Step 3: Build the Magnific-inspired Guided Command Center with real course data.**
+- [x] **Step 4: Build the six-stage course map and accessible lesson workspace.**
+- [x] **Step 5: Run unit, accessibility, and course E2E tests.**
+- [x] **Step 6: Commit `feat: build member learning experience`.**
 
 ### Task 5: Shared implementation artifacts
 
@@ -120,12 +120,12 @@ expect(canAccess("community_write", [{ kind: "community_write", status: "expired
 **Interfaces:**
 - Produces: `calculateProgramCompletion(progress, artifacts)` and version-aware artifact editor commands.
 
-- [ ] **Step 1: Test that 18 lessons, five outputs, and three live workflows are required.**
-- [ ] **Step 2: Verify the test fails.**
-- [ ] **Step 3: Implement shared output dashboards and three workflow launch records.**
-- [ ] **Step 4: Implement conflict messaging and request-review actions in the demo repository.**
-- [ ] **Step 5: Run tests and responsive visual checks.**
-- [ ] **Step 6: Commit `feat: add shared implementation workspace`.**
+- [x] **Step 1: Test that 18 lessons, five outputs, and three live workflows are required.**
+- [x] **Step 2: Verify the test fails.**
+- [x] **Step 3: Implement shared output dashboards and three workflow launch records.**
+- [x] **Step 4: Implement conflict messaging and request-review actions in the demo repository.**
+- [x] **Step 5: Run tests and responsive visual checks.**
+- [x] **Step 6: Commit `feat: add shared implementation workspace`.**
 
 ### Task 6: Human support, live sessions, and community
 
@@ -138,12 +138,12 @@ expect(canAccess("community_write", [{ kind: "community_write", status: "expired
 **Interfaces:**
 - Produces: `calculateSlaDue(createdAt, calendar): Date`, support status transitions, RSVP state, and moderation actions.
 
-- [ ] **Step 1: Test weekend-aware two-business-day SLA and pause behavior.**
-- [ ] **Step 2: Verify the test fails.**
-- [ ] **Step 3: Implement the explicitly human shared inbox and coach identity.**
-- [ ] **Step 4: Implement timezone-aware Zoom sessions and real-name community surfaces.**
-- [ ] **Step 5: Run support and moderation E2E tests.**
-- [ ] **Step 6: Commit `feat: add human learning layer`.**
+- [x] **Step 1: Test weekend-aware two-business-day SLA and pause behavior.**
+- [x] **Step 2: Verify the test fails.**
+- [x] **Step 3: Implement the explicitly human shared inbox and coach identity.**
+- [x] **Step 4: Implement timezone-aware Zoom sessions and real-name community surfaces.**
+- [x] **Step 5: Run support and moderation E2E tests.**
+- [x] **Step 6: Commit `feat: add human learning layer`.**
 
 ### Task 7: Business OS and administration
 
@@ -157,12 +157,12 @@ expect(canAccess("community_write", [{ kind: "community_write", status: "expired
 **Interfaces:**
 - Produces: validated Business OS transitions and P0 admin views.
 
-- [ ] **Step 1: Test allowed provisioning transitions and the five-business-day due date.**
-- [ ] **Step 2: Verify the test fails.**
-- [ ] **Step 3: Implement the disclosed Business OS offer, onboarding checklist, and external-login state.**
-- [ ] **Step 4: Implement admin overview, content status, support SLA, community reports, and provisioning board.**
-- [ ] **Step 5: Run unit and role-boundary E2E tests.**
-- [ ] **Step 6: Commit `feat: add operations and Business OS`.**
+- [x] **Step 1: Test allowed provisioning transitions and the five-business-day due date.**
+- [x] **Step 2: Verify the test fails.**
+- [x] **Step 3: Implement the disclosed Business OS offer, onboarding checklist, and external-login state.**
+- [x] **Step 4: Implement admin overview, content status, support SLA, community reports, and provisioning board.**
+- [x] **Step 5: Run unit and role-boundary E2E tests.**
+- [x] **Step 6: Commit `feat: add operations and Business OS`.**
 
 ### Task 8: Production integration contracts
 
@@ -175,12 +175,12 @@ expect(canAccess("community_write", [{ kind: "community_write", status: "expired
 **Interfaces:**
 - Produces: strict optional environment parsing, adapter interfaces, signature-verifying webhook entrypoint, and demo fallback.
 
-- [ ] **Step 1: Test missing optional demo credentials and invalid partial production configuration.**
-- [ ] **Step 2: Verify invalid configuration test fails.**
-- [ ] **Step 3: Implement lazy vendor adapters so build never contacts external services.**
-- [ ] **Step 4: Implement idempotent webhook receipt contract and health response.**
-- [ ] **Step 5: Run API tests and production build without secrets.**
-- [ ] **Step 6: Commit `feat: add production integration boundaries`.**
+- [x] **Step 1: Test missing optional demo credentials and invalid partial production configuration.**
+- [x] **Step 2: Verify invalid configuration test fails.**
+- [x] **Step 3: Implement lazy vendor adapters so build never contacts external services.**
+- [x] **Step 4: Implement idempotent webhook receipt contract and health response.**
+- [x] **Step 5: Run API tests and production build without secrets.**
+- [x] **Step 6: Commit `feat: add production integration boundaries`.**
 
 ### Task 9: Verification and handoff
 
@@ -191,9 +191,9 @@ expect(canAccess("community_write", [{ kind: "community_write", status: "expired
 **Interfaces:**
 - Produces: reproducible local setup and a verified deployment checklist.
 
-- [ ] **Step 1: Run `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.**
-- [ ] **Step 2: Run Playwright journeys at desktop and mobile widths.**
-- [ ] **Step 3: Check keyboard focus, contrast, reduced motion, and empty/error states.**
-- [ ] **Step 4: Document demo mode, production credentials, vendor webhooks, and deployment steps.**
-- [ ] **Step 5: Commit `chore: verify and document Syntholo platform`.**
+- [x] **Step 1: Run `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.**
+- [x] **Step 2: Run Playwright journeys at desktop and mobile widths.**
+- [x] **Step 3: Check keyboard focus, contrast, reduced motion, and empty/error states.**
+- [x] **Step 4: Document demo mode, production credentials, vendor webhooks, and deployment steps.**
+- [x] **Step 5: Commit `chore: verify and document Syntholo platform`.**
 

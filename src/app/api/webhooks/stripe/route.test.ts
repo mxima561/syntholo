@@ -31,4 +31,21 @@ describe("handleStripeWebhook", () => {
     });
     expect(result.status).toBe(400);
   });
+
+  it("atomically claims simultaneous deliveries", async () => {
+    const receipts = new MemoryWebhookReceiptStore();
+    const dependencies = {
+      webhookSecret: "whsec_test",
+      verify: () => ({ id: "evt_race", type: "invoice.paid" as const }),
+      receipts,
+    };
+
+    const results = await Promise.all([
+      handleStripeWebhook("raw", "signature", dependencies),
+      handleStripeWebhook("raw", "signature", dependencies),
+    ]);
+
+    expect(results.filter((result) => result.replay)).toHaveLength(1);
+    expect(receipts.size).toBe(1);
+  });
 });

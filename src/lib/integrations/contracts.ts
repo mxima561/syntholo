@@ -23,8 +23,7 @@ export interface AnalyticsAdapter {
 }
 
 export interface WebhookReceiptStore {
-  has(eventId: string): Promise<boolean>;
-  record(input: { eventId: string; eventType: string; receivedAt: string }): Promise<void>;
+  claim(input: { eventId: string; eventType: string; receivedAt: string }): Promise<boolean>;
 }
 
 export type IntegrationHealth = { name: string; state: HealthState };

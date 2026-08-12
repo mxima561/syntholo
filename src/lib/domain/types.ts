@@ -207,6 +207,11 @@ export type NextActionKind =
 export type NextAction = {
   kind: NextActionKind;
   label: string;
-  href: string;
+  href:
+    | "/learn/settings/billing"
+    | `/learn/support?thread=${string}`
+    | `/learn/live?session=${string}`
+    | `/learn/course/${string}`
+    | `/learn/plan?artifact=${string}`
+    | "/learn/community";
 };
-

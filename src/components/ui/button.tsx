@@ -1,21 +1,22 @@
 import Link from "next/link";
+import type { Route } from "next";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
-type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
+type ButtonProps<T extends string> = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
-  href?: string;
+  href?: Route<T>;
   variant?: "primary" | "secondary" | "dark" | "quiet";
   size?: "small" | "medium" | "large";
 };
 
-export function Button({
+export function Button<T extends string>({
   children,
   className = "",
   href,
   variant = "primary",
   size = "medium",
   ...props
-}: ButtonProps) {
+}: ButtonProps<T>) {
   const classes = `button button-${variant} button-${size} ${className}`.trim();
 
   if (href) {
@@ -32,4 +33,3 @@ export function Button({
     </button>
   );
 }
-

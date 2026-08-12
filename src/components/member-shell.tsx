@@ -34,7 +34,7 @@ const navGroups = [
       { href: "/learn/settings", label: "Settings", icon: Settings },
     ],
   },
-];
+] as const;
 
 export function MemberShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();

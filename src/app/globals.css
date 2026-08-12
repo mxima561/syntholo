@@ -4,12 +4,13 @@
   --canvas: #f8f8f6;
   --surface: #ffffff;
   --ink: #181818;
-  --muted: #777773;
+  --muted: #62645f;
   --border: #e8e8e4;
   --navy: #102a35;
   --teal: #0f6f70;
   --teal-dark: #0a5658;
   --coral: #ef7d62;
+  --coral-ink: #9d3f2a;
   --gold: #d5a943;
   --success: #2a9d73;
   --danger: #b9473f;
@@ -25,6 +26,7 @@ a { color: inherit; text-decoration: none; }
 button, input, textarea, select { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid color-mix(in srgb, var(--teal) 45%, white); outline-offset: 3px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
 .shell { width: min(1180px, calc(100% - 48px)); margin-inline: auto; }
 .marketing-page { min-height: 100vh; overflow: hidden; }
@@ -770,6 +772,55 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .provisioning-notes label { display: grid; gap: 6px; color: var(--muted); font-size: 7px; }
 .provisioning-notes textarea { min-height: 100px; padding: 9px; resize: vertical; border: 1px solid var(--border); border-radius: 8px; background: white; font-size: 7px; }
 .provisioning-notes .button { width: 100%; margin-top: 8px; }
+.admin-search { min-height: 38px; padding: 0 10px; display: flex; gap: 7px; align-items: center; border: 1px solid var(--border); border-radius: 8px; background: white; color: var(--muted); }
+.admin-search input { width: 190px; border: 0; outline: 0; background: transparent; font-size: 8px; }
+.admin-table { overflow: hidden; border: 1px solid var(--border); border-radius: 12px; background: white; }
+.admin-table > header, .admin-table > button { width: 100%; min-height: 57px; padding: 0 17px; display: grid; grid-template-columns: 1.2fr 1fr 1fr 90px 16px; gap: 12px; align-items: center; border: 0; border-bottom: 1px solid var(--border); background: white; text-align: left; }
+.admin-table > header { min-height: 40px; background: #f5f7f4; color: var(--muted); font-size: 7px; text-transform: uppercase; }
+.admin-table > button:last-child { border-bottom: 0; }
+.admin-table > button { color: var(--muted); font-size: 8px; cursor: pointer; }
+.admin-table > button:hover { background: #f6faf8; }
+.admin-table > button strong { color: var(--ink); font: 700 9px var(--font-heading); }
+
+/* Legal and error states */
+.state-page { min-height: 100vh; max-width: 620px; margin-inline: auto; padding: 90px 24px; display: flex; align-items: flex-start; flex-direction: column; justify-content: center; }
+.state-page > .micro-label { margin-top: 28px; }
+.state-page h1 { margin: 14px 0 10px; font: 700 42px/1.04 var(--font-heading); letter-spacing: -.05em; }
+.state-page p { max-width: 510px; margin: 0 0 24px; color: var(--muted); font-size: 13px; line-height: 1.65; }
+.state-page .button + .button { margin-top: 8px; }
+.legal-page { width: min(720px, calc(100% - 40px)); margin-inline: auto; padding-block: 56px 90px; }
+.legal-page > .micro-label { display: block; margin-top: 65px; color: var(--coral); }
+.legal-page h1 { margin: 14px 0 15px; font: 700 48px/1 var(--font-heading); letter-spacing: -.055em; }
+.legal-lede { margin: 0 0 45px; color: #555753; font-size: 16px; line-height: 1.65; }
+.legal-page section { padding: 24px 0; border-top: 1px solid var(--border); }
+.legal-page section h2 { margin: 0 0 8px; font: 700 17px var(--font-heading); }
+.legal-page section p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.legal-note { margin-top: 30px; padding: 15px; border-radius: 9px; background: #fbf0dc; color: #735d28; font-size: 9px; line-height: 1.6; }
+
+/* WCAG AA contrast refinements: preserve bright accents as decoration and use ink variants for text. */
+.scorecard-footer,
+.blueprint-topline,
+.outcome-index,
+.muted-status,
+.nav-group > span,
+.engine-card-grid article > div small,
+.stage-intro small,
+.stage-lessons small,
+.reply-composer > div > div span,
+.message-stream time,
+.onboarding-note { color: var(--muted); }
+.blueprint-heading .micro-label { color: #91cac6; }
+.avatar-stack span:first-child,
+.coach-avatar { background: var(--coral-ink); }
+.week-list > li > span,
+.session-date strong,
+.capability-list article > span,
+.attention-panel small { color: var(--coral-ink); }
+.status-pill.testing,
+.status-pill.draft { color: #76520a; }
+.conversation-sla { color: #3f5d57; }
+.conversation-sla.paused { color: #5f4812; }
+.admin-metric-grid i { color: #356d59; }
 
 @media (max-width: 960px) {
   .desktop-nav { display: none; }
@@ -896,6 +947,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .admin-content > header { padding-inline: 15px; }
   .admin-page { width: min(100% - 26px, 1170px); }
   .admin-page-head { align-items: flex-start; flex-direction: column; }
+  .admin-search { width: 100%; }
+  .admin-search input { width: 100%; }
   .admin-metric-grid, .admin-dashboard-grid { grid-template-columns: 1fr; }
   .wide-panel { grid-column: auto; }
   .revenue-strip { grid-template-columns: 1fr 1fr; }
@@ -905,6 +958,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
   .provisioning-queue { display: block; min-height: 0; overflow: visible; }
   .provisioning-queue > aside:first-child { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); }
   .provisioning-queue > aside:first-child > div, .provisioning-queue > aside:first-child > button { min-width: 190px; }
+  .admin-table { overflow-x: auto; }
+  .admin-table > header, .admin-table > button { min-width: 650px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type Stripe from "stripe";
 import { getRuntimeEnv } from "@/lib/config/env";
 import type { WebhookReceiptStore } from "@/lib/integrations/contracts";
+import { MongoWebhookReceiptStore } from "@/lib/integrations/mongodb";
 import { getStripeClient } from "@/lib/integrations/stripe";
 
 type VerifiedStripeEvent = Pick<Stripe.Event, "id" | "type">;
@@ -14,11 +15,15 @@ type WebhookDependencies = {
 export class MemoryWebhookReceiptStore implements WebhookReceiptStore {
   private events = new Map<string, { eventType: string; receivedAt: string }>();
   get size() { return this.events.size; }
-  async has(eventId: string) { return this.events.has(eventId); }
-  async record(input: { eventId: string; eventType: string; receivedAt: string }) { this.events.set(input.eventId, { eventType: input.eventType, receivedAt: input.receivedAt }); }
+  async claim(input: { eventId: string; eventType: string; receivedAt: string }) {
+    if (this.events.has(input.eventId)) return false;
+    this.events.set(input.eventId, { eventType: input.eventType, receivedAt: input.receivedAt });
+    return true;
+  }
 }
 
 const runtimeReceipts = new MemoryWebhookReceiptStore();
+const productionReceipts = new MongoWebhookReceiptStore();
 
 export async function handleStripeWebhook(rawBody: string, signature: string | null, dependencies: WebhookDependencies) {
   if (!signature) return { status: 400, replay: false, error: "Missing Stripe signature." };
@@ -28,10 +33,8 @@ export async function handleStripeWebhook(rawBody: string, signature: string | n
   } catch {
     return { status: 400, replay: false, error: "Invalid Stripe signature." };
   }
-  if (await dependencies.receipts.has(event.id)) return { status: 200, replay: true, eventId: event.id };
-
-  await dependencies.receipts.record({ eventId: event.id, eventType: event.type, receivedAt: new Date().toISOString() });
-  return { status: 200, replay: false, eventId: event.id };
+  const claimed = await dependencies.receipts.claim({ eventId: event.id, eventType: event.type, receivedAt: new Date().toISOString() });
+  return { status: 200, replay: !claimed, eventId: event.id };
 }
 
 export async function POST(request: Request) {
@@ -41,7 +44,7 @@ export async function POST(request: Request) {
   const result = await handleStripeWebhook(rawBody, request.headers.get("stripe-signature"), {
     webhookSecret: config.webhookSecret,
     verify: (body, signature, secret) => getStripeClient().webhooks.constructEvent(body, signature, secret),
-    receipts: runtimeReceipts,
+    receipts: getRuntimeEnv().mode === "production" ? productionReceipts : runtimeReceipts,
   });
   return NextResponse.json({ ok: result.status === 200, replay: result.replay, eventId: result.eventId, error: result.error }, { status: result.status });
 }

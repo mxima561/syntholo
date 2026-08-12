@@ -21,7 +21,7 @@ const plans = [
     included: ["Monthly implementation playbook", "Two live office-hours times", "Human coach inbox", "Active professional community", "Tool and platform updates"],
     featured: false,
   },
-];
+] as const;
 
 export default function PricingPage() {
   return (
@@ -54,4 +54,3 @@ export default function PricingPage() {
     </main>
   );
 }
-

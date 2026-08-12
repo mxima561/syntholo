@@ -26,18 +26,18 @@ export default async function CheckoutPage({ params }: { params: Promise<{ offer
             <p>One business workspace for an owner and two teammates.</p>
             <ul><li><Check aria-hidden size={15} />{selected.support}</li><li><Check aria-hidden size={15} />{selected.note}</li><li><Check aria-hidden size={15} />Course purchase remains useful without optional software</li></ul>
           </section>
-          <section className="checkout-card">
+          <form action="/claim" className="checkout-card" method="get">
+            <input name="offer" type="hidden" value={offer} />
             <div className="order-line"><span>{selected.name}</span><strong>{selected.amount}</strong></div>
             {selected.recurring ? <div className="checkout-disclosure">This offer includes recurring billing. The renewal amount and date are confirmed before the live payment is submitted.</div> : null}
             <label>Work email<input defaultValue="maria@northstar.example" type="email" /></label>
             <label>Card information<div className="fake-card-field"><span>4242 4242 4242 4242</span><span>12/30 &nbsp; 123</span></div></label>
-            <label className="consent-row"><input type="checkbox" /> I agree to Syntholo’s terms and refund policy.</label>
-            <Button href={`/claim?offer=${offer}`} size="large">Complete demo purchase <ArrowRight aria-hidden size={16} /></Button>
+            <label className="consent-row"><input required type="checkbox" /> I agree to Syntholo’s terms and refund policy.</label>
+            <Button size="large" type="submit">Complete demo purchase <ArrowRight aria-hidden size={16} /></Button>
             <p className="privacy-note"><LockKeyhole aria-hidden size={13} /> Demo mode: no charge is made. Stripe activates when production credentials are configured.</p>
-          </section>
+          </form>
         </div>
       </div>
     </main>
   );
 }
-
