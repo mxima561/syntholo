@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 
 test("public visitor can assess readiness and reach checkout", async ({ page }) => {
   await page.goto("/");
+  await expect(page.getByRole("link", { name: /explore the 30-day plan/i })).toHaveCSS("color", "rgb(16, 42, 53)");
   await expect(page.getByRole("heading", { name: /put ai to work across your business/i })).toBeVisible();
   await page.getByRole("link", { name: "Take the free scorecard" }).first().click();
   for (let question = 1; question <= 20; question += 1) {
@@ -22,6 +23,11 @@ test("public visitor can assess readiness and reach checkout", async ({ page }) 
 test("member can complete a lesson and ask a human coach", async ({ page }) => {
   await page.goto("/learn");
   await expect(page.getByRole("heading", { name: /keep building your business os/i })).toBeVisible();
+  const browseLessons = page.getByLabel("Browse lessons and templates");
+  await expect(browseLessons).toBeVisible();
+  if ((page.viewportSize()?.width ?? 0) < 768) {
+    await expect(browseLessons).toHaveCSS("min-height", "44px");
+  }
   await page.getByRole("link", { name: /resume lesson/i }).click();
   await expect(page.getByRole("heading", { name: /respond, qualify, and route leads/i })).toBeVisible();
   await page.getByRole("button", { name: /mark lesson complete/i }).click();

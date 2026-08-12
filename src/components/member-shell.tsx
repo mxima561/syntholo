@@ -68,7 +68,10 @@ export function MemberShell({ children }: { children: ReactNode }) {
         <header className="member-topbar">
           <div><span className="mobile-brand">Syntholo</span><strong>Northstar Advisory</strong><small>AI Operating System Academy</small></div>
           <div className="topbar-actions">
-            <Link className="topbar-browse" href="/learn/course">Browse lessons and templates</Link>
+            <Link aria-label="Browse lessons and templates" className="topbar-browse" href="/learn/course">
+              <BookOpen aria-hidden="true" size={16} />
+              <span>Browse lessons and templates</span>
+            </Link>
             <span className="status-chip"><span className="online-dot" /> Coaches online</span>
             <span className="status-chip status-chip-course">Academy access</span>
           </div>

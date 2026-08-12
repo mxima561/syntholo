@@ -21,6 +21,11 @@ export function DashboardRecommendationCard({
 }: DashboardRecommendationCardProps) {
   return (
     <article className={`dashboard-recommendation dashboard-recommendation-${tone}`} data-testid="dashboard-recommendation">
+      <div aria-hidden="true" className={`dashboard-recommendation-illustration dashboard-recommendation-illustration-${tone}`}>
+        <span className="dashboard-recommendation-shape dashboard-recommendation-shape-one" />
+        <span className="dashboard-recommendation-shape dashboard-recommendation-shape-two" />
+        <span className="dashboard-recommendation-shape dashboard-recommendation-shape-three" />
+      </div>
       <span className="meta-label">{label}</span>
       <h3>{title}</h3>
       <p>{description}</p>

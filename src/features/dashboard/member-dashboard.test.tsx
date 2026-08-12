@@ -9,8 +9,13 @@ describe("MemberDashboard", () => {
 
     expect(screen.getByRole("heading", { name: /keep building your business os/i })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /resume lesson/i })).toHaveAttribute("href", "/learn/course/growth-2");
-    expect(screen.getAllByTestId("dashboard-recommendation")).toHaveLength(2);
+    const recommendations = screen.getAllByTestId("dashboard-recommendation");
+    expect(recommendations).toHaveLength(2);
+    expect(recommendations[0].querySelector(".dashboard-recommendation-illustration-coral[aria-hidden='true']")).toBeTruthy();
+    expect(recommendations[1].querySelector(".dashboard-recommendation-illustration-gold[aria-hidden='true']")).toBeTruthy();
     expect(screen.getByText(/naomi replied/i)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /view session/i })).toHaveClass("button-milestone");
+    expect(screen.getByRole("link", { name: /view session/i })).toHaveAttribute("href", "/learn/live");
     expect(screen.getByRole("link", { name: /browse lessons and templates/i })).toHaveAttribute("href", "/learn/course");
   });
 });

@@ -92,7 +92,6 @@
   .member-topbar > div:first-child strong, .member-topbar > div:first-child small { display: none; }
   .mobile-brand { display: block; font: 750 14px var(--font-heading); }
   .topbar-actions { gap: 6px; }
-  .topbar-browse { font-size: 11px; }
   .status-chip { display: none; }
   .member-page { width: min(100% - 28px, 1190px); padding-block: 28px 86px; }
   .page-intro { align-items: flex-start; flex-direction: column; }
@@ -169,4 +168,9 @@
   .provisioning-queue > aside:first-child > div, .provisioning-queue > aside:first-child > button { min-width: 190px; }
   .admin-table { overflow-x: auto; }
   .admin-table > header, .admin-table > button { min-width: 650px; }
+}
+
+@media (max-width: 767px) {
+  .topbar-browse { width: 44px; min-height: 44px; display: grid; place-items: center; border-radius: var(--radius-control); background: var(--teal-tint); }
+  .topbar-browse span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 }

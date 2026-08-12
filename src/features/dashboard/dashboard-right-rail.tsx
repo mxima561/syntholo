@@ -1,5 +1,4 @@
-import Link from "next/link";
-import { ArrowRight, CalendarDays, MessageSquareText } from "lucide-react";
+import { CalendarDays, MessageSquareText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { DashboardView } from "@/lib/demo/repository";
 
@@ -37,7 +36,9 @@ export function DashboardRightRail({ actionLabel, policyTitle, workflowName, thr
         <span className="meta-label">Upcoming live session</span>
         <h2>{session.title}</h2>
         <p>Hosted by {session.hostName} · {session.region}</p>
-        <Link className="text-link" href="/learn/live">View session <CalendarDays size={14} /><ArrowRight size={14} /></Link>
+        <Button href="/learn/live" size="small" variant="milestone">
+          View session <CalendarDays size={14} />
+        </Button>
       </section>
     </aside>
   );
