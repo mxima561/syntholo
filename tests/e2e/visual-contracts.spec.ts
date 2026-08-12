@@ -102,3 +102,12 @@ test("mobile coach profile keeps its identity and support details in separate ro
   expect(Math.max(avatar.y + avatar.height, role.y + role.height)).toBeLessThanOrEqual(details.y);
   expect(details.y + details.height).toBeLessThanOrEqual(standard.y);
 });
+
+test("admin remains dense but readable", async ({ page }) => {
+  await page.goto("/admin");
+  expect(await fontSize(page.locator(".admin-page-head p"))).toBeGreaterThanOrEqual(15);
+  expect(await fontSize(page.locator(".admin-metric-grid small").first())).toBeGreaterThanOrEqual(12);
+
+  await page.goto("/admin/customers");
+  expect(await fontSize(page.locator(".admin-table strong").first())).toBeGreaterThanOrEqual(13);
+});

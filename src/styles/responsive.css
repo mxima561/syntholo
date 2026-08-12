@@ -50,7 +50,7 @@
   .community-rail { grid-column: 1 / -1; grid-template-columns: repeat(3, 1fr); }
   .business-os-layout { grid-template-columns: 1fr; }
   .admin-metric-grid { grid-template-columns: 1fr 1fr; }
-  .provisioning-queue { grid-template-columns: 190px minmax(0, 1fr); }
+  .provisioning-queue { grid-template-columns: 200px minmax(0, 1fr); }
   .provisioning-notes { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--border); }
 }
 
@@ -163,7 +163,7 @@
   .admin-shell { display: block; }
   .admin-sidebar { position: static; width: 100%; height: auto; padding: 12px; }
   .admin-sidebar nav { display: flex; overflow-x: auto; }
-  .admin-sidebar nav a { min-width: max-content; }
+  .admin-sidebar nav a { min-width: max-content; min-height: 44px; }
   .admin-workspace, .admin-settings { display: none; }
   .admin-sidebar .brand { padding: 0 8px 12px; }
   .admin-content > header { padding-inline: 15px; }
@@ -175,12 +175,13 @@
   .wide-panel { grid-column: auto; }
   .revenue-strip { grid-template-columns: 1fr 1fr; }
   .content-editor-panel > header { align-items: flex-start; flex-direction: column; gap: 13px; }
-  .content-stage-list article { padding-left: 13px; grid-template-columns: 16px 24px 1fr 50px; }
+  .content-stage-list article { padding-left: 13px; grid-template-columns: 20px 26px minmax(150px, 1fr) 76px; }
   .content-stage-list article > i { display: none; }
   .provisioning-queue { display: block; min-height: 0; overflow: visible; }
   .provisioning-queue > aside:first-child { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); }
   .provisioning-queue > aside:first-child > div, .provisioning-queue > aside:first-child > button { min-width: 190px; }
-  .admin-table { overflow-x: auto; }
+  .provisioning-detail > footer { align-items: flex-start; flex-direction: column; }
+  .admin-table { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
   .admin-table > header, .admin-table > button { min-width: 650px; }
 }
 
