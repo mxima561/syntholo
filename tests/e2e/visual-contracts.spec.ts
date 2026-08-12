@@ -41,3 +41,26 @@ test("core member workspaces keep body and controls readable", async ({ page }) 
   await page.goto("/learn/workflows");
   expect(await fontSize(page.locator(".workflow-card > p").first())).toBeGreaterThanOrEqual(15);
 });
+
+test("core member metadata and card titles meet the refreshed type scale", async ({ page }) => {
+  await page.goto("/learn/course/growth-2");
+  const lessonActionLabel = await fontSize(page.locator(".lesson-action-card .micro-label"));
+  expect(lessonActionLabel).toBeGreaterThanOrEqual(11);
+  expect(lessonActionLabel).toBeLessThanOrEqual(12);
+  const lessonActionTitle = await fontSize(page.locator(".lesson-action-card h2"));
+  expect(lessonActionTitle).toBeGreaterThanOrEqual(16);
+  expect(lessonActionTitle).toBeLessThanOrEqual(21);
+
+  await page.goto("/learn/plan");
+  const artifactLabel = await fontSize(page.locator(".artifact-nav > .micro-label"));
+  expect(artifactLabel).toBeGreaterThanOrEqual(11);
+  expect(artifactLabel).toBeLessThanOrEqual(12);
+  const reviewTitle = await fontSize(page.locator(".review-rail h2"));
+  expect(reviewTitle).toBeGreaterThanOrEqual(16);
+  expect(reviewTitle).toBeLessThanOrEqual(21);
+
+  await page.goto("/learn/workflows");
+  const workflowStatus = await fontSize(page.locator(".workflow-card .status-pill").first());
+  expect(workflowStatus).toBeGreaterThanOrEqual(11);
+  expect(workflowStatus).toBeLessThanOrEqual(12);
+});

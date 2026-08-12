@@ -36,8 +36,16 @@
 .lesson-heading h1 { margin: 12px 0 9px; font: 700 29px/1.05 var(--font-heading); letter-spacing: -.045em; }
 .lesson-heading p { margin: 0; color: var(--muted); font-size: var(--text-body); line-height: 1.6; }
 .lesson-action-card { margin: 0 34px 21px; padding: 21px; display: grid; grid-template-columns: 42px 1fr; gap: 15px; border: 1px solid #d6e3df; border-radius: 12px; background: #f0f6f4; }
+.lesson-heading .micro-label,
+.lesson-action-card .micro-label,
+.artifact-nav > .micro-label,
+.artifact-editor-head .micro-label,
+.document-preview .micro-label,
+.review-rail > .micro-label,
+.settings-grid .micro-label,
+.template-grid .micro-label { font-size: var(--text-meta); }
 .action-number { width: 44px; height: 44px; display: grid; place-items: center; border-radius: var(--radius-control); background: var(--teal); color: white; font: 750 var(--text-ui) var(--font-heading); }
-.lesson-action-card h2 { margin: 8px 0 6px; font: 700 15px var(--font-heading); }
+.lesson-action-card h2 { margin: 8px 0 6px; font: 700 18px var(--font-heading); }
 .lesson-action-card p { margin: 0; color: var(--muted); font-size: var(--text-body); line-height: 1.55; }
 .lesson-resource-row { margin: 0 34px; padding: 14px 0; display: grid; grid-template-columns: 25px 1fr auto; gap: 8px; align-items: center; border-block: 1px solid var(--border); color: var(--teal); }
 .lesson-resource-row strong, .lesson-resource-row span { display: block; }
@@ -118,7 +126,7 @@
 .artifact-actions > div { display: flex; gap: 8px; }
 .review-rail { grid-column: 2; padding: 20px; background: var(--coral-tint); }
 .review-rail > .micro-label { display: block; margin-top: 17px; }
-.review-rail h2 { margin: 9px 0 7px; font: 700 15px var(--font-heading); }
+.review-rail h2 { margin: 9px 0 7px; font: 700 18px var(--font-heading); }
 .review-rail > p { margin: 0 0 16px; color: var(--muted); font-size: var(--text-body); line-height: 1.55; }
 .review-rail label { display: grid; gap: 7px; color: #5d5e5a; font-size: var(--text-ui); font-weight: 700; }
 .review-rail textarea { min-height: 95px; padding: 10px; resize: vertical; border: 1px solid #dfdacd; border-radius: var(--radius-control); background: rgba(255,255,255,.7); color: var(--ink); font-size: var(--text-ui); line-height: 1.5; }
@@ -136,6 +144,7 @@
 .workflow-card.management::before { background: var(--gold); }
 .workflow-card-head { display: flex; justify-content: space-between; align-items: center; }
 .workflow-card-head > span { color: var(--muted); font: 700 var(--text-meta) var(--font-heading); text-transform: uppercase; letter-spacing: .07em; }
+.workflow-card .status-pill { font: normal 700 var(--text-meta)/1 var(--font-heading); }
 .workflow-card h2 { margin: 18px 0 8px; font: 700 20px/1.15 var(--font-heading); letter-spacing: -.025em; }
 .workflow-card > p { min-height: 50px; margin: 0; color: var(--muted); font-size: var(--text-body); line-height: 1.6; }
 .workflow-card dl { margin: 18px 0; padding: 13px 0; display: grid; gap: 12px; border-block: 1px solid var(--border); }

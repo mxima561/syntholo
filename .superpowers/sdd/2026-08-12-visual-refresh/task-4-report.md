@@ -42,3 +42,25 @@ The plan contract selects the Team enablement checklist before checking `.docume
 ## Concerns
 
 None. The Playwright runner emits an environment warning about `NO_COLOR` and `FORCE_COLOR`; it is pre-existing command-environment noise and did not affect any results.
+
+## Fix round 1 — scoped typography findings
+
+### Dispositions
+
+- Fixed Task 4 workflow status pills with `.workflow-card .status-pill` at the shared 12px metadata size, without changing status pills on support, dashboard, or later-task surfaces.
+- Scoped the Task 4 lesson, implementation, review, template, and settings micro-labels to the shared 12px metadata size.
+- Raised `.lesson-action-card h2` and `.review-rail h2` to 18px, inside the 16–21px card-title range.
+
+### RED / GREEN evidence
+
+- RED: `npm run test:e2e -- tests/e2e/visual-contracts.spec.ts -g 'metadata and card titles'`
+  - Failed as intended on `.lesson-action-card h2`: rendered `15px`, below the required `16px` card-title floor (desktop and mobile).
+- GREEN: the same command passed on desktop and mobile after the scoped CSS changes (2 tests).
+
+### Fix-round verification
+
+- `npm test -- src/features/course src/features/implementation` — PASS (4 files, 8 tests)
+- `npm run test:e2e -- tests/e2e/core-journeys.spec.ts tests/e2e/visual-contracts.spec.ts` — PASS (14 tests across desktop and mobile)
+- `npm run typecheck` — PASS
+- `npm run lint` — PASS
+- `git diff --check` — PASS
