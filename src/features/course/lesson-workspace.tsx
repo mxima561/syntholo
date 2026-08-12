@@ -80,7 +80,7 @@ export function LessonWorkspace({ lesson, initiallyComplete = false, onComplete 
         <div className="human-nudge">
           <span className="coach-avatar">NR</span>
           <div><strong>Need a second opinion?</strong><p>Send Naomi your draft and get a human response within two business days.</p></div>
-          <Button href="/learn/support" size="small" variant="quiet">Ask a coach →</Button>
+          <Button href="/learn/support" size="small" variant="human">Ask a coach →</Button>
         </div>
       </aside>
     </div>

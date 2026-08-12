@@ -36,7 +36,7 @@ export function WorkflowBoard({ initialWorkflows }: { initialWorkflows: Workflow
               </dl>
               <div className="workflow-metric"><span>Baseline<strong>{workflow.baseline}</strong></span><ArrowRight size={15} /><span>Target<strong>{workflow.target}</strong></span></div>
               <div className="workflow-tools">{workflow.approvedTools.map((tool) => <span key={tool}>{tool}</span>)}</div>
-              {workflow.status !== "paused" ? <button aria-label={`Move ${workflow.name} to ${statusLabels[next]}`} onClick={() => advance(workflow.id)} type="button">{workflow.status === "live" ? <CirclePause size={14} /> : <ArrowRight size={14} />} {workflow.status === "live" ? "Pause workflow" : `Move to ${statusLabels[next].toLowerCase()}`}</button> : <button aria-label={`Resume ${workflow.name}`} onClick={() => setWorkflows((items) => items.map((item) => item.id === workflow.id ? { ...item, status: "testing" } : item))} type="button">Resume testing</button>}
+              {workflow.status !== "paused" ? <Button aria-label={`Move ${workflow.name} to ${statusLabels[next]}`} onClick={() => advance(workflow.id)} size="small" variant="secondary">{workflow.status === "live" ? <CirclePause size={14} /> : <ArrowRight size={14} />} {workflow.status === "live" ? "Pause workflow" : `Move to ${statusLabels[next].toLowerCase()}`}</Button> : <Button aria-label={`Resume ${workflow.name}`} onClick={() => setWorkflows((items) => items.map((item) => item.id === workflow.id ? { ...item, status: "testing" } : item))} size="small" variant="secondary">Resume testing</Button>}
             </article>
           );
         })}

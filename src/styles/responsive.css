@@ -41,8 +41,8 @@
   .dashboard-rail { grid-template-columns: repeat(3, 1fr); }
   .dashboard-layout { grid-template-columns: 1fr; }
   .dashboard-right-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .plan-content-grid { grid-template-columns: 190px minmax(0, 1fr); }
-  .review-rail { grid-column: 1 / -1; }
+  .implementation-workspace { grid-template-columns: 230px minmax(0, 1fr); }
+  .review-rail { grid-column: 2; }
   .workflow-grid { grid-template-columns: 1fr 1fr; }
   .support-inbox { grid-template-columns: 210px minmax(0, 1fr); }
   .coach-profile { display: none; }
@@ -52,6 +52,15 @@
   .admin-metric-grid { grid-template-columns: 1fr 1fr; }
   .provisioning-queue { grid-template-columns: 190px minmax(0, 1fr); }
   .provisioning-notes { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--border); }
+}
+
+@media (max-width: 899px) {
+  .implementation-workspace { grid-template-columns: 1fr; }
+  .implementation-workspace > .plan-timeline,
+  .review-rail { grid-column: auto; }
+  .workflow-grid,
+  .settings-grid,
+  .template-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 720px) {
@@ -119,7 +128,6 @@
   .program-meter { grid-template-columns: 1fr; }
   .week-grid { grid-template-columns: 1fr 1fr; }
   .week-grid article { border-bottom: 1px solid var(--border); }
-  .plan-content-grid { grid-template-columns: 1fr; }
   .artifact-nav { display: flex; overflow-x: auto; gap: 5px; }
   .artifact-nav > .micro-label { display: none; }
   .artifact-nav > button { min-width: 170px; }
