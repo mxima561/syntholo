@@ -1,0 +1,33 @@
+:root {
+  --canvas: #f8f8f6;
+  --surface: #ffffff;
+  --ink: #181818;
+  --muted: #777773;
+  --border: #e8e8e4;
+  --navy: #102a35;
+  --teal: #0f6f70;
+  --teal-dark: #0a5658;
+  --coral: #ef7d62;
+  --gold: #d5a943;
+  --success: #2a9d73;
+  --danger: #b9473f;
+  --teal-tint: #e6f3ef;
+  --coral-tint: #fdefeb;
+  --gold-tint: #f8f0da;
+  --text-body: 1rem;
+  --text-ui: 0.875rem;
+  --text-meta: 0.75rem;
+  --radius-control: 0.625rem;
+  --radius-card: 1rem;
+  --radius-shell: 1.375rem;
+  --motion-fast: 180ms;
+  --motion-standard: 240ms;
+  --shadow-card: 0 12px 32px rgba(16, 42, 53, 0.08);
+  --shadow-raised: 0 18px 48px rgba(16, 42, 53, 0.12);
+  --font-heading: var(--font-manrope), system-ui, sans-serif;
+  --font-body: var(--font-inter), system-ui, sans-serif;
+
+  /* Legacy aliases retained while existing selectors are split unchanged. */
+  --coral-ink: #9d3f2a;
+  --shadow: 0 22px 70px rgba(16, 42, 53, 0.1);
+}

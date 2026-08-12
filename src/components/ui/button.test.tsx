@@ -10,5 +10,18 @@ describe("Button", () => {
       "button-primary",
     );
   });
-});
 
+  it("maps human and milestone actions to semantic classes", () => {
+    render(
+      <>
+        <Button variant="human">Ask a coach</Button>
+        <Button variant="milestone">Add to calendar</Button>
+      </>,
+    );
+
+    expect(screen.getByRole("button", { name: "Ask a coach" })).toHaveClass("button-human");
+    expect(screen.getByRole("button", { name: "Add to calendar" })).toHaveClass(
+      "button-milestone",
+    );
+  });
+});

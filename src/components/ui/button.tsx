@@ -2,10 +2,18 @@ import Link from "next/link";
 import type { Route } from "next";
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 
+export type ButtonVariant =
+  | "primary"
+  | "secondary"
+  | "dark"
+  | "quiet"
+  | "human"
+  | "milestone";
+
 type ButtonProps<T extends string> = ButtonHTMLAttributes<HTMLButtonElement> & {
   children: ReactNode;
   href?: Route<T>;
-  variant?: "primary" | "secondary" | "dark" | "quiet";
+  variant?: ButtonVariant;
   size?: "small" | "medium" | "large";
 };
 
