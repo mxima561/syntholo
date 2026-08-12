@@ -38,6 +38,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .button-quiet { background: transparent; color: var(--ink); }
 .button-small { min-height: 44px; padding-inline: 13px; font-size: 13px; }
 .button-large { min-height: 52px; padding-inline: 20px; }
+.button:disabled { cursor: not-allowed; opacity: .62; box-shadow: none; }
+.button:disabled:hover, .button:disabled:active { transform: none; }
+.button-primary:disabled:hover { background: var(--teal); }
 
 .card { border: 1px solid var(--border); border-radius: 15px; padding: 20px; }
 .card-surface { background: var(--surface); }

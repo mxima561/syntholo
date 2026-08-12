@@ -86,8 +86,53 @@ test("human and community surfaces use readable conversation text", async ({ pag
     "rgb(16, 42, 53)",
   );
 
+  const sendReply = page.getByRole("button", { name: /send reply/i });
+  await expect(sendReply).toBeDisabled();
+  await sendReply.hover({ force: true });
+  const disabledReply = await sendReply.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { cursor: style.cursor, opacity: Number.parseFloat(style.opacity), transform: style.transform };
+  });
+  expect(disabledReply.cursor).toBe("not-allowed");
+  expect(disabledReply.opacity).toBeLessThan(1);
+  expect(disabledReply.transform).toBe("none");
+
+  await page.goto("/admin/provisioning");
+  const activateBusinessOs = page.getByRole("button", { name: /activate business os/i });
+  await expect(activateBusinessOs).toBeDisabled();
+  await activateBusinessOs.hover({ force: true });
+  const disabledAdminAction = await activateBusinessOs.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { cursor: style.cursor, opacity: Number.parseFloat(style.opacity), transform: style.transform };
+  });
+  expect(disabledAdminAction.cursor).toBe("not-allowed");
+  expect(disabledAdminAction.opacity).toBeLessThan(1);
+  expect(disabledAdminAction.transform).toBe("none");
+
   await page.goto("/learn/community");
   expect(await fontSize(page.locator(".community-post > p").first())).toBeGreaterThanOrEqual(15);
+});
+
+test("Business OS collapses before its desktop columns can overflow", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "This intermediate-width contract is exercised once.");
+
+  for (const width of [961, 1020]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/learn/business-os");
+    expect(await gridColumnCount(page.locator(".business-os-layout"))).toBe(1);
+    const documentWidth = await page.evaluate(() => ({
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    expect(documentWidth.scrollWidth, `${width}px viewport has page-root overflow`).toBeLessThanOrEqual(documentWidth.clientWidth);
+  }
+});
+
+test("coach profile name uses the card-title scale", async ({ page }) => {
+  await page.goto("/learn/support");
+  const coachName = await fontSize(page.locator(".coach-profile h2"));
+  expect(coachName).toBeGreaterThanOrEqual(16);
+  expect(coachName).toBeLessThanOrEqual(21);
 });
 
 test("mobile coach profile keeps its identity and support details in separate rows", async ({ page }) => {
