@@ -72,7 +72,33 @@ test("human and community surfaces use readable conversation text", async ({ pag
     "background-color",
     "rgb(239, 125, 98)",
   );
+  await expect(page.getByRole("button", { name: /send reply/i })).toHaveCSS(
+    "color",
+    "rgb(16, 42, 53)",
+  );
 
   await page.goto("/learn/community");
   expect(await fontSize(page.locator(".community-post > p").first())).toBeGreaterThanOrEqual(15);
+});
+
+test("mobile coach profile keeps its identity and support details in separate rows", async ({ page }) => {
+  test.skip(test.info().project.name !== "mobile", "This layout contract applies below 720px.");
+
+  await page.goto("/learn/support");
+  const [avatar, name, role, details, standard] = await Promise.all([
+    page.locator(".coach-profile > .coach-avatar").boundingBox(),
+    page.getByRole("heading", { name: "Naomi Reed" }).boundingBox(),
+    page.locator(".coach-profile > p").boundingBox(),
+    page.locator(".coach-profile dl").boundingBox(),
+    page.locator(".support-standard").boundingBox(),
+  ]);
+
+  if (!avatar || !name || !role || !details || !standard) {
+    throw new Error("Expected the mobile coach profile elements to be visible.");
+  }
+
+  expect(avatar.x + avatar.width).toBeLessThanOrEqual(name.x);
+  expect(name.y + name.height).toBeLessThanOrEqual(role.y);
+  expect(Math.max(avatar.y + avatar.height, role.y + role.height)).toBeLessThanOrEqual(details.y);
+  expect(details.y + details.height).toBeLessThanOrEqual(standard.y);
 });
