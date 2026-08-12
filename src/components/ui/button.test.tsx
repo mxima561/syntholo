@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { Button } from "./button";
@@ -22,6 +23,15 @@ describe("Button", () => {
     expect(screen.getByRole("button", { name: "Ask a coach" })).toHaveClass("button-human");
     expect(screen.getByRole("button", { name: "Add to calendar" })).toHaveClass(
       "button-milestone",
+    );
+  });
+
+  it("keeps small member-facing actions at the readable control floor", () => {
+    render(<Button size="small">Save settings</Button>);
+
+    expect(screen.getByRole("button", { name: "Save settings" })).toHaveClass("button-small");
+    expect(readFileSync("src/styles/base.css", "utf8")).toContain(
+      ".button-small { min-height: 44px; padding-inline: 13px; font-size: 13px; }",
     );
   });
 });

@@ -36,7 +36,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .button-dark { background: var(--navy); color: white; }
 .button-secondary { border: 1px solid var(--border); background: white; color: var(--navy); }
 .button-quiet { background: transparent; color: var(--ink); }
-.button-small { min-height: 38px; padding-inline: 13px; font-size: 12px; }
+.button-small { min-height: 44px; padding-inline: 13px; font-size: 13px; }
 .button-large { min-height: 52px; padding-inline: 20px; }
 
 .card { border: 1px solid var(--border); border-radius: 15px; padding: 20px; }
