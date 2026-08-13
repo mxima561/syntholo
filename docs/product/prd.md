@@ -1,9 +1,11 @@
 # Syntholo AI Operating System Academy — Product Requirements Document
 
-**Version:** 1.0  
+**Version:** 1.1
 **Status:** Approved for implementation  
 **Market:** English-speaking global, USD pricing  
-**Target:** Paid pilot in 20–24 weeks
+**Target:** Dual-path production launch after the ordered release gates pass
+
+> **Production architecture addendum:** [2026-08-12 Production Launch PRD Addendum](../superpowers/specs/2026-08-12-production-launch-design.md). The addendum supersedes this document where it changes customer identity, staff identity, PostgreSQL architecture, Circle community, certificates, entitlement boundaries, production flows, and launch gates.
 
 ## 1. Problem and outcomes
 
@@ -25,7 +27,7 @@ Prospective owner, customer owner, customer teammate, pilot member, self-paced l
 
 ### Non-goals
 
-No AI coach, native workflow builder, mobile app, certification, gamification, direct messaging, multilingual interface, local currencies, one-to-one coaching, or deep HighLevel integration in v1.
+No AI coach, native workflow builder, mobile app, public certificate lookup, certificate ID infrastructure, accreditation claims, gamification, direct messaging, multilingual interface, local currencies, one-to-one coaching, or deep HighLevel integration in v1.
 
 ## 2. Offers and entitlements
 
@@ -35,9 +37,11 @@ No AI coach, native workflow builder, mobile app, certification, gamification, d
 | Guided Pilot | $750 once | 3 | Lifetime course | Four weekly calls + 12 months support/community |
 | Self-Paced | $399 once | 3 | Lifetime course | 12 months support/community + monthly office hours |
 | Operator Club | $59/mo or $590/yr | 3 | Purchased courses | Active support, community, playbooks, office hours |
-| Business OS | $999 + $199/mo | 3 | Purchased courses | Configured HighLevel + Operator Club |
+| Business OS | $999 + $199/mo | 3 HighLevel users | None unless separately purchased | Configured HighLevel service with separate login |
 
 Course refunds are unconditional for seven days, subject to mandatory law. Operator Club cancels at term end. Business OS onboarding is refundable until provisioning starts. Failed subscriptions receive seven days of grace; day eight restricts paid benefits without deleting data.
+
+Operator Club is available only to existing Academy accounts. If selected before the included 12-month support window expires, billing and renewed support/community benefits begin at expiry. Business OS is independent and does not grant or gate Academy or Operator Club access.
 
 Entitlements are `course`, `support`, `community_write`, `operator_club`, and `business_os`; statuses are `active`, `grace`, `expired`, `refunded`, and `revoked`.
 
@@ -51,7 +55,7 @@ After completion, show the overall score and band. Require first name, work emai
 
 ### Checkout and claim
 
-Checkout occurs before account creation. Stripe success creates a pending purchase, enrollment, entitlements, and a seven-day claim token through a verified, idempotent webhook. The buyer claims access through WorkOS email code, Google, or Microsoft. Verified WorkOS and Stripe emails must match. Reminders send after one hour, 24 hours, and 72 hours.
+Checkout occurs before account creation. Stripe success creates a pending purchase, enrollment, entitlements, and a seven-day claim token through a verified, idempotent webhook. The buyer claims access through Clerk magic link, Google, or Microsoft. The verified Clerk and Stripe emails must match. Reminders send after one hour, 24 hours, and 72 hours.
 
 Each customer identity belongs to one customer business. The buyer becomes `customer_owner`; two pending or active teammate invitations consume the remaining seats. Invitations expire in seven days. Owners can revoke, resend, replace teammates, and transfer ownership after reauthentication.
 
@@ -78,6 +82,8 @@ Each learner tracks lesson status and resume position independently. The busines
 
 Completion requires all 18 lessons, all five outputs, and three workflow records marked `live`. Each workflow stores its problem, trigger, owner, tools, steps, human review point, data-safety notes, baseline, target, test status, and launch date. New course content never revokes a previous completion.
 
+Each member receives an unaccredited PDF certificate after completing the 18 required published lessons for the enrolled course version. Certificate issuance is a progress achievement, not an entitlement. It is independent of purchase tier and support status and is not revoked by a refund, dispute, seat reassignment, or support expiry. V1 has no public lookup, certificate ID system, or accreditation claim.
+
 Shared outputs autosave and use optimistic version checks. A conflicting edit must show comparison rather than silently overwrite. Members may request human feedback on one artifact at a time.
 
 ### Next best step
@@ -94,6 +100,8 @@ Pilot cohorts receive one Zoom session weekly for four weeks. Self-paced and Ope
 
 Community spaces are Start Here, Wins, Growth, Client, Management, Tool Questions, Announcements, and private cohorts. Members use real name, role, and business. Content publishes immediately and can be reported, hidden, restored, locked, or removed. Expired support becomes read-only. Direct messaging and community file uploads are excluded.
 
+Circle is the community system of record. Clerk provides OAuth 2.0 SSO, and Syntholo synchronizes entitlement-driven Circle access groups without mirroring posts or comments into the application database.
+
 ## 6. Operator Club and Business OS
 
 Membership prompts appear 30 days, seven days, and on the support-expiration date, while clearly stating that lifetime course access continues.
@@ -103,6 +111,8 @@ Business OS includes one branded HighLevel account, three users, one pipeline, o
 Checkout charges $999 and starts $199/month. The five-business-day provisioning SLA begins after the complete questionnaire. States are `pending_onboarding`, `provisioning`, `active`, `paused`, and `canceled`. External verification or missing customer access pauses the SLA. Activation requires test lead capture, routing, booking, messages, onboarding, AI escalation, and dashboard activity.
 
 Cancellation starts a 30-day export/reactivation window, with notices on days 0, 14, 27, and 29. Academy access is independent of HighLevel status.
+
+After activation, an operator manually re-runs the seven activation checks monthly and after material HighLevel changes or customer reports. A failure sets `degraded`, opens an incident, and notifies the customer. Automate monitoring at 25 active accounts, two customer-discovered degradations within 90 days, or eight operator hours per month, whichever happens first.
 
 ## 7. Administration and content operations
 
@@ -118,20 +128,24 @@ Send scorecard reports, receipts, account claims, invites, security alerts, sess
 
 ## 9. Technical architecture
 
-- Next.js App Router and TypeScript on Vercel.
-- MongoDB Atlas, U.S. primary region.
-- WorkOS AuthKit organizations and roles: `customer_owner`, `customer_member`, `coach`, `admin`.
-- Mandatory MFA for administrators; optional for others.
+- One TypeScript monorepo with independently deployable Next.js web, Fastify API, and worker/cron applications.
+- Next.js App Router web on Vercel.
+- API, worker, and cron services on Railway.
+- Neon PostgreSQL in a U.S. primary region with pooled connections and tested point-in-time recovery.
+- Clerk for customer owners and teammates, including magic links, social sign-in, and Circle OAuth SSO.
+- WorkOS for coach/admin identity and RBAC, with mandatory MFA for administrators.
+- A central entitlement authority for all access decisions.
 - Mux signed video.
 - Stripe Checkout/Billing.
 - Zoom live sessions.
 - Resend transactional email.
 - Vercel Private Blob for templates, artifacts, and attachments.
+- Circle Business or higher for community and entitlement-driven access groups.
 - PostHog U.S. Cloud with session replay disabled and no PII or content properties.
 - HighLevel SaaS Mode and snapshots with separate login.
 - Sentry and Vercel observability.
 
-Every customer-owned MongoDB record carries an immutable `organizationId` derived from the verified WorkOS session. Webhook receipts store provider event IDs before mutation. Vendor failures must not block unrelated product areas.
+Every customer-owned PostgreSQL row carries an immutable `accountId`. Member-facing database access is protected by scoped repositories and PostgreSQL row-level security; staff and worker roles remain separate and audited. Webhook receipts store provider event IDs before mutation. Vendor failures must not block unrelated product areas or fall back to demo data.
 
 ## 10. Quality and release gates
 
@@ -141,5 +155,4 @@ Every customer-owned MongoDB record carries an immutable `organizationId` derive
 - U.S. primary data region; consent-gated analytics where required; 13-month analytics retention, 24-month audit retention, financial records seven years.
 - Soft-delete customer data for 30 days and hard-delete active copies by day 45, except legally retained records.
 
-Internal alpha must pass cross-organization authorization, payment/refund/entitlement replay, content publication, learning, support, session, community, and provisioning journeys. Pilot requires complete accessible course content, four scheduled calls, two trained coaches, approved HighLevel snapshot, legal pages, and incident/support runbooks.
-
+Internal alpha must pass cross-account authorization, dual-identity separation, payment/refund/dispute/entitlement replay, content publication, learning, certificate, support, session, Circle, and provisioning journeys. Paid launch requires all 18 accessible lessons to be complete and published, four scheduled Pilot calls, two trained coaches, approved legal copy, and incident/support runbooks. Business OS checkout additionally requires the approved HighLevel snapshot and seven-check operating process.

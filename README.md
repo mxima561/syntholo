@@ -45,6 +45,6 @@ npm run test:e2e
 
 ## Production launch
 
-Set `APP_MODE=production`, configure every required value in `.env.example`, register the Stripe webhook at `/api/webhooks/stripe`, and follow [docs/operations/demo-and-production.md](docs/operations/demo-and-production.md). WorkOS authorization and live Stripe Checkout should be connected at deployment; this repository intentionally keeps all local journeys usable without credentials.
+The current repository is a tested product demo and integration scaffold, not the approved production backend. Do not enable live payments or treat `APP_MODE=production` as production readiness. The backend-first production architecture, launch gates, and migration boundaries are defined in the [Production Launch PRD Addendum](docs/superpowers/specs/2026-08-12-production-launch-design.md). The existing `.env.example` and [demo runbook](docs/operations/demo-and-production.md) describe the current scaffold and will be replaced during implementation.
 
-The product specification is in [docs/product/prd.md](docs/product/prd.md), visual rules are in [design.md](design.md), and the implementation plan is in [docs/superpowers/plans/2026-08-11-syntholo-platform.md](docs/superpowers/plans/2026-08-11-syntholo-platform.md).
+The product specification is in [docs/product/prd.md](docs/product/prd.md), production architecture is in the [Production Launch PRD Addendum](docs/superpowers/specs/2026-08-12-production-launch-design.md), visual rules are in [design.md](design.md), and the original demo implementation plan is in [docs/superpowers/plans/2026-08-11-syntholo-platform.md](docs/superpowers/plans/2026-08-11-syntholo-platform.md).

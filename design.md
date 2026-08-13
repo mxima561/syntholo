@@ -5,6 +5,7 @@
 **Status:** Approved  
 **Updated:** 2026-08-12
 **Visual refresh:** [Approved Syntholo visual-refresh specification](docs/superpowers/specs/2026-08-12-visual-refresh-design.md)
+**Production architecture:** [Production Launch PRD Addendum](docs/superpowers/specs/2026-08-12-production-launch-design.md)
 
 ## Product promise
 
@@ -97,6 +98,10 @@ Premium, calm, human, optimistic, direct, and credible. Avoid corporate-gray mon
 
 The course has six stages, 18 short lessons, and five shared outputs: readiness/opportunity map, team AI policy, three-workflow launch portfolio, team enablement checklist, and 90-day roadmap. Personal lesson progress is separate from shared business implementation.
 
+### Certificates
+
+Each member receives an unaccredited PDF certificate upon completing all 18 published lessons. No public verification lookup, no certificate ID system, and no accreditation claims in v1. Certificate issuance is driven by lesson-completion state, independent of purchase tier or support-window status.
+
 Self-paced customers receive all stages immediately. Pilot stages are bundled into four weekly releases: Diagnose + Rules, Growth, Client + Management, and Launch + Roadmap.
 
 Every lesson contains a 5–12 minute video, captions, transcript, summary, action, and relevant resources. Commercial recommendations are contextual, optional, and clearly labeled as affiliate or white-label relationships.
@@ -109,8 +114,22 @@ Every lesson contains a 5–12 minute video, captions, transcript, summary, acti
 - Operator Club: $59/month or $590/year.
 - Syntholo Business OS: $999 onboarding plus $199/month.
 
-Course buyers keep lifetime access. After 12 months, community becomes read-only and active human support requires Operator Club. Business OS uses a separate branded HighLevel login and never blocks academy access.
+Course buyers keep lifetime access. After 12 months, community becomes read-only and active human support requires Operator Club. Operator Club is available only to existing Academy accounts; if selected before included support expires, billing and renewed support/community access begin at expiry. Business OS uses a separate branded HighLevel login and never blocks academy access.
+
+### Refunds, disputes, and cancellations
+
+Academy purchases have an unconditional seven-day refund window, subject to mandatory law. An approved full refund marks the purchase-sourced course, support, and community grants as refunded and releases its seats without deleting the account, lesson-progress history, previously issued certificates, or audit events. Operator Club cancellation takes effect at the end of the paid term. Failed recurring payments receive seven days of grace; day eight restricts the affected paid benefits without deleting customer data. Business OS onboarding is refundable until provisioning starts; cancellation of the monthly service never changes Academy access.
+
+An open Stripe dispute creates an administrative hold that blocks new purchases, teammate invitations or replacements, and Business OS activation while preserving existing learning access until the dispute is resolved. A won dispute clears the hold. A lost dispute revokes only the grants sourced from the disputed transaction. Every request, decision, Stripe action, webhook, grant transition, and customer notice is idempotent and audited.
+
+The unconditional seven-day Academy refund window must appear consistently on the Self-Paced sales page, Guided Pilot offer and approval email, public or private Academy checkout, and terms of service before payments are enabled. Checkout must show the policy beside the purchase action and link to the full terms. Operator Club and Business OS use their separate cancellation and refund disclosures. Legal counsel must approve the final customer-facing language before launch.
+
+### Business OS activation standard
+
+Business OS activation requires all seven checks to pass: lead capture, lead routing, calendar booking, inbound and outbound messaging, client onboarding, AI escalation to a human, and dashboard reporting activity. Each check stores its status, evidence, actor, and timestamp in Syntholo. Activation remains disabled until all seven pass. HighLevel remains separately authenticated and does not share sessions or mirrored customer data with Syntholo.
+
+V1 post-activation monitoring is manual, not continuous. An operator re-runs and records all seven checks monthly for every active Business OS account and after any material HighLevel change or customer-reported incident. A failed check changes the Syntholo status to `degraded`, opens an operations incident, and notifies the customer without affecting Academy access. Revisit automated synthetic monitoring when the first of these triggers occurs: 25 active Business OS accounts, two customer-discovered degradations before the scheduled check within 90 days, or more than eight operator hours per month spent on re-verification. Any future automation must preserve HighLevel's separate authentication and must not mirror customer data into Syntholo.
 
 ## V1 exclusions
 
-Automated AI coaching, native workflow builder, HighLevel SSO or mirrored data, mobile apps, gamification, certificates, multilingual content, local currencies, direct messaging, private coaching, and custom per-client Business OS builds.
+Automated AI coaching, native workflow builder, HighLevel SSO or mirrored data, mobile apps, gamification, multilingual content, local currencies, direct messaging, private coaching, and custom per-client Business OS builds.

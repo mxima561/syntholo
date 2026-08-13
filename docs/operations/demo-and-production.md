@@ -1,5 +1,7 @@
 # Syntholo demo and production runbook
 
+> **Architecture notice:** This document describes the current deterministic demo and its original integration scaffold. It is not sufficient for a live launch. The approved backend-first target, dual identity model, PostgreSQL architecture, production flows, and release gates are defined in the [Production Launch PRD Addendum](../superpowers/specs/2026-08-12-production-launch-design.md), which supersedes conflicting production instructions here. This runbook must be rewritten and rehearsed as part of that implementation before live payments are enabled.
+
 ## 1. Operating modes
 
 ### Demo
