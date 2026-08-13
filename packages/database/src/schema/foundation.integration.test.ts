@@ -160,7 +160,7 @@ describe("foundation migration", () => {
 
       expect(first.stderr).toBe("");
       expect(migratedTables.rows[0]?.count).toBe("8");
-      expect(firstJournal.rows).toHaveLength(1);
+      expect(firstJournal.rows).toHaveLength(2);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
       const rerun = await runDatabaseNpm(

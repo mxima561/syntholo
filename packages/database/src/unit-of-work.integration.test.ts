@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { eq, sql } from "drizzle-orm";
 import { accounts } from "./schema/index.js";
 import {
   createUnitOfWork,
@@ -45,21 +46,31 @@ describe("database transactions", () => {
     expect(result.rows[0]?.count).toBe("0");
   });
 
-  it("runs an account callback inside a committing transaction", async () => {
+  it("sets the account scope inside a committing transaction", async () => {
     const accountId = await harness.factories.account(harness.database);
 
-    const insertedName = await withAccountScope(
+    const scoped = await withAccountScope(
       harness.database,
       accountId,
       async (transaction) => {
+        const setting = await transaction.execute<{ accountId: string }>(
+          sql`select current_setting('app.account_id') as "accountId"`,
+        );
         const rows = await transaction
-          .insert(accounts)
-          .values({ name: "Scoped transaction account" })
+          .update(accounts)
+          .set({ name: "Scoped transaction account" })
+          .where(eq(accounts.id, accountId))
           .returning({ name: accounts.name });
-        return rows[0]?.name;
+        return {
+          accountId: setting.rows[0]?.accountId,
+          name: rows[0]?.name,
+        };
       },
     );
 
-    expect(insertedName).toBe("Scoped transaction account");
+    expect(scoped).toEqual({
+      accountId,
+      name: "Scoped transaction account",
+    });
   });
 });

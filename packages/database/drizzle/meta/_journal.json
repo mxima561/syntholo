@@ -8,6 +8,13 @@
       "when": 1786618800000,
       "tag": "0001_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1786626000000,
+      "tag": "0002_roles_and_rls",
+      "breakpoints": true
     }
   ]
 }

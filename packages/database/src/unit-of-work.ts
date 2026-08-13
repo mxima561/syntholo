@@ -1,4 +1,14 @@
+import { sql } from "drizzle-orm";
 import type { Database } from "./client.js";
+
+const canonicalUuidPattern =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
+
+function assertCanonicalAccountId(accountId: string): void {
+  if (!canonicalUuidPattern.test(accountId)) {
+    throw new Error("ACCOUNT_ID_INVALID");
+  }
+}
 
 export type DatabaseTransaction = Parameters<
   Parameters<Database["transaction"]>[0]
@@ -24,12 +34,16 @@ export function createUnitOfWork(database: Database): UnitOfWork {
   return new PostgresUnitOfWork(database);
 }
 
-export function withAccountScope<T>(
+export async function withAccountScope<T>(
   database: Database,
   accountId: string,
   run: (tx: DatabaseTransaction) => Promise<T>,
 ): Promise<T> {
-  // Task 4 adds SET LOCAL and RLS inside this transaction boundary.
-  void accountId;
-  return database.transaction(run);
+  assertCanonicalAccountId(accountId);
+  return database.transaction(async (transaction) => {
+    await transaction.execute(
+      sql`select set_config('app.account_id', ${accountId}, true)`,
+    );
+    return run(transaction);
+  });
 }
