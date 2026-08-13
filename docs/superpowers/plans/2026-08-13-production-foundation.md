@@ -474,8 +474,8 @@ git commit -m "feat: add API and worker runtimes"
 
 **Interfaces:**
 - Consumes Clerk `authenticateRequest(request, { authorizedParties, audience })` and maps only verified `userId` to `MemberActor` through the database.
-- Consumes WorkOS access JWT through `jose.jwtVerify` with configured JWKS, issuer, audience/client ID; maps `sub`, `role`, and permissions to `StaffActor`.
-- Produces API-owned `GET /v1/staff/auth/sign-in`, `GET /v1/staff/auth/callback`, and `POST /v1/staff/auth/sign-out`. The API exchanges the WorkOS code, stores encrypted access/refresh tokens in `staff_sessions`, and sets only a hashed-lookup opaque session ID in a Secure/HttpOnly/SameSite=Lax parent-domain cookie. The web forwards that cookie without possessing WorkOS tokens or a WorkOS secret.
+- Consumes WorkOS access JWT through `jose.jwtVerify` with configured JWKS and issuer; validates documented `client_id` exactly without inventing an OAuth audience, plus organization, session, singleton role, permissions, `iat`, and `auth_time`.
+- Produces API-owned `GET /v1/staff/auth/sign-in`, `GET /v1/staff/auth/callback`, and `POST /v1/staff/auth/sign-out` behind the canonical origin's external `/v1` rewrite. The API exchanges the WorkOS code, stores encrypted access/refresh tokens in `staff_sessions`, and sets only a hashed-lookup opaque ID in a production host-only `__Host-syntholo_staff_session` cookie (`Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, no `Domain`). Local development uses a distinct unprefixed non-Secure cookie.
 - `staff_sessions` stores SHA-256 session lookup, AES-256-GCM token ciphertext/IV/tag, key version, expiry, revocation time, WorkOS session ID, and staff ID. `STAFF_SESSION_ENCRYPTION_KEYS` exists only in the API secret store; sign-out revokes the row and WorkOS session.
 - Produces hooks `requireMember`, `requireCoach`, `requireAdmin`, and `requireRecentAuth(actor, maxAgeSeconds)`.
 
@@ -499,7 +499,7 @@ Expected: routes or verifiers do not exist.
 
 - [ ] **Step 3: Implement provider adapters and actor lookup**
 
-Use Clerk's official backend verification with explicit authorized parties and audience. Verify WorkOS JWT signature, `iss`, `aud`, expiration, and role. Never accept provider claims as internal `accountId` or `staffId`; resolve the internal mapping from PostgreSQL.
+Use Clerk's official backend verification with bearer-only `session_token`, explicit authorized parties and audience. Verify WorkOS JWT signature, `iss`, documented `client_id`, organization, `auth_time`, expiration, and exact role/permissions. Do not require an undocumented WorkOS `aud`. Never accept provider claims as internal `accountId` or `staffId`; resolve the internal mapping from PostgreSQL.
 
 ```ts
 export async function verifyMember(request: Request, deps: MemberAuthDependencies): Promise<MemberActor> {
@@ -512,7 +512,8 @@ export async function verifyMember(request: Request, deps: MemberAuthDependencie
 }
 
 export async function verifyStaff(token: string, deps: StaffAuthDependencies): Promise<StaffActor> {
-  const { payload } = await jwtVerify(token, deps.jwks, { issuer: deps.issuer, audience: deps.clientId });
+  const { payload } = await jwtVerify(token, deps.jwks, { issuer: deps.issuer });
+  if (payload.client_id !== deps.clientId) throw new AppError("UNAUTHENTICATED", 401, "Sign in required");
   return deps.identities.findStaffActorByWorkosUserId(String(payload.sub), payload.role, payload.permissions);
 }
 ```
@@ -525,13 +526,13 @@ export async function workosCallback(request: FastifyRequest, reply: FastifyRepl
   });
   const session = await deps.staffSessions.createEncrypted(tokens, deps.clock.now());
   reply.setCookie(deps.cookieName, session.rawCookieId, {
-    domain: deps.cookieDomain, path: "/", httpOnly: true, secure: deps.environment !== "local", sameSite: "lax", maxAge: session.maxAgeSeconds,
+    path: "/", httpOnly: true, secure: deps.environment !== "local", sameSite: "lax", maxAge: session.maxAgeSeconds,
   });
   return reply.redirect(deps.staffHomeUrl);
 }
 ```
 
-Remove `@workos-inc/authkit-nextjs` and the web WorkOS integration stub; install the official WorkOS Node SDK in `@syntholo/integrations`. The web's staff client sends `credentials: "include"` and never reads the cookie/token.
+Remove `@workos-inc/authkit-nextjs` and the web WorkOS integration stub; install the official WorkOS Node SDK in `@syntholo/integrations`. The web's staff client sends relative same-origin requests and never reads the cookie/token.
 
 ```bash
 npm uninstall @workos-inc/authkit-nextjs -w @syntholo/web

@@ -56,6 +56,8 @@ const foundationTables = [
   "outbox_events",
   "provider_event_receipts",
   "staff_identities",
+  "staff_login_attempts",
+  "staff_sessions",
 ] as const;
 
 type RuntimeLogin = Readonly<{
@@ -420,7 +422,7 @@ describe.sequential("capability role provisioning migration", () => {
           "select count(*)::text as count from drizzle.__drizzle_migrations",
         )
       ));
-      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["2", "2"]);
+      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["3", "3"]);
       const passwords = await maintenance.query<{
         rolname: string;
         rolpasswordisnull: boolean;
@@ -1106,6 +1108,7 @@ describe("PostgreSQL account role boundary", () => {
         "memberships",
         "outbox_events",
         "staff_identities",
+        "staff_sessions",
       ].map((table_name) => ({
         grantee: "syntholo_staff_api",
         privilege_type: "SELECT",
@@ -1284,12 +1287,12 @@ describe("PostgreSQL account role boundary", () => {
       const afterUpgrade = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterUpgrade.rows[0]?.count).toBe("2");
+      expect(afterUpgrade.rows[0]?.count).toBe("3");
       await migrateDatabase(upgradeDb);
       const afterRerun = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterRerun.rows[0]?.count).toBe("2");
+      expect(afterRerun.rows[0]?.count).toBe("3");
 
       freshDb = createDatabase({
         applicationName: "syntholo-rls-fresh-test",
@@ -1299,7 +1302,7 @@ describe("PostgreSQL account role boundary", () => {
       const freshJournal = await freshDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(freshJournal.rows[0]?.count).toBe("2");
+      expect(freshJournal.rows[0]?.count).toBe("3");
     } finally {
       await Promise.allSettled([upgradeDb?.close(), freshDb?.close()]);
       try {

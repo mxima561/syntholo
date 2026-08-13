@@ -141,6 +141,8 @@ describe("foundation migration", () => {
           "outbox_events",
           "provider_event_receipts",
           "staff_identities",
+          "staff_login_attempts",
+          "staff_sessions",
         ]],
       );
       const firstJournal = await targetPool.query<{
@@ -159,8 +161,8 @@ describe("foundation migration", () => {
       );
 
       expect(first.stderr).toBe("");
-      expect(migratedTables.rows[0]?.count).toBe("8");
-      expect(firstJournal.rows).toHaveLength(2);
+      expect(migratedTables.rows[0]?.count).toBe("10");
+      expect(firstJournal.rows).toHaveLength(3);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
       const rerun = await runDatabaseNpm(
@@ -190,7 +192,7 @@ describe("foundation migration", () => {
     }
   }, 20_000);
 
-  it("creates all eight foundation tables", async () => {
+  it("creates all foundation and authentication tables", async () => {
     const result = await harness.database.pool.query<{ table_name: string }>(
       `select table_name
        from information_schema.tables
@@ -206,6 +208,8 @@ describe("foundation migration", () => {
         "outbox_events",
         "provider_event_receipts",
         "staff_identities",
+        "staff_login_attempts",
+        "staff_sessions",
       ]],
     );
 
@@ -218,6 +222,8 @@ describe("foundation migration", () => {
       "outbox_events",
       "provider_event_receipts",
       "staff_identities",
+      "staff_login_attempts",
+      "staff_sessions",
     ]);
   });
 

@@ -90,10 +90,46 @@ const expectedColumns = {
     "created_at",
     "updated_at",
   ],
+  staff_login_attempts: [
+    "state_hash",
+    "browser_nonce_hash",
+    "verifier_ciphertext",
+    "verifier_iv",
+    "verifier_tag",
+    "key_version",
+    "prior_session_hash",
+    "return_to",
+    "expires_at",
+    "consumed_at",
+    "created_at",
+  ],
+  staff_sessions: [
+    "session_hash",
+    "previous_session_hash",
+    "staff_identity_id",
+    "workos_user_id",
+    "workos_session_id",
+    "organization_id",
+    "provider_roles",
+    "provider_permissions",
+    "token_ciphertext",
+    "token_iv",
+    "token_tag",
+    "key_version",
+    "access_token_expires_at",
+    "hard_expires_at",
+    "authenticated_at",
+    "refresh_version",
+    "refresh_lease_id",
+    "refresh_lease_expires_at",
+    "revoked_at",
+    "created_at",
+    "updated_at",
+  ],
 } as const;
 
 describe("foundation Drizzle schema", () => {
-  it("declares the eight foundation table and column contracts", () => {
+  it("declares the foundation and authentication table contracts", () => {
     const actual = Object.values(schema)
       .map((table) => [
         getTableName(table),

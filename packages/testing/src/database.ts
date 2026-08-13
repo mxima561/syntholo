@@ -99,6 +99,8 @@ export type DatabaseFactories = typeof databaseFactories;
 export async function resetTestDatabase(database: Database): Promise<void> {
   await database.pool.query(`
     truncate table
+      staff_login_attempts,
+      staff_sessions,
       provider_event_receipts,
       jobs,
       outbox_events,

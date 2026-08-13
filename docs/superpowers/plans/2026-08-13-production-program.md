@@ -269,6 +269,9 @@ Self-review result: all addendum sections have an owning implementation task. Th
 
 - [ ] Foundation plan test suite, cross-account denial suite, RLS integration suite, entitlement state/property suite, API health, and worker claim tests pass.
 - [ ] Clerk tokens cannot enter staff routes; WorkOS sessions cannot enter member routes.
+- [ ] Record the exact canonical host/callback/redirects, Clerk production instance/authorized party/audience, and WorkOS issuer/client/organization/singleton roles/permissions/MFA/session policy.
+- [ ] Capture staging WorkOS token-schema evidence for `client_id` and `auth_time` without token material; assign the encryption-key owner and prove two-phase rotation/recovery.
+- [ ] Prove deployed `/v1` proxy conformance for status, body, `Location`, `Set-Cookie`, `Cookie`, and `Authorization`, plus exact member/staff PostgreSQL runtime capability attestation.
 - [ ] Web, API, and worker build independently and report the same release SHA.
 
 ### Gate 2 — Production workflows

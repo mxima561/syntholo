@@ -9,7 +9,7 @@
     "./errors": "./src/plugins/error-handler.ts"
   },
   "scripts": {
-    "build": "esbuild src/server.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server.js --external:fastify --external:fastify-plugin --external:fastify-raw-body --external:zod",
+    "build": "esbuild src/server.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server.js --external:fastify --external:fastify-plugin --external:fastify-raw-body --external:zod --external:pg --external:drizzle-orm --external:drizzle-orm/* --external:@clerk/backend --external:@workos-inc/node --external:jose",
     "dev": "tsx watch src/server.ts",
     "lint": "eslint --config ../../eslint.config.mjs src vitest.config.ts",
     "start": "node dist/server.js",
@@ -18,6 +18,9 @@
   },
   "dependencies": {
     "@syntholo/contracts": "^0.1.0",
+    "@syntholo/database": "^0.1.0",
+    "@syntholo/domain": "^0.1.0",
+    "@syntholo/integrations": "^0.1.0",
     "fastify": "5.11.3",
     "fastify-plugin": "6.0.0",
     "fastify-raw-body": "6.0.1",

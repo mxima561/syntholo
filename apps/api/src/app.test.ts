@@ -29,6 +29,7 @@ function fakes(
     releaseSha: "test",
     logger: false,
     health: { dependencies: [] },
+    auth: { kind: "test-only-disabled" },
     ...patch,
   };
 }
@@ -979,6 +980,7 @@ describe("API configuration and startup", () => {
           },
         ],
       },
+      auth: { kind: "test-only-disabled" },
     });
 
     const live = await app.inject({
@@ -1009,26 +1011,49 @@ describe("API configuration and startup", () => {
   });
 
   it("parses and preserves validated production startup values", () => {
+    const encryptionKey = Buffer.alloc(32, 5).toString("base64url");
     expect(
       parseApiConfig({
         NODE_ENV: "production",
         HOST: "127.0.0.1",
         PORT: "4400",
-        DATABASE_URL: "  postgres://user:password@example.test/db  ",
+        MEMBER_DATABASE_URL: "postgres://member:password@example.test/db",
+        STAFF_DATABASE_URL: "postgres://staff:password@example.test/db",
         RELEASE_SHA: "  release-abc  ",
+        WEB_ORIGIN: "https://app.syntholo.test",
+        CLERK_SECRET_KEY: "sk_clerk_test",
+        CLERK_PUBLISHABLE_KEY: "pk_clerk_test",
+        CLERK_AUDIENCE: "syntholo-member-api",
+        WORKOS_API_KEY: "sk_workos_test",
+        WORKOS_CLIENT_ID: "client_staff",
+        WORKOS_ORGANIZATION_ID: "org_staff",
+        WORKOS_ISSUER: "https://api.workos.test",
+        WORKOS_JWKS_URL: "https://api.workos.test/sso/jwks/client_staff",
+        STAFF_SESSION_ENCRYPTION_KEYS: `1:${encryptionKey}`,
       }),
     ).toEqual({
       environment: "production",
       host: "127.0.0.1",
       port: 4_400,
-      databaseUrl: "postgres://user:password@example.test/db",
+      memberDatabaseUrl: "postgres://member:password@example.test/db",
+      staffDatabaseUrl: "postgres://staff:password@example.test/db",
       releaseSha: "release-abc",
+      webOrigin: "https://app.syntholo.test",
+      clerkSecretKey: "sk_clerk_test",
+      clerkPublishableKey: "pk_clerk_test",
+      clerkAudience: "syntholo-member-api",
+      workosApiKey: "sk_workos_test",
+      workosClientId: "client_staff",
+      workosOrganizationId: "org_staff",
+      workosIssuer: "https://api.workos.test",
+      workosJwksUrl: "https://api.workos.test/sso/jwks/client_staff",
+      sessionEncryptionKeys: `1:${encryptionKey}`,
     });
   });
 
   it.each([
     [{ NODE_ENV: "production", RELEASE_SHA: "release" }],
-    [{ NODE_ENV: "production", DATABASE_URL: "postgres://user:secret@example.test/db" }],
+    [{ NODE_ENV: "production", MEMBER_DATABASE_URL: "postgres://user:secret@example.test/db" }],
   ])("fails production configuration closed without required values", (environment) => {
     const serializedEnvironment = JSON.stringify(environment);
     expect(() => parseApiConfig(environment)).toThrow("API_CONFIG_INVALID");

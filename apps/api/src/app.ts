@@ -1,6 +1,8 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { LogController, type FastifyInstance } from "fastify";
 import rawBody from "fastify-raw-body";
 import { z } from "zod";
+import { authRoutes } from "./auth/routes.js";
+import type { AuthComposition } from "./auth/types.js";
 import { correlationIdForRequest, requestContextPlugin } from "./plugins/context.js";
 import { safeErrorHandler } from "./plugins/error-handler.js";
 import {
@@ -14,6 +16,8 @@ export type ApiDependencies = Readonly<{
   health: Readonly<{
     dependencies: readonly ReadinessDependency[];
   }>;
+  auth: AuthComposition;
+  close?: () => Promise<void>;
 }>;
 
 const ApiDependenciesSchema = z
@@ -34,6 +38,18 @@ const ApiDependenciesSchema = z
         ),
       })
       .strict(),
+    auth: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("test-only-disabled") }).strict(),
+      z
+        .object({
+          kind: z.literal("enabled"),
+          dependencies: z.custom<
+            Extract<AuthComposition, { kind: "enabled" }>["dependencies"]
+          >((value) => typeof value === "object" && value !== null),
+        })
+        .strict(),
+    ]),
+    close: z.custom<() => Promise<void>>((value) => typeof value === "function").optional(),
   })
   .strict();
 
@@ -48,6 +64,7 @@ export async function buildApp(
     logger: parsedDependencies.data.logger ?? false,
     requestIdHeader: false,
     genReqId: correlationIdForRequest,
+    logController: new LogController({ disableRequestLogging: true }),
   });
 
   await app.register(rawBody, {
@@ -63,6 +80,15 @@ export async function buildApp(
     releaseSha: parsedDependencies.data.releaseSha,
     dependencies: parsedDependencies.data.health.dependencies,
   });
+  if (parsedDependencies.data.auth.kind === "enabled") {
+    await app.register(authRoutes, {
+      prefix: "/v1",
+      ...parsedDependencies.data.auth.dependencies,
+    });
+  }
+  if (parsedDependencies.data.close) {
+    app.addHook("onClose", parsedDependencies.data.close);
+  }
   // Expose only the fully composed app; Fastify rejects later plugins/routes/hooks.
   await app.ready();
 

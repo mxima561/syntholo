@@ -10,3 +10,4 @@ export {
   outboxEvents,
   providerEventReceipts,
 } from "./operations.js";
+export { staffLoginAttempts, staffSessions } from "./auth.js";

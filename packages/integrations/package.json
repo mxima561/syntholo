@@ -10,5 +10,10 @@
     "lint": "eslint --config ../../eslint.config.mjs src",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@clerk/backend": "3.16.4",
+    "@workos-inc/node": "10.10.0",
+    "jose": "6.2.8"
   }
 }

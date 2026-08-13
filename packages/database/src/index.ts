@@ -1,9 +1,22 @@
-export { createDatabase } from "./client.js";
-export type { Database, DatabaseConfig } from "./client.js";
+export { assertDatabaseCapability, createDatabase } from "./client.js";
+export type { Database, DatabaseCapability, DatabaseConfig } from "./client.js";
 export { selectMigrationDatabaseUrl } from "./migration-config.js";
 export type { MigrationEnvironment } from "./migration-config.js";
 export { migrateDatabase } from "./migrations.js";
 export { AccountRepository } from "./repositories/accounts.js";
+export {
+  MemberIdentityRepository,
+  StaffIdentityRepository,
+  StaffLoginAttemptRepository,
+  StaffSessionRepository,
+} from "./repositories/auth.js";
+export type {
+  DatabaseLoginAttempt,
+  DatabaseStaffIdentity,
+  DatabaseStaffSession,
+  DatabaseWorkosClaims,
+  EncryptedDatabaseValue,
+} from "./repositories/auth.js";
 export type {
   AccountRecord,
   AccountScope,
@@ -23,4 +36,6 @@ export {
   outboxEvents,
   providerEventReceipts,
   staffIdentities,
+  staffLoginAttempts,
+  staffSessions,
 } from "./schema/index.js";

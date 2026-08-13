@@ -35,6 +35,8 @@ policy.
 | `outbox_events` | customer when `account_id` is set | all; admin policy | no grant and no policy | `SELECT`; cross-account read policy | `SELECT`, `INSERT`, `UPDATE`; operational policies |
 | `jobs` | customer when `account_id` is set | all; admin policy | no grant and no policy | `SELECT`; cross-account read policy | `SELECT`, `INSERT`, `UPDATE`; operational policies |
 | `staff_identities` | global staff identity | all | — | `SELECT` for authorized identity lookup | — |
+| `staff_sessions` | global staff secret | all | — | `SELECT`; mutations only through narrow security-definer functions | — |
+| `staff_login_attempts` | global short-lived staff secret | all | — | no direct table grant; create/consume only through narrow security-definer functions | — |
 | `provider_event_receipts` | global provider operation | all | — | — | `SELECT`, `INSERT`, `UPDATE` |
 
 Every customer-owned foundation table has RLS both enabled and forced. Member
@@ -60,6 +62,13 @@ sequence privileges, and direct execution of the account-immutability trigger
 function. Each capability receives explicit schema usage and only current table
 privileges. Future tables receive no runtime privilege automatically; their owning
 migration must make a new access decision.
+
+Migration 0003 adds fixed-search-path functions for login-attempt creation and
+consumption, atomic session issue/rotation, refresh lease/CAS transitions,
+revocation, and bounded cleanup. Staff runtime receives no direct table insert,
+update, or delete privilege for these secret tables. Worker receives only cleanup
+execution. Direct attempts to clear revocation, extend hard expiry, steal a lease,
+or reset one-time state fail at the ACL boundary.
 
 ## Pool selection boundary
 
@@ -208,13 +217,12 @@ account read or list method.
 
 ## Identity bootstrap boundary
 
-Task 6 must resolve a verified Clerk user to an internal member actor before normal
-account-scoped access is possible. This migration intentionally does not weaken
-account RLS and does not add an unscoped member identity query. Bootstrap must use
-a narrowly privileged identity-resolution path, such as a carefully reviewed
-security-definer function with a fixed search path, or a separately authorized
-server path and pool. That path must return only the identity data needed to create
-the actor and must receive its own audit and authorization review in Task 6.
+Task 6 resolves a verified Clerk user through
+`member_actor_for_clerk_user(text)`, a fixed-search-path security-definer function
+executable only by the member capability and migrator. It filters Clerk provider,
+active account, active membership, and exact provider user ID; returns at most the
+actor, account, membership, and role; and cannot enumerate accounts. It does not
+weaken normal account RLS.
 
 ## Forbidden examples
 
