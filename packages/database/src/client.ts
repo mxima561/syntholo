@@ -22,6 +22,7 @@ const reservedConnectionQueryKeys = new Set([
   "hostaddr",
   "password",
   "port",
+  "replication",
   "service",
   "user",
 ]);
