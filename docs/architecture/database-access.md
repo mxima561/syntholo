@@ -164,6 +164,10 @@ and `admin_option=false`. Recursively inspect parent memberships as well; the
 capabilities themselves must not inherit another role. Stop deployment if any
 runtime login can reach `neon_superuser`, a database owner, `syntholo_migrator`, a
 second capability, or any other role, or if any role/default setting exists.
+Application startup performs both halves of this audit: it attests the safe
+LOGIN and exact membership edge, then independently resolves the expected
+capability OID/name and requires NOLOGIN, no privileged flag, no global or
+database-specific setting, and no direct or transitive outbound membership.
 
 ## Capability role migration behavior
 

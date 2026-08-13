@@ -1,5 +1,29 @@
 import { createClerkClient } from "@clerk/backend";
 
+const FACTOR_AGE_GRANULARITY_MILLISECONDS = 60_000;
+
+function conservativeFirstFactorVerificationTime(
+  issuedAtMilliseconds: number,
+  value: unknown,
+): Date | null {
+  if (
+    !Array.isArray(value) ||
+    value.length !== 2 ||
+    !value.every((age) => Number.isSafeInteger(age) && Number(age) >= -1) ||
+    Number(value[0]) < 0
+  ) {
+    return null;
+  }
+  const firstFactorAge = Number(value[0]);
+  const conservativeAgeMilliseconds =
+    (firstFactorAge + 1) * FACTOR_AGE_GRANULARITY_MILLISECONDS;
+  const timestamp = issuedAtMilliseconds - conservativeAgeMilliseconds;
+  return Number.isSafeInteger(conservativeAgeMilliseconds) &&
+    Number.isFinite(new Date(timestamp).getTime())
+    ? new Date(timestamp)
+    : null;
+}
+
 export function createClerkSessionAuthenticator(input: {
   secretKey: string;
   publishableKey: string;
@@ -18,7 +42,7 @@ export function createClerkSessionAuthenticator(input: {
       },
     ): Promise<{
       userId: string;
-      authenticatedAt: Date;
+      firstFactorVerifiedAt: Date | null;
       authorizedParty: string;
     } | null> {
       const state = await client.authenticateRequest(request, {
@@ -45,7 +69,13 @@ export function createClerkSessionAuthenticator(input: {
       return {
         userId: auth.userId,
         authorizedParty,
-        authenticatedAt: new Date(issuedAtMilliseconds),
+        // fva is whole minutes old at token issuance. Subtract one additional
+        // minute for its unknown fractional part; comparing this fixed instant
+        // with request time also includes all elapsed token age.
+        firstFactorVerifiedAt: conservativeFirstFactorVerificationTime(
+          issuedAtMilliseconds,
+          auth.factorVerificationAge,
+        ),
       };
     },
   });

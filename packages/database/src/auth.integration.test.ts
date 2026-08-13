@@ -372,6 +372,136 @@ describe("authentication migration and ACLs", () => {
     }
   });
 
+  it("independently attests the expected capability role as inert", async () => {
+    const base = process.env.TEST_DATABASE_URL;
+    if (!base) throw new Error("TEST_DATABASE_URL_REQUIRED");
+    const role = `syntholo_task6_cap_${process.pid}`;
+    const direct = `syntholo_task6_cap_direct_${process.pid}`;
+    const transitive = `syntholo_task6_cap_transitive_${process.pid}`;
+    const password = `task6-cap-${process.pid}-password`;
+    if (![role, direct, transitive].every((name) => /^[a-z0-9_]+$/u.test(name))) {
+      throw new Error("TEST_ROLE_INVALID");
+    }
+    await harness.database.pool.query(
+      `create role "${role}" login password '${password}' nosuperuser nocreatedb nocreaterole noreplication nobypassrls`,
+    );
+    await harness.database.pool.query(`create role "${direct}" nologin`);
+    await harness.database.pool.query(`create role "${transitive}" nologin`);
+    await harness.database.pool.query(
+      `grant syntholo_staff_api to "${role}" with inherit true, set false, admin false`,
+    );
+    const url = new URL(base);
+    url.username = role;
+    url.password = password;
+    const database = createDatabase({
+      url: url.toString(),
+      applicationName: "syntholo-capability-attestation-test",
+    });
+    const expectInvalid = async () => {
+      await expect(
+        assertDatabaseCapability(database, "syntholo_staff_api"),
+      ).rejects.toThrow("DATABASE_CAPABILITY_INVALID");
+    };
+    const mutate = async (unsafe: string, restore: string) => {
+      await harness.database.pool.query(unsafe);
+      try {
+        await expectInvalid();
+      } finally {
+        await harness.database.pool.query(restore);
+      }
+      await expect(
+        assertDatabaseCapability(database, "syntholo_staff_api"),
+      ).resolves.toBeUndefined();
+    };
+
+    try {
+      await expect(
+        assertDatabaseCapability(database, "syntholo_staff_api"),
+      ).resolves.toBeUndefined();
+      await mutate(
+        "alter role syntholo_staff_api login",
+        "alter role syntholo_staff_api nologin",
+      );
+      await mutate(
+        "alter role syntholo_staff_api superuser",
+        "alter role syntholo_staff_api nosuperuser",
+      );
+      await mutate(
+        "alter role syntholo_staff_api createdb",
+        "alter role syntholo_staff_api nocreatedb",
+      );
+      await mutate(
+        "alter role syntholo_staff_api createrole",
+        "alter role syntholo_staff_api nocreaterole",
+      );
+      await mutate(
+        "alter role syntholo_staff_api replication",
+        "alter role syntholo_staff_api noreplication",
+      );
+      await mutate(
+        "alter role syntholo_staff_api bypassrls",
+        "alter role syntholo_staff_api nobypassrls",
+      );
+      await mutate(
+        "alter role syntholo_staff_api set statement_timeout = '5s'",
+        "alter role syntholo_staff_api reset statement_timeout",
+      );
+      const currentDatabase = await harness.database.pool.query<{ name: string }>(
+        "select current_database() as name",
+      );
+      const databaseName = currentDatabase.rows[0]?.name;
+      if (!databaseName || !/^[a-zA-Z0-9_]+$/u.test(databaseName)) {
+        throw new Error("TEST_DATABASE_NAME_INVALID");
+      }
+      await mutate(
+        `alter role syntholo_staff_api in database "${databaseName}" set statement_timeout = '5s'`,
+        `alter role syntholo_staff_api in database "${databaseName}" reset statement_timeout`,
+      );
+      await mutate(
+        `grant "${direct}" to syntholo_staff_api with inherit true, set false, admin false`,
+        `revoke "${direct}" from syntholo_staff_api`,
+      );
+      await harness.database.pool.query(
+        `grant "${transitive}" to "${direct}" with inherit true, set false, admin false`,
+      );
+      try {
+        await mutate(
+          `grant "${direct}" to syntholo_staff_api with inherit true, set false, admin false`,
+          `revoke "${direct}" from syntholo_staff_api`,
+        );
+      } finally {
+        await harness.database.pool.query(`revoke "${transitive}" from "${direct}"`);
+      }
+    } finally {
+      await database.close();
+      await harness.database.pool.query(
+        "alter role syntholo_staff_api nologin nosuperuser nocreatedb nocreaterole noreplication nobypassrls",
+      );
+      await harness.database.pool.query(
+        "alter role syntholo_staff_api reset statement_timeout",
+      );
+      const currentDatabase = await harness.database.pool.query<{ name: string }>(
+        "select current_database() as name",
+      );
+      const databaseName = currentDatabase.rows[0]?.name;
+      if (databaseName && /^[a-zA-Z0-9_]+$/u.test(databaseName)) {
+        await harness.database.pool.query(
+          `alter role syntholo_staff_api in database "${databaseName}" reset statement_timeout`,
+        );
+      }
+      await harness.database.pool.query(
+        `revoke "${direct}" from syntholo_staff_api`,
+      );
+      await harness.database.pool.query(
+        `revoke "${transitive}" from "${direct}"`,
+      );
+      await harness.database.pool.query(`revoke syntholo_staff_api from "${role}"`);
+      await harness.database.pool.query(`drop role "${role}"`);
+      await harness.database.pool.query(`drop role "${direct}"`);
+      await harness.database.pool.query(`drop role "${transitive}"`);
+    }
+  });
+
   it("exposes only one exact active Clerk actor through the bootstrap function", async () => {
     const accountId = await harness.factories.account(harness.database);
     const identityId = await harness.factories.memberIdentity(harness.database, {

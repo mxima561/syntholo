@@ -32,6 +32,47 @@ is passed to the fixed-search-path `member_actor_for_clerk_user` function, which
 returns at most one active account/membership actor. Later member data access
 still requires normal account-scoped transactions and RLS.
 
+Owner-sensitive v1 operations require first-factor authentication within five
+minutes. The API derives that instant only from Clerk v2's verified
+`factorVerificationAge` (`fva`) and token `iat`: because `fva` is whole minutes,
+it subtracts `(fva[0] + 1)` minutes from `iat`, then compares that fixed instant
+with the current request time so elapsed token age is included. Missing,
+malformed, fractional, or negative first-factor age fails recent auth closed;
+a newly issued token does not reset the factor age.
+
+The public `authenticatedAt: Date` field remains the cross-plan DTO, but every
+real member/staff actor projection is registered with a private canonical
+millisecond scalar. `requireRecentAuth` reads only that scalar, so `Date.setTime`
+cannot upgrade authority; unregistered or unavailable freshness fails closed.
+
+Until an owner-sensitive UI route lands, `403 RECENT_AUTH_REQUIRED` is the
+explicit launch signal. That UI's member fetcher must acquire a bearer on every
+invocation, translate only that code to Clerk's documented reverification hint
+with `{ level: "first_factor", afterMinutes: 5 }`, and be wrapped by
+`useReverification`. Clerk then opens its reverification UI and retries the
+fetcher after success, producing a fresh token/factor age; cancellation remains
+a denial. No Task 6 route pretends token renewal alone supplied reauthentication.
+
+```tsx
+const runOwnerRequest = useReverification(async () => {
+  const response = await memberApi("/v1/owner-sensitive", mutationInit);
+  const payload = await response.json();
+  if (response.status === 403 && payload.error?.code === "RECENT_AUTH_REQUIRED") {
+    return {
+      clerk_error: {
+        type: "forbidden",
+        reason: "reverification-error",
+        metadata: {
+          reverification: { level: "first_factor", afterMinutes: 5 },
+        },
+      },
+    };
+  }
+  if (!response.ok) throw new Error("OWNER_REQUEST_FAILED");
+  return payload;
+});
+```
+
 ## Staff login and session flow
 
 `GET /v1/staff/auth/sign-in` creates random OAuth state and browser nonce plus
@@ -71,8 +112,11 @@ expired/revoked sessions; runtime roles have no table `DELETE`.
 The member and staff URLs are distinct login users. Startup recursively attests
 that each is safe, has `current_user=session_user`, inherits exactly its expected
 NOLOGIN capability with `INHERIT TRUE, SET FALSE, ADMIN FALSE`, and reaches no
-other role. Staff secret-table writes occur only through narrow fixed-search-path
-functions; the runtime has table `SELECT` only.
+other role. It independently resolves that exact capability OID/name and rejects
+LOGIN or privileged flags, role/database settings, and direct or transitive
+outbound authority on the capability itself. Staff secret-table writes occur
+only through narrow fixed-search-path functions; the runtime has table `SELECT`
+only.
 
 ## Key rotation
 

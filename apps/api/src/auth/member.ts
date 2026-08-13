@@ -2,6 +2,7 @@ import type { MemberActor } from "@syntholo/domain";
 import type { FastifyRequest } from "fastify";
 import { AppError } from "../plugins/error-handler.js";
 import type { AuthRouteDependencies } from "./types.js";
+import { projectMemberActor } from "./authorize.js";
 
 function unauthenticated(): never {
   throw new AppError("UNAUTHENTICATED", 401, "Authentication required");
@@ -71,8 +72,8 @@ export async function authenticateMember(
   if (!databaseActor || databaseActor.clerkUserId !== providerIdentity.userId) {
     unauthenticated();
   }
-  return Object.freeze({
-    ...databaseActor,
-    authenticatedAt: new Date(providerIdentity.authenticatedAt),
-  });
+  return projectMemberActor(
+    databaseActor,
+    providerIdentity.firstFactorVerifiedAt,
+  );
 }

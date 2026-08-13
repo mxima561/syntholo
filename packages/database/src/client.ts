@@ -111,33 +111,74 @@ export async function assertDatabaseCapability(
       rolcanlogin: boolean;
       rolconfig: string[] | null;
       database_settings: number;
-      reachable: string[];
+      reachable_count: number;
+      expected_reachable_count: number;
       membership_options_safe: boolean;
+      capability_name: string;
+      capability_oid: string;
+      capability_can_login: boolean;
+      capability_super: boolean;
+      capability_createdb: boolean;
+      capability_createrole: boolean;
+      capability_replication: boolean;
+      capability_bypassrls: boolean;
+      capability_config: string[] | null;
+      capability_settings: number;
+      capability_outbound_memberships: number;
     }>(
-      `with recursive memberships as (
-         select am.roleid, role.rolname, am.inherit_option, am.set_option,
-                am.admin_option
+      `with recursive expected_capability as (
+         select oid, rolname, rolcanlogin, rolsuper, rolcreatedb,
+                rolcreaterole, rolreplication, rolbypassrls, rolconfig
+         from pg_roles where rolname = $1
+       ), memberships as (
+         select am.roleid, am.inherit_option, am.set_option,
+                am.admin_option, array[login.oid, am.roleid]::oid[] as path
          from pg_auth_members am
          join pg_roles login on login.oid = am.member
-         join pg_roles role on role.oid = am.roleid
          where login.rolname = session_user
          union all
-         select am.roleid, role.rolname, am.inherit_option, am.set_option,
-                am.admin_option
+         select am.roleid, am.inherit_option, am.set_option,
+                am.admin_option, parent.path || am.roleid
          from pg_auth_members am
          join memberships parent on parent.roleid = am.member
-         join pg_roles role on role.oid = am.roleid
+         where not am.roleid = any(parent.path)
+       ), capability_memberships as (
+         select am.roleid, array[cap.oid, am.roleid]::oid[] as path
+         from expected_capability cap
+         join pg_auth_members am on am.member = cap.oid
+         union all
+         select am.roleid, parent.path || am.roleid
+         from pg_auth_members am
+         join capability_memberships parent on parent.roleid = am.member
+         where not am.roleid = any(parent.path)
        )
        select current_user, session_user, r.rolsuper, r.rolcreatedb,
               r.rolcreaterole, r.rolreplication, r.rolbypassrls,
               r.rolcanlogin, r.rolconfig,
               (select count(*)::integer from pg_db_role_setting s
                where s.setrole = r.oid) as database_settings,
-              coalesce((select array_agg(distinct rolname order by rolname)::text[]
-                        from memberships), array[]::text[]) as reachable,
+              (select count(distinct roleid)::integer from memberships)
+                as reachable_count,
+              (select count(distinct roleid)::integer from memberships
+               where roleid = cap.oid) as expected_reachable_count,
               coalesce((select bool_and(inherit_option and not set_option and not admin_option)
-                        from memberships), false) as membership_options_safe
-       from pg_roles r where r.rolname = session_user`,
+                        from memberships), false) as membership_options_safe,
+              cap.rolname as capability_name,
+              cap.oid as capability_oid,
+              cap.rolcanlogin as capability_can_login,
+              cap.rolsuper as capability_super,
+              cap.rolcreatedb as capability_createdb,
+              cap.rolcreaterole as capability_createrole,
+              cap.rolreplication as capability_replication,
+              cap.rolbypassrls as capability_bypassrls,
+              cap.rolconfig as capability_config,
+              (select count(*)::integer from pg_db_role_setting s
+               where s.setrole = cap.oid) as capability_settings,
+              (select count(distinct roleid)::integer
+               from capability_memberships) as capability_outbound_memberships
+       from pg_roles r cross join expected_capability cap
+       where r.rolname = session_user`,
+      [expectedCapability],
     );
     const row = result.rows[0];
     if (
@@ -152,8 +193,19 @@ export async function assertDatabaseCapability(
       row.rolconfig !== null ||
       row.database_settings !== 0 ||
       !row.membership_options_safe ||
-      row.reachable.length !== 1 ||
-      row.reachable[0] !== expectedCapability
+      row.reachable_count !== 1 ||
+      row.expected_reachable_count !== 1 ||
+      row.capability_name !== expectedCapability ||
+      !/^[1-9][0-9]*$/u.test(row.capability_oid) ||
+      row.capability_can_login ||
+      row.capability_super ||
+      row.capability_createdb ||
+      row.capability_createrole ||
+      row.capability_replication ||
+      row.capability_bypassrls ||
+      row.capability_config !== null ||
+      row.capability_settings !== 0 ||
+      row.capability_outbound_memberships !== 0
     ) {
       throw new Error("invalid capability");
     }

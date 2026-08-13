@@ -71,7 +71,7 @@ export interface AuthRouteDependencies {
         },
       ): Promise<{
         userId: string;
-        authenticatedAt: Date;
+        firstFactorVerifiedAt: Date | null;
         authorizedParty: string;
       } | null>;
     };

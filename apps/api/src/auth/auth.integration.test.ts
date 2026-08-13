@@ -1,14 +1,18 @@
 import type { MemberActor, StaffActor } from "@syntholo/domain";
 import { memberActor, staffActor } from "@syntholo/testing";
+import type { FastifyRequest } from "fastify";
 import { describe, expect, it, vi } from "vitest";
 import { buildApp, type ApiDependencies } from "../app.js";
 import {
   authorize,
+  projectMemberActor,
+  projectStaffActor,
   requireAdmin,
   requireCoach,
   requireMember,
   requireRecentAuth,
 } from "./authorize.js";
+import { authenticateMember } from "./member.js";
 import {
   createStaffSessionCrypto,
   hashOpaqueSessionId,
@@ -196,6 +200,7 @@ class MemoryStaffSessions {
 function authFakes(options: {
   environment?: "local" | "test" | "staging" | "production";
   member?: MemberActor | null;
+  memberFirstFactorVerifiedAt?: Date | null;
   staff?: StaffIdentityRecord | null;
   claims?: WorkosAccessClaims;
 } = {}) {
@@ -206,7 +211,10 @@ function authFakes(options: {
       request.headers.get("authorization") === "Bearer clerk-member-token"
         ? {
             userId: "clerk_user_member",
-            authenticatedAt: new Date(now.getTime() - 60_000),
+            firstFactorVerifiedAt:
+              options.memberFirstFactorVerifiedAt === undefined
+                ? new Date(now.getTime() - 120_000)
+                : options.memberFirstFactorVerifiedAt,
             authorizedParty: "https://app.syntholo.test",
           }
         : null,
@@ -1079,13 +1087,120 @@ describe("authorization and recent authentication", () => {
   });
 
   it("uses auth_time recency rather than refreshed token issue time", () => {
-    const actor = staffActor({
-      role: "admin",
-      authenticatedAt: new Date(now.getTime() - 299_000),
-    });
+    const actor = requireAdmin(
+      projectStaffActor(
+        staffActor({
+          role: "admin",
+          authenticatedAt: new Date(now.getTime() - 299_000),
+        }),
+        new Date(now.getTime() - 299_000),
+      ),
+    );
     const narrowed = requireRecentAuth(actor, 300, now);
     expect(narrowed).toEqual(actor);
     expect(narrowed).not.toBe(actor);
     expect(Object.isFrozen(narrowed)).toBe(true);
   });
+
+  it.each([
+    ["stale", new Date(now.getTime() - 301_000)],
+    ["missing", null],
+  ])(
+    "rejects member recent authentication when Clerk first-factor freshness is %s",
+    async (_case, firstFactorVerifiedAt) => {
+      const fakes = authFakes({
+        memberFirstFactorVerifiedAt: firstFactorVerifiedAt,
+      });
+      const actor = await authenticateMember(
+        {
+          method: "GET",
+          raw: {
+            rawHeaders: ["authorization", "Bearer clerk-member-token"],
+            url: "/v1/member/whoami",
+          },
+        } as unknown as FastifyRequest,
+        fakes.dependencies.member,
+      );
+
+      expect(() => requireRecentAuth(actor, 300, now)).toThrow(
+        "RECENT_AUTH_REQUIRED",
+      );
+    },
+  );
+
+  it("accepts a conservatively fresh Clerk first-factor time for a member", async () => {
+    const firstFactorVerifiedAt = new Date(now.getTime() - 240_000);
+    const fakes = authFakes({
+      memberFirstFactorVerifiedAt: firstFactorVerifiedAt,
+    });
+    const actor = await authenticateMember(
+      {
+        method: "GET",
+        raw: {
+          rawHeaders: ["authorization", "Bearer clerk-member-token"],
+          url: "/v1/member/whoami",
+        },
+      } as unknown as FastifyRequest,
+      fakes.dependencies.member,
+    );
+
+    expect(requireRecentAuth(actor, 300, now).authenticatedAt).toEqual(
+      firstFactorVerifiedAt,
+    );
+  });
+
+  it("fails recent authentication closed for an unregistered actor projection", () => {
+    const actor = staffActor({
+      role: "admin",
+      authenticatedAt: new Date(now),
+    });
+
+    expect(() => requireRecentAuth(actor, 300, now)).toThrow(
+      "RECENT_AUTH_REQUIRED",
+    );
+  });
+
+  it("fails recent authentication closed for an invalid current time", () => {
+    const actor = projectStaffActor(
+      staffActor({ role: "admin", authenticatedAt: new Date(now) }),
+      now,
+    );
+
+    expect(() => requireRecentAuth(actor, 300, new Date("invalid"))).toThrow(
+      "RECENT_AUTH_REQUIRED",
+    );
+  });
+
+  it.each([
+    [
+      "member",
+      () =>
+        requireMember(
+          projectMemberActor(
+            memberActor({ authenticatedAt: new Date(0) }),
+            new Date(0),
+          ),
+        ),
+    ],
+    [
+      "staff",
+      () =>
+        requireAdmin(
+          projectStaffActor(
+            staffActor({ role: "admin", authenticatedAt: new Date(0) }),
+            new Date(0),
+          ),
+        ),
+    ],
+  ])(
+    "keeps the canonical %s authentication instant immutable when its public Date is mutated",
+    (_case, projectActor) => {
+      const actor = projectActor();
+      actor.authenticatedAt.setTime(now.getTime());
+
+      expect(() => requireRecentAuth(actor, 300, now)).toThrow(
+        "RECENT_AUTH_REQUIRED",
+      );
+    },
+  );
 });

@@ -13,6 +13,7 @@ import type {
   StaffSessionRecord,
   WorkosAccessClaims,
 } from "./types.js";
+import { projectStaffActor } from "./authorize.js";
 
 const REFRESH_SKEW_MS = 30_000;
 const COOKIE_VALUE = /^[A-Za-z0-9_-]{43}$/u;
@@ -326,15 +327,18 @@ export async function authenticateStaff(
   if (session.hardExpiresAt <= finalNow || claims.expiresAt <= finalNow) {
     unauthenticated();
   }
-  return Object.freeze({
-    kind: "staff",
-    actorId: identity.actorId,
-    workosUserId: identity.workosUserId,
-    staffId: identity.staffId,
-    role: identity.role,
-    permissions: Object.freeze([...identity.permissions]),
-    authenticatedAt: new Date(claims.authenticatedAt),
-  });
+  return projectStaffActor(
+    {
+      kind: "staff",
+      actorId: identity.actorId,
+      workosUserId: identity.workosUserId,
+      staffId: identity.staffId,
+      role: identity.role,
+      permissions: Object.freeze([...identity.permissions]),
+      authenticatedAt: new Date(claims.authenticatedAt),
+    },
+    claims.authenticatedAt,
+  );
 }
 
 export async function beginStaffSignIn(
