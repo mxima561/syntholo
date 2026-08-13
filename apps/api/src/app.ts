@@ -1,7 +1,4 @@
-import Fastify, {
-  type FastifyInstance,
-  type FastifyServerOptions,
-} from "fastify";
+import Fastify, { type FastifyInstance } from "fastify";
 import rawBody from "fastify-raw-body";
 import { z } from "zod";
 import { correlationIdForRequest, requestContextPlugin } from "./plugins/context.js";
@@ -13,7 +10,7 @@ import {
 
 export type ApiDependencies = Readonly<{
   releaseSha: string;
-  logger?: FastifyServerOptions["logger"];
+  logger?: boolean;
   health: Readonly<{
     dependencies: readonly ReadinessDependency[];
   }>;
@@ -22,9 +19,7 @@ export type ApiDependencies = Readonly<{
 const ApiDependenciesSchema = z
   .object({
     releaseSha: z.string().trim().min(1),
-    logger: z
-      .union([z.boolean(), z.record(z.string(), z.unknown())])
-      .optional(),
+    logger: z.boolean().optional(),
     health: z
       .object({
         dependencies: z.array(
@@ -50,7 +45,7 @@ export async function buildApp(
     throw new Error("API_DEPENDENCIES_INVALID");
   }
   const app = Fastify({
-    logger: (parsedDependencies.data.logger ?? false) as FastifyServerOptions["logger"],
+    logger: parsedDependencies.data.logger ?? false,
     requestIdHeader: false,
     genReqId: correlationIdForRequest,
   });
@@ -68,6 +63,8 @@ export async function buildApp(
     releaseSha: parsedDependencies.data.releaseSha,
     dependencies: parsedDependencies.data.health.dependencies,
   });
+  // Expose only the fully composed app; Fastify rejects later plugins/routes/hooks.
+  await app.ready();
 
   return app;
 }

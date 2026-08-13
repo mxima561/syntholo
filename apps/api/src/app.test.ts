@@ -2,11 +2,20 @@ import { execFile } from "node:child_process";
 import { access } from "node:fs/promises";
 import { promisify } from "node:util";
 import { ApiErrorSchema, HealthResponseSchema } from "@syntholo/contracts";
-import type { FastifyRequest } from "fastify";
+import Fastify, {
+  type FastifyInstance,
+  type FastifyRequest,
+  type onRouteHookHandler,
+} from "fastify";
+import rawBody from "fastify-raw-body";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { buildApp, type ApiDependencies } from "./app.js";
 import { parseApiConfig } from "./config.js";
-import { AppError } from "./plugins/error-handler.js";
+import {
+  correlationIdForRequest,
+  requestContextPlugin,
+} from "./plugins/context.js";
+import { AppError, safeErrorHandler } from "./plugins/error-handler.js";
 import { startApi } from "./server.js";
 
 const execFileAsync = promisify(execFile);
@@ -22,6 +31,51 @@ function fakes(
     health: { dependencies: [] },
     ...patch,
   };
+}
+
+type RegisterTestRoutes = (
+  app: FastifyInstance,
+) => Promise<void> | void;
+
+async function buildRouteTestApp(
+  registerRoutes: RegisterTestRoutes,
+  options: { routesBeforeContext?: boolean } = {},
+): Promise<FastifyInstance> {
+  const app = Fastify({
+    logger: false,
+    requestIdHeader: false,
+    genReqId: correlationIdForRequest,
+  });
+  await app.register(rawBody, {
+    field: "rawBody",
+    global: false,
+    encoding: false,
+    runFirst: true,
+  });
+  if (options.routesBeforeContext === true) await registerRoutes(app);
+  await app.register(requestContextPlugin);
+  app.setErrorHandler(safeErrorHandler);
+  if (options.routesBeforeContext !== true) await registerRoutes(app);
+  return app;
+}
+
+function appendCorrelationHeaderOverride(
+  routeOptions: Parameters<onRouteHookHandler>[0],
+  value: string,
+): void {
+  const hooks =
+    routeOptions.onSend === undefined
+      ? []
+      : Array.isArray(routeOptions.onSend)
+        ? routeOptions.onSend
+        : [routeOptions.onSend];
+  routeOptions.onSend = [
+    ...hooks,
+    async (_request, reply, payload) => {
+      void reply.header("x-correlation-id", value);
+      return payload;
+    },
+  ];
 }
 
 afterEach(() => {
@@ -52,11 +106,12 @@ describe("buildApp", () => {
   });
 
   it("generates one UUID for the request id, context, header, and error envelope", async () => {
-    const app = await buildApp(fakes());
-    app.get("/context-error", async (request) => {
-      throw new AppError("CONTEXT_TEST", 409, "Safe context error", {
-        requestId: request.id,
-        contextId: request.context.correlationId,
+    const app = await buildRouteTestApp((instance) => {
+      instance.get("/context-error", async (request) => {
+        throw new AppError("CONTEXT_TEST", 409, "Safe context error", {
+          requestId: request.id,
+          contextId: request.context.correlationId,
+        });
       });
     });
 
@@ -79,11 +134,12 @@ describe("buildApp", () => {
   });
 
   it("preserves a single valid correlation id everywhere", async () => {
-    const app = await buildApp(fakes());
-    app.get("/context", async (request) => ({
-      requestId: request.id,
-      contextId: request.context.correlationId,
-    }));
+    const app = await buildRouteTestApp((instance) => {
+      instance.get("/context", async (request) => ({
+        requestId: request.id,
+        contextId: request.context.correlationId,
+      }));
+    });
 
     const response = await app.inject({
       method: "GET",
@@ -101,17 +157,21 @@ describe("buildApp", () => {
   });
 
   it("overwrites a route-level onSend header with the canonical correlation id", async () => {
-    const app = await buildApp(fakes());
-    app.get(
-      "/header-override",
-      {
-        onSend: async (_request, reply, payload) => {
-          void reply.header("x-correlation-id", "late-route-controlled-secret");
-          return payload;
+    const app = await buildRouteTestApp((instance) => {
+      instance.get(
+        "/header-override",
+        {
+          onSend: async (_request, reply, payload) => {
+            void reply.header(
+              "x-correlation-id",
+              "late-route-controlled-secret",
+            );
+            return payload;
+          },
         },
-      },
-      async () => ({ ok: true }),
-    );
+        async () => ({ ok: true }),
+      );
+    });
 
     const response = await app.inject({
       method: "GET",
@@ -125,29 +185,297 @@ describe("buildApp", () => {
     await app.close();
   });
 
-  it("prevents request id and context reassignment on a successful response", async () => {
-    const app = await buildApp(fakes());
-    app.get("/mutate-context", async (request) => {
-      const idMutationAccepted = Reflect.set(
-        request,
-        "id",
-        "route-controlled-secret",
-      );
-      const contextMutationAccepted = Reflect.set(request, "context", {
-        correlationId: "context-controlled-secret",
+  it.each([
+    ["success", "GET", "/late-root/success", undefined, 200],
+    ["AppError", "GET", "/late-root/app-error", undefined, 409],
+    ["unknown error", "GET", "/late-root/unknown", undefined, 500],
+    [
+      "validation error",
+      "POST",
+      "/late-root/validation",
+      { providerPayload: "validation-secret" },
+      400,
+    ],
+  ])(
+    "commits the canonical header after a later root onRoute hook on the %s path",
+    async (_case, method, url, payload, expectedStatus) => {
+      const app = await buildRouteTestApp((instance) => {
+        instance.addHook("onRoute", (routeOptions) => {
+          appendCorrelationHeaderOverride(
+            routeOptions,
+            "later-root-onroute-secret",
+          );
+        });
+        instance.get("/late-root/success", async () => ({ ok: true }));
+        instance.get("/late-root/app-error", async () => {
+          throw new AppError("LATE_ROOT_CONFLICT", 409, "Safe conflict");
+        });
+        instance.get("/late-root/unknown", async () => {
+          throw new Error("late-root-provider-secret");
+        });
+        instance.post(
+          "/late-root/validation",
+          {
+            schema: {
+              body: {
+                type: "object",
+                additionalProperties: false,
+                required: ["name"],
+                properties: { name: { type: "string", minLength: 1 } },
+              },
+            },
+          },
+          async () => ({ ok: true }),
+        );
       });
-      const nestedMutationAccepted = Reflect.set(
-        request.context,
-        "correlationId",
-        "nested-controlled-secret",
+
+      const response = await app.inject({
+        method: method as "GET" | "POST",
+        url,
+        headers: { "x-correlation-id": validCorrelationId },
+        ...(payload === undefined ? {} : { payload }),
+      });
+
+      expect(response.statusCode).toBe(expectedStatus);
+      expect(response.headers["x-correlation-id"]).toBe(validCorrelationId);
+      expect(response.payload).not.toContain("later-root-onroute-secret");
+      if (expectedStatus >= 400) {
+        expect(ApiErrorSchema.parse(response.json()).error.correlationId).toBe(
+          validCorrelationId,
+        );
+      }
+
+      await app.close();
+    },
+  );
+
+  it("commits the canonical header after a child plugin onRoute hook", async () => {
+    const app = await buildRouteTestApp(async (instance) => {
+      await instance.register(async (child) => {
+        child.addHook("onRoute", (routeOptions) => {
+          appendCorrelationHeaderOverride(
+            routeOptions,
+            "child-onroute-secret",
+          );
+        });
+        child.get("/child-header", async () => ({ ok: true }));
+      });
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/child-header",
+      headers: { "x-correlation-id": validCorrelationId },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["x-correlation-id"]).toBe(validCorrelationId);
+    expect(response.payload).not.toContain("child-onroute-secret");
+
+    await app.close();
+  });
+
+  it("commits the canonical header after hook arrays and ordinary reply/raw header writes", async () => {
+    const app = await buildRouteTestApp((instance) => {
+      instance.addHook("onRoute", (routeOptions) => {
+        appendCorrelationHeaderOverride(
+          routeOptions,
+          "later-hook-array-secret",
+        );
+      });
+      instance.get(
+        "/header-writes",
+        {
+          onSend: [
+            async (_request, reply, payload) => {
+              void reply.header(
+                "x-correlation-id",
+                "reply-hook-array-secret",
+              );
+              return payload;
+            },
+            async (_request, reply, payload) => {
+              reply.raw.setHeader(
+                "x-correlation-id",
+                "raw-hook-array-secret",
+              );
+              return payload;
+            },
+          ],
+        },
+        async (_request, reply) => {
+          reply.raw.setHeader("x-correlation-id", "raw-handler-secret");
+          void reply.header("x-correlation-id", "reply-handler-secret");
+          return { ok: true };
+        },
       );
-      return {
-        idMutationAccepted,
-        contextMutationAccepted,
-        nestedMutationAccepted,
-        requestId: request.id,
-        contextId: request.context.correlationId,
-      };
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/header-writes",
+      headers: { "x-correlation-id": validCorrelationId },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["x-correlation-id"]).toBe(validCorrelationId);
+    expect(response.payload).not.toContain("secret");
+
+    await app.close();
+  });
+
+  it.each([
+    [
+      "headers overload",
+      "/raw-write-head/headers",
+      202,
+      "headers",
+      "Accepted",
+    ],
+    [
+      "status message overload",
+      "/raw-write-head/message",
+      203,
+      "message",
+      "Custom Status",
+    ],
+    [
+      "raw header array overload",
+      "/raw-write-head/array",
+      206,
+      "array",
+      "Partial Content",
+    ],
+  ])(
+    "preserves the writeHead %s while committing the canonical header",
+    async (_case, url, expectedStatus, expectedMarker, expectedStatusMessage) => {
+      const app = await buildRouteTestApp((instance) => {
+        instance.get("/raw-write-head/headers", async (_request, reply) => {
+          reply.hijack();
+          reply.raw.writeHead(202, {
+            "x-correlation-id": "write-head-headers-secret",
+            "x-preserved": "headers",
+          });
+          reply.raw.end("headers-body");
+          return reply;
+        });
+        instance.get("/raw-write-head/message", async (_request, reply) => {
+          reply.hijack();
+          reply.raw.writeHead(203, "Custom Status", {
+            "x-correlation-id": "write-head-message-secret",
+            "x-preserved": "message",
+          });
+          reply.raw.end("message-body");
+          return reply;
+        });
+        instance.get("/raw-write-head/array", async (_request, reply) => {
+          reply.hijack();
+          reply.raw.writeHead(206, [
+            "x-correlation-id",
+            "write-head-array-secret",
+            "x-preserved",
+            "array",
+          ]);
+          reply.raw.end("array-body");
+          return reply;
+        });
+      });
+
+      const response = await app.inject({
+        method: "GET",
+        url,
+        headers: { "x-correlation-id": validCorrelationId },
+      });
+
+      expect(response.statusCode).toBe(expectedStatus);
+      expect(response.statusMessage).toBe(expectedStatusMessage);
+      expect(response.headers["x-preserved"]).toBe(expectedMarker);
+      expect(response.headers["x-correlation-id"]).toBe(validCorrelationId);
+      expect(response.payload).toBe(`${expectedMarker}-body`);
+
+      await app.close();
+    },
+  );
+
+  it("guards a route registered before request-context plugin registration", async () => {
+    const app = await buildRouteTestApp(
+      (instance) => {
+        instance.get(
+          "/pre-context-route",
+          {
+            onSend: async (_request, reply, payload) => {
+              void reply.header(
+                "x-correlation-id",
+                "pre-context-route-secret",
+              );
+              return payload;
+            },
+          },
+          async () => ({ ok: true }),
+        );
+      },
+      { routesBeforeContext: true },
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/pre-context-route",
+      headers: { "x-correlation-id": validCorrelationId },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["x-correlation-id"]).toBe(validCorrelationId);
+    expect(response.payload).not.toContain("pre-context-route-secret");
+
+    await app.close();
+  });
+
+  it("seals late plugins, routes, and response hooks outside the public build boundary", async () => {
+    const pluginApp = await buildApp(fakes());
+    expect(() => {
+      pluginApp.register(async (child) => {
+        child.addHook("onSend", async (_request, _reply, payload) => payload);
+      });
+    }).toThrow();
+    await pluginApp.close();
+
+    const routeApp = await buildApp(fakes());
+    expect(() => {
+      routeApp.get("/late-route", async () => ({ ok: true }));
+    }).toThrow();
+    await routeApp.close();
+
+    const hookApp = await buildApp(fakes());
+    expect(() => {
+      hookApp.addHook("onSend", async (_request, _reply, payload) => payload);
+    }).toThrow();
+    await hookApp.close();
+  });
+
+  it("prevents request id and context reassignment on a successful response", async () => {
+    const app = await buildRouteTestApp((instance) => {
+      instance.get("/mutate-context", async (request) => {
+        const idMutationAccepted = Reflect.set(
+          request,
+          "id",
+          "route-controlled-secret",
+        );
+        const contextMutationAccepted = Reflect.set(request, "context", {
+          correlationId: "context-controlled-secret",
+        });
+        const nestedMutationAccepted = Reflect.set(
+          request.context,
+          "correlationId",
+          "nested-controlled-secret",
+        );
+        return {
+          idMutationAccepted,
+          contextMutationAccepted,
+          nestedMutationAccepted,
+          requestId: request.id,
+          contextId: request.context.correlationId,
+        };
+      });
     });
 
     const response = await app.inject({
@@ -172,26 +500,27 @@ describe("buildApp", () => {
 
   it("keeps a generated canonical id through reassignment attempts and AppError", async () => {
     let originalCorrelationId: string | undefined;
-    const app = await buildApp(fakes());
-    app.get("/mutate-context-error", async (request) => {
-      originalCorrelationId = request.id;
-      const idMutationAccepted = Reflect.set(
-        request,
-        "id",
-        "route-controlled-secret",
-      );
-      const contextMutationAccepted = Reflect.set(request, "context", {
-        correlationId: "context-controlled-secret",
-      });
-      const nestedMutationAccepted = Reflect.set(
-        request.context,
-        "correlationId",
-        "nested-controlled-secret",
-      );
-      throw new AppError("CONTEXT_MUTATION", 409, "Safe context error", {
-        idMutationAccepted,
-        contextMutationAccepted,
-        nestedMutationAccepted,
+    const app = await buildRouteTestApp((instance) => {
+      instance.get("/mutate-context-error", async (request) => {
+        originalCorrelationId = request.id;
+        const idMutationAccepted = Reflect.set(
+          request,
+          "id",
+          "route-controlled-secret",
+        );
+        const contextMutationAccepted = Reflect.set(request, "context", {
+          correlationId: "context-controlled-secret",
+        });
+        const nestedMutationAccepted = Reflect.set(
+          request.context,
+          "correlationId",
+          "nested-controlled-secret",
+        );
+        throw new AppError("CONTEXT_MUTATION", 409, "Safe context error", {
+          idMutationAccepted,
+          contextMutationAccepted,
+          nestedMutationAccepted,
+        });
       });
     });
 
@@ -394,21 +723,22 @@ describe("buildApp", () => {
 
   it("exposes raw bodies only for routes that explicitly opt in", async () => {
     type RequestWithRawBody = FastifyRequest & { rawBody?: Buffer };
-    const app = await buildApp(fakes());
-    app.post("/ordinary", async (request) => ({
-      hasRawBody: "rawBody" in request,
-    }));
-    app.post(
-      "/signed",
-      { config: { rawBody: true } },
-      async (request) => {
-        const rawBody = (request as RequestWithRawBody).rawBody;
-        return {
-          isBuffer: Buffer.isBuffer(rawBody),
-          value: rawBody?.toString("utf8"),
-        };
-      },
-    );
+    const app = await buildRouteTestApp((instance) => {
+      instance.post("/ordinary", async (request) => ({
+        hasRawBody: "rawBody" in request,
+      }));
+      instance.post(
+        "/signed",
+        { config: { rawBody: true } },
+        async (request) => {
+          const rawBody = (request as RequestWithRawBody).rawBody;
+          return {
+            isBuffer: Buffer.isBuffer(rawBody),
+            value: rawBody?.toString("utf8"),
+          };
+        },
+      );
+    });
 
     const ordinary = await app.inject({
       method: "POST",
@@ -433,16 +763,17 @@ describe("buildApp", () => {
 
 describe("safe error handling", () => {
   it("serializes only explicit safe AppError fields", async () => {
-    const app = await buildApp(fakes());
-    app.get("/safe-error", async () => {
-      const error = new AppError("CONFLICT", 409, "Safe conflict", {
-        field: "email",
+    const app = await buildRouteTestApp((instance) => {
+      instance.get("/safe-error", async () => {
+        const error = new AppError("CONFLICT", 409, "Safe conflict", {
+          field: "email",
+        });
+        Object.assign(error, {
+          cause: new Error("provider-secret"),
+          providerPayload: { apiKey: "do-not-serialize" },
+        });
+        throw error;
       });
-      Object.assign(error, {
-        cause: new Error("provider-secret"),
-        providerPayload: { apiKey: "do-not-serialize" },
-      });
-      throw error;
     });
 
     const response = await app.inject({ method: "GET", url: "/safe-error" });
@@ -471,11 +802,14 @@ describe("safe error handling", () => {
   );
 
   it("uses a generic envelope for unknown errors", async () => {
-    const app = await buildApp(fakes());
-    app.get("/unknown-error", async () => {
-      const error = new Error("database-password-provider-secret");
-      Object.assign(error, { providerPayload: { token: "do-not-serialize" } });
-      throw error;
+    const app = await buildRouteTestApp((instance) => {
+      instance.get("/unknown-error", async () => {
+        const error = new Error("database-password-provider-secret");
+        Object.assign(error, {
+          providerPayload: { token: "do-not-serialize" },
+        });
+        throw error;
+      });
     });
 
     const response = await app.inject({
@@ -497,21 +831,22 @@ describe("safe error handling", () => {
   });
 
   it("uses a generic 400 envelope for request validation errors", async () => {
-    const app = await buildApp(fakes());
-    app.post(
-      "/validated",
-      {
-        schema: {
-          body: {
-            type: "object",
-            additionalProperties: false,
-            required: ["name"],
-            properties: { name: { type: "string", minLength: 1 } },
+    const app = await buildRouteTestApp((instance) => {
+      instance.post(
+        "/validated",
+        {
+          schema: {
+            body: {
+              type: "object",
+              additionalProperties: false,
+              required: ["name"],
+              properties: { name: { type: "string", minLength: 1 } },
+            },
           },
         },
-      },
-      async () => ({ ok: true }),
-    );
+        async () => ({ ok: true }),
+      );
+    });
 
     const response = await app.inject({
       method: "POST",
@@ -571,6 +906,66 @@ describe("API configuration and startup", () => {
       expect(String(error)).not.toContain("not-a-function");
     }
   });
+
+  it.each([
+    ["provider level", { level: "provider-secret-level" }],
+    ["invalid serializer", { serializers: { req: "provider-secret-serializer" } }],
+    [
+      "logger-shaped instance",
+      {
+        info: vi.fn(),
+        error: vi.fn(),
+        debug: vi.fn(),
+        fatal: vi.fn(),
+        warn: vi.fn(),
+        trace: vi.fn(),
+        child: vi.fn(),
+      },
+    ],
+  ])("rejects the %s logger input with one safe composition error", async (_case, logger) => {
+    const dependencies = {
+      ...fakes(),
+      logger,
+    } as unknown as ApiDependencies;
+
+    await expect(buildApp(dependencies)).rejects.toThrow(
+      "API_DEPENDENCIES_INVALID",
+    );
+    try {
+      await buildApp(dependencies);
+    } catch (error) {
+      expect(String(error)).toBe("Error: API_DEPENDENCIES_INVALID");
+      expect(String(error)).not.toContain("provider-secret");
+      expect(String(error)).not.toContain("FST_ERR");
+    }
+  });
+
+  it.each([false, true])(
+    "accepts logger=%s while serving both parsed health contracts",
+    async (logger) => {
+      const stdoutWrite = vi
+        .spyOn(process.stdout, "write")
+        .mockImplementation(() => true);
+      const app = await buildApp(fakes({ logger }));
+
+      const live = await app.inject({
+        method: "GET",
+        url: "/v1/health/live",
+      });
+      const ready = await app.inject({
+        method: "GET",
+        url: "/v1/health/ready",
+      });
+
+      expect(live.statusCode).toBe(200);
+      expect(HealthResponseSchema.parse(live.json()).status).toBe("ok");
+      expect(ready.statusCode).toBe(200);
+      expect(HealthResponseSchema.parse(ready.json()).status).toBe("ok");
+
+      await app.close();
+      stdoutWrite.mockRestore();
+    },
+  );
 
   it("normalizes valid composition before both health contracts are served", async () => {
     const app = await buildApp({
