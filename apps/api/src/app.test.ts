@@ -1,0 +1,505 @@
+import { execFile } from "node:child_process";
+import { access } from "node:fs/promises";
+import { promisify } from "node:util";
+import { ApiErrorSchema, HealthResponseSchema } from "@syntholo/contracts";
+import type { FastifyRequest } from "fastify";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { buildApp, type ApiDependencies } from "./app.js";
+import { parseApiConfig } from "./config.js";
+import { AppError } from "./plugins/error-handler.js";
+import { startApi } from "./server.js";
+
+const execFileAsync = promisify(execFile);
+const validCorrelationId = "2c714c69-0b75-46ef-8141-739a72ec9689";
+const secondCorrelationId = "b97478b2-1ef7-4aef-8b03-f89e1f80cae5";
+
+function fakes(
+  patch: Partial<ApiDependencies> = {},
+): ApiDependencies {
+  return {
+    releaseSha: "test",
+    logger: false,
+    health: { dependencies: [] },
+    ...patch,
+  };
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+describe("buildApp", () => {
+  it("builds without reading environment configuration or listening", async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    const previousReleaseSha = process.env.RELEASE_SHA;
+    process.env.NODE_ENV = "production";
+    delete process.env.DATABASE_URL;
+    delete process.env.RELEASE_SHA;
+
+    try {
+      const app = await buildApp(fakes());
+      expect(app.server.listening).toBe(false);
+      await app.close();
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabaseUrl;
+      if (previousReleaseSha === undefined) delete process.env.RELEASE_SHA;
+      else process.env.RELEASE_SHA = previousReleaseSha;
+    }
+  });
+
+  it("generates one UUID for the request id, context, header, and error envelope", async () => {
+    const app = await buildApp(fakes());
+    app.get("/context-error", async (request) => {
+      throw new AppError("CONTEXT_TEST", 409, "Safe context error", {
+        requestId: request.id,
+        contextId: request.context.correlationId,
+      });
+    });
+
+    const response = await app.inject({ method: "GET", url: "/context-error" });
+    const body = ApiErrorSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(409);
+    expect(body.error.correlationId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(response.headers["x-correlation-id"]).toBe(
+      body.error.correlationId,
+    );
+    expect(body.error.details).toEqual({
+      requestId: body.error.correlationId,
+      contextId: body.error.correlationId,
+    });
+
+    await app.close();
+  });
+
+  it("preserves a single valid correlation id everywhere", async () => {
+    const app = await buildApp(fakes());
+    app.get("/context", async (request) => ({
+      requestId: request.id,
+      contextId: request.context.correlationId,
+    }));
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/context",
+      headers: { "x-correlation-id": validCorrelationId },
+    });
+
+    expect(response.headers["x-correlation-id"]).toBe(validCorrelationId);
+    expect(response.json()).toEqual({
+      requestId: validCorrelationId,
+      contextId: validCorrelationId,
+    });
+
+    await app.close();
+  });
+
+  it("overwrites a route-provided response header with the request correlation id", async () => {
+    const app = await buildApp(fakes());
+    app.get("/header-override", async (_request, reply) => {
+      void reply.header("x-correlation-id", "route-controlled-secret");
+      return { ok: true };
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/header-override",
+      headers: { "x-correlation-id": validCorrelationId },
+    });
+
+    expect(response.headers["x-correlation-id"]).toBe(validCorrelationId);
+    expect(response.payload).not.toContain("route-controlled-secret");
+
+    await app.close();
+  });
+
+  it.each([
+    ["malformed", "provider-secret"],
+    ["comma-joined", `${validCorrelationId}, ${secondCorrelationId}`],
+  ])("replaces a %s correlation id rather than reflecting it", async (_case, input) => {
+    const app = await buildApp(fakes());
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/health/live",
+      headers: { "x-correlation-id": input },
+    });
+
+    expect(response.headers["x-correlation-id"]).not.toBe(input);
+    expect(response.headers["x-correlation-id"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(response.payload).not.toContain(input);
+
+    await app.close();
+  });
+
+  it("replaces duplicate correlation ids rather than reflecting either value", async () => {
+    const app = await buildApp(fakes());
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/health/live",
+      headers: {
+        "x-correlation-id": [validCorrelationId, secondCorrelationId],
+      },
+    });
+
+    expect(response.headers["x-correlation-id"]).not.toBe(validCorrelationId);
+    expect(response.headers["x-correlation-id"]).not.toBe(secondCorrelationId);
+    expect(response.headers["x-correlation-id"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+
+    await app.close();
+  });
+
+  it("serves liveness without calling readiness dependencies", async () => {
+    const check = vi.fn(async () => ({ status: "ok" as const, latencyMs: 1 }));
+    const app = await buildApp(
+      fakes({ health: { dependencies: [{ name: "postgres", check }] } }),
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/health/live",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(HealthResponseSchema.parse(response.json())).toEqual({
+      status: "ok",
+      releaseSha: "test",
+      service: "api",
+      dependencies: [],
+    });
+    expect(check).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("returns 200 readiness when every parsed dependency is healthy", async () => {
+    const app = await buildApp(
+      fakes({
+        health: {
+          dependencies: [
+            {
+              name: "postgres",
+              check: async () => ({ status: "ok", latencyMs: 3 }),
+            },
+          ],
+        },
+      }),
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/health/ready",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(HealthResponseSchema.parse(response.json())).toEqual({
+      status: "ok",
+      releaseSha: "test",
+      service: "api",
+      dependencies: [{ name: "postgres", status: "ok", latencyMs: 3 }],
+    });
+
+    await app.close();
+  });
+
+  it("returns parsed 503 degraded readiness without secret-shaped fields", async () => {
+    const app = await buildApp(
+      fakes({
+        health: {
+          dependencies: [
+            {
+              name: "postgres",
+              check: async () => ({
+                status: "degraded",
+                latencyMs: 42,
+                databaseUrl: "postgres://secret:secret@example.test/database",
+                providerPayload: { password: "do-not-serialize" },
+              }),
+            },
+          ],
+        },
+      }),
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/health/ready",
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(HealthResponseSchema.parse(response.json())).toEqual({
+      status: "degraded",
+      releaseSha: "test",
+      service: "api",
+      dependencies: [
+        { name: "postgres", status: "degraded", latencyMs: 42 },
+      ],
+    });
+    expect(response.payload).not.toContain("secret");
+    expect(response.payload).not.toContain("providerPayload");
+
+    await app.close();
+  });
+
+  it.each([
+    [
+      "malformed",
+      async () => ({
+        status: "invalid",
+        latencyMs: -1,
+        databaseUrl: "postgres://malformed-secret@example.test/database",
+      }),
+    ],
+    [
+      "thrown",
+      async () => {
+        throw new Error("readiness-provider-secret");
+      },
+    ],
+  ])("converts %s readiness adapter output to a safe degraded summary", async (_case, check) => {
+    const app = await buildApp(
+      fakes({
+        health: {
+          dependencies: [{ name: "postgres", check }],
+        },
+      }),
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/health/ready",
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(HealthResponseSchema.parse(response.json())).toEqual({
+      status: "degraded",
+      releaseSha: "test",
+      service: "api",
+      dependencies: [
+        { name: "postgres", status: "degraded", latencyMs: 0 },
+      ],
+    });
+    expect(response.payload).not.toContain("secret");
+    expect(response.payload).not.toContain("databaseUrl");
+
+    await app.close();
+  });
+
+  it("exposes raw bodies only for routes that explicitly opt in", async () => {
+    type RequestWithRawBody = FastifyRequest & { rawBody?: Buffer };
+    const app = await buildApp(fakes());
+    app.post("/ordinary", async (request) => ({
+      hasRawBody: "rawBody" in request,
+    }));
+    app.post(
+      "/signed",
+      { config: { rawBody: true } },
+      async (request) => {
+        const rawBody = (request as RequestWithRawBody).rawBody;
+        return {
+          isBuffer: Buffer.isBuffer(rawBody),
+          value: rawBody?.toString("utf8"),
+        };
+      },
+    );
+
+    const ordinary = await app.inject({
+      method: "POST",
+      url: "/ordinary",
+      payload: { hello: "world" },
+    });
+    const signed = await app.inject({
+      method: "POST",
+      url: "/signed",
+      payload: { hello: "world" },
+    });
+
+    expect(ordinary.json()).toEqual({ hasRawBody: false });
+    expect(signed.json()).toEqual({
+      isBuffer: true,
+      value: JSON.stringify({ hello: "world" }),
+    });
+
+    await app.close();
+  });
+});
+
+describe("safe error handling", () => {
+  it("serializes only explicit safe AppError fields", async () => {
+    const app = await buildApp(fakes());
+    app.get("/safe-error", async () => {
+      const error = new AppError("CONFLICT", 409, "Safe conflict", {
+        field: "email",
+      });
+      Object.assign(error, {
+        cause: new Error("provider-secret"),
+        providerPayload: { apiKey: "do-not-serialize" },
+      });
+      throw error;
+    });
+
+    const response = await app.inject({ method: "GET", url: "/safe-error" });
+    const body = ApiErrorSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(409);
+    expect(body.error).toMatchObject({
+      code: "CONFLICT",
+      message: "Safe conflict",
+      details: { field: "email" },
+    });
+    expect(response.payload).not.toContain("provider-secret");
+    expect(response.payload).not.toContain("providerPayload");
+    expect(response.payload).not.toContain("stack");
+
+    await app.close();
+  });
+
+  it.each([399, 600, 401.5, Number.NaN])(
+    "rejects an invalid AppError HTTP status %s",
+    (status) => {
+      expect(
+        () => new AppError("INVALID_STATUS", status, "Safe message"),
+      ).toThrow("APP_ERROR_STATUS_INVALID");
+    },
+  );
+
+  it("uses a generic envelope for unknown errors", async () => {
+    const app = await buildApp(fakes());
+    app.get("/unknown-error", async () => {
+      const error = new Error("database-password-provider-secret");
+      Object.assign(error, { providerPayload: { token: "do-not-serialize" } });
+      throw error;
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/unknown-error",
+    });
+    const body = ApiErrorSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(500);
+    expect(body.error).toMatchObject({
+      code: "INTERNAL_ERROR",
+      message: "Internal server error",
+    });
+    expect(response.payload).not.toContain("database-password-provider-secret");
+    expect(response.payload).not.toContain("providerPayload");
+    expect(response.payload).not.toContain("stack");
+
+    await app.close();
+  });
+
+  it("uses a generic 400 envelope for request validation errors", async () => {
+    const app = await buildApp(fakes());
+    app.post(
+      "/validated",
+      {
+        schema: {
+          body: {
+            type: "object",
+            additionalProperties: false,
+            required: ["name"],
+            properties: { name: { type: "string", minLength: 1 } },
+          },
+        },
+      },
+      async () => ({ ok: true }),
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/validated",
+      payload: { providerPayload: "validation-secret" },
+    });
+    const body = ApiErrorSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(400);
+    expect(body.error).toMatchObject({
+      code: "VALIDATION_ERROR",
+      message: "Request validation failed",
+    });
+    expect(response.payload).not.toContain("providerPayload");
+    expect(response.payload).not.toContain("validation-secret");
+
+    await app.close();
+  });
+});
+
+describe("API configuration and startup", () => {
+  it("parses and preserves validated production startup values", () => {
+    expect(
+      parseApiConfig({
+        NODE_ENV: "production",
+        HOST: "127.0.0.1",
+        PORT: "4400",
+        DATABASE_URL: "  postgres://user:password@example.test/db  ",
+        RELEASE_SHA: "  release-abc  ",
+      }),
+    ).toEqual({
+      environment: "production",
+      host: "127.0.0.1",
+      port: 4_400,
+      databaseUrl: "postgres://user:password@example.test/db",
+      releaseSha: "release-abc",
+    });
+  });
+
+  it.each([
+    [{ NODE_ENV: "production", RELEASE_SHA: "release" }],
+    [{ NODE_ENV: "production", DATABASE_URL: "postgres://user:secret@example.test/db" }],
+  ])("fails production configuration closed without required values", (environment) => {
+    const serializedEnvironment = JSON.stringify(environment);
+    expect(() => parseApiConfig(environment)).toThrow("API_CONFIG_INVALID");
+    try {
+      parseApiConfig(environment);
+    } catch (error) {
+      expect(String(error)).not.toContain(serializedEnvironment);
+      expect(String(error)).not.toContain("secret");
+    }
+  });
+
+  it("validates configuration before building or listening", async () => {
+    const build = vi.fn();
+    const listen = vi.fn();
+
+    await expect(
+      startApi({
+        env: { NODE_ENV: "production" },
+        build,
+        listen,
+      }),
+    ).rejects.toThrow("API_CONFIG_INVALID");
+    expect(build).not.toHaveBeenCalled();
+    expect(listen).not.toHaveBeenCalled();
+  });
+});
+
+describe("compiled API artifact", () => {
+  beforeAll(async () => {
+    await execFileAsync("npm", ["run", "build"], {
+      cwd: new URL("..", import.meta.url),
+    });
+  });
+
+  it("produces executable Node.js and fails production startup closed", async () => {
+    const artifact = new URL("../dist/server.js", import.meta.url);
+    await expect(access(artifact)).resolves.toBeUndefined();
+    await expect(
+      execFileAsync(process.execPath, [artifact.pathname], {
+        env: { NODE_ENV: "production", PATH: process.env.PATH },
+      }),
+    ).rejects.toMatchObject({
+      code: 1,
+      stderr: "API_STARTUP_FAILED\n",
+    });
+  });
+});

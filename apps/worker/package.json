@@ -1,0 +1,34 @@
+{
+  "name": "@syntholo/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/runner.ts",
+    "./config": "./src/config.ts",
+    "./cron": "./src/cron.ts"
+  },
+  "scripts": {
+    "build": "esbuild src/runner.ts src/cron.ts --bundle --platform=node --target=node22 --format=esm --outdir=dist --external:zod",
+    "dev": "tsx watch src/runner.ts",
+    "dev:cron": "tsx watch src/cron.ts",
+    "lint": "eslint --config ../../eslint.config.mjs src vitest.config.ts",
+    "start": "node dist/runner.js",
+    "start:cron": "node dist/cron.js",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.12",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10"
+  },
+  "engines": {
+    "node": "22.x"
+  }
+}
