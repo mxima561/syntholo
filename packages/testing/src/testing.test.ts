@@ -52,11 +52,27 @@ describe("actor factories", () => {
 
 describe("createFixture", () => {
   it("applies a partial patch to deterministic domain defaults", () => {
-    const buildStatus = createFixture({ state: "draft", priority: 1 });
+    const buildStatus = createFixture(() => ({ state: "draft", priority: 1 }));
 
     expect(buildStatus({ priority: 2 })).toEqual({
       state: "draft",
       priority: 2,
+    });
+  });
+
+  it("isolates nested defaults between fixtures", () => {
+    const buildDocument = createFixture(() => ({
+      metadata: { tags: ["draft"] },
+      createdAt: new Date("2026-01-01T12:00:00.000Z"),
+    }));
+    const first = buildDocument();
+
+    first.metadata.tags.push("mutated");
+    first.createdAt.setUTCDate(2);
+
+    expect(buildDocument()).toEqual({
+      metadata: { tags: ["draft"] },
+      createdAt: new Date("2026-01-01T12:00:00.000Z"),
     });
   });
 });

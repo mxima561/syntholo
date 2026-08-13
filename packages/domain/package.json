@@ -8,6 +8,7 @@
     "./identity/actor": "./src/identity/actor.ts"
   },
   "scripts": {
+    "lint": "eslint --config ../../eslint.config.mjs src",
     "test": "vitest run --passWithNoTests",
     "typecheck": "tsc --noEmit"
   },

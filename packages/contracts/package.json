@@ -9,6 +9,7 @@
     "./http": "./src/http.ts"
   },
   "scripts": {
+    "lint": "eslint --config ../../eslint.config.mjs src",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
