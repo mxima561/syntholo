@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./events": "./src/events.ts",
     "./identity/actor": "./src/identity/actor.ts"
   },
   "scripts": {

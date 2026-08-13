@@ -5,7 +5,7 @@ export default defineConfig({
   root: fileURLToPath(new URL(".", import.meta.url)),
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
-    exclude: ["src/**/*.integration.test.ts"],
+    include: ["src/**/*.integration.test.ts"],
+    maxWorkers: 1,
   },
 });

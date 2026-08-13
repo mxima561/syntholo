@@ -9,19 +9,22 @@
     "./cron": "./src/cron.ts"
   },
   "scripts": {
-    "build": "esbuild src/runner.ts src/cron.ts --bundle --platform=node --target=node22 --format=esm --outdir=dist --external:zod",
+    "build": "esbuild src/runner.ts src/cron.ts --bundle --platform=node --target=node22 --format=esm --outdir=dist --external:zod --external:pg --external:drizzle-orm --external:drizzle-orm/*",
     "dev": "tsx watch src/runner.ts",
     "dev:cron": "tsx watch src/cron.ts",
-    "lint": "eslint --config ../../eslint.config.mjs src vitest.config.ts",
+    "lint": "eslint --config ../../eslint.config.mjs src vitest.config.ts vitest.integration.config.ts",
     "start": "node dist/runner.js",
     "start:cron": "node dist/cron.js",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@syntholo/database": "^0.1.0",
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@syntholo/testing": "^0.1.0",
     "@types/node": "22.20.1",
     "esbuild": "0.28.2",
     "tsx": "4.23.12",

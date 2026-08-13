@@ -29,7 +29,7 @@ describe("authentication migration and ACLs", () => {
       "staff_login_attempts",
       "staff_sessions",
     ]);
-    expect(journal.rows[0]?.count).toBe("3");
+    expect(journal.rows[0]?.count).toBe("4");
   });
 
   it("rejects malformed cryptographic field lengths", async () => {

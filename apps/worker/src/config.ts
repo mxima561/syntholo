@@ -5,7 +5,7 @@ export type RuntimeEnvironment = Readonly<Record<string, string | undefined>>;
 const WorkerEnvironmentSchema = z.object({
   DATABASE_URL: z.string().trim().min(1),
   RELEASE_SHA: z.string().trim().min(1),
-  WORKER_CONCURRENCY: z.coerce.number().int().positive(),
+  WORKER_CONCURRENCY: z.coerce.number().int().positive().max(100),
   WORKER_IDLE_DELAY_MS: z.coerce.number().int().positive().default(1_000),
 });
 

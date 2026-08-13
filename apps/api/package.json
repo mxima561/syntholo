@@ -11,9 +11,10 @@
   "scripts": {
     "build": "esbuild src/server.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server.js --external:fastify --external:fastify-plugin --external:fastify-raw-body --external:zod --external:pg --external:drizzle-orm --external:drizzle-orm/* --external:@clerk/backend --external:@workos-inc/node --external:jose",
     "dev": "tsx watch src/server.ts",
-    "lint": "eslint --config ../../eslint.config.mjs src vitest.config.ts",
+    "lint": "eslint --config ../../eslint.config.mjs src vitest.config.ts vitest.integration.config.ts",
     "start": "node dist/server.js",
     "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@syntholo/testing": "^0.1.0",
     "@types/node": "22.20.1",
     "esbuild": "0.28.2",
     "tsx": "4.23.12",

@@ -18,7 +18,12 @@ import {
   providerEventReceipts,
   staffIdentities,
 } from "./schema/index.js";
-import { withAccountScope } from "./unit-of-work.js";
+import { createUnitOfWork, withAccountScope } from "./unit-of-work.js";
+import { JobRepository } from "./repositories/jobs.js";
+import {
+  HandlerReceiptRepository,
+  OutboxProcessorRepository,
+} from "./repositories/outbox-processing.js";
 import {
   createTestDatabaseHarness,
   type TestDatabaseHarness,
@@ -41,6 +46,8 @@ const capabilityRoles = [
 const customerTables = [
   "accounts",
   "audit_events",
+  "event_handler_receipts",
+  "job_attempts",
   "jobs",
   "member_identities",
   "memberships",
@@ -50,6 +57,8 @@ const customerTables = [
 const foundationTables = [
   "accounts",
   "audit_events",
+  "event_handler_receipts",
+  "job_attempts",
   "jobs",
   "member_identities",
   "memberships",
@@ -162,23 +171,31 @@ async function seedFoundationRows(database: Database): Promise<void> {
   );
   await database.pool.query(
     `insert into audit_events
-      (account_id, actor_type, action, target_type)
-     values ($1, 'member', 'created', 'account'),
-            ($2, 'member', 'created', 'account')`,
-    [accountA, accountB],
+      (account_id, actor_type, actor_id, correlation_id, action, target_type, occurred_at)
+     values ($1, 'member', 'member_a', $3, 'created', 'account', $5),
+            ($2, 'member', 'member_b', $4, 'created', 'account', $5)`,
+    [accountA, accountB,
+      "10000000-0000-4000-8000-000000000091",
+      "20000000-0000-4000-8000-000000000092",
+      new Date("2026-08-13T15:00:00.000Z")],
   );
   await database.pool.query(
     `insert into outbox_events
-      (account_id, type, aggregate_id, payload)
-     values ($1, 'account.created', $3, '{}'),
-            ($2, 'account.created', $4, '{}')`,
-    [accountA, accountB, accountA, accountB],
+      (account_id, actor_type, actor_id, correlation_id, occurred_at, type, aggregate_id, payload)
+     values ($1, 'member', 'member_a', $5, now(), 'account.created', $3, '{}'),
+            ($2, 'member', 'member_b', $6, now(), 'account.created', $4, '{}')`,
+    [accountA, accountB, accountA, accountB,
+      "10000000-0000-4000-8000-000000000091",
+      "20000000-0000-4000-8000-000000000092"],
   );
   await database.pool.query(
     `insert into jobs
-      (account_id, type, payload)
-     values ($1, 'sync.account', '{}'), ($2, 'sync.account', '{}')`,
-    [accountA, accountB],
+      (account_id, source_actor_type, source_actor_id, correlation_id, type, payload)
+     values ($1, 'member', 'member_a', $3, 'sync.account', '{}'),
+            ($2, 'member', 'member_b', $4, 'sync.account', '{}')`,
+    [accountA, accountB,
+      "10000000-0000-4000-8000-000000000091",
+      "20000000-0000-4000-8000-000000000092"],
   );
   await database.pool.query(
     `insert into provider_event_receipts
@@ -192,6 +209,16 @@ async function currentScope(database: Database): Promise<string | null> {
     "select nullif(current_setting('app.account_id', true), '') as account_id",
   );
   return result.rows[0]?.account_id ?? null;
+}
+
+async function currentTrustedScope(database: Database): Promise<Record<string, string | null>> {
+  const result = await database.pool.query<Record<string, string | null>>(
+    `select nullif(current_setting('app.account_id', true), '') as account_id,
+            nullif(current_setting('app.actor_id', true), '') as actor_id,
+            nullif(current_setting('app.actor_kind', true), '') as actor_kind,
+            nullif(current_setting('app.correlation_id', true), '') as correlation_id`,
+  );
+  return result.rows[0]!;
 }
 
 function databaseName(kind: string): string {
@@ -422,7 +449,7 @@ describe.sequential("capability role provisioning migration", () => {
           "select count(*)::text as count from drizzle.__drizzle_migrations",
         )
       ));
-      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["3", "3"]);
+      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["4", "4"]);
       const passwords = await maintenance.query<{
         rolname: string;
         rolpasswordisnull: boolean;
@@ -730,25 +757,17 @@ describe("PostgreSQL account role boundary", () => {
       roles: ["syntholo_member_api"],
       tablename,
     })));
-    const workerPolicies = ([
-      ["audit_events", "INSERT"],
-      ["audit_events", "SELECT"],
-      ["jobs", "INSERT"],
-      ["jobs", "SELECT"],
-      ["jobs", "UPDATE"],
-      ["outbox_events", "INSERT"],
-      ["outbox_events", "SELECT"],
-      ["outbox_events", "UPDATE"],
-    ] as const).map(([tablename, cmd]) => ({
-      cmd,
-      policyname: `${tablename}_worker_${cmd === "SELECT" ? "read" : cmd.toLowerCase()}`,
-      roles: ["syntholo_worker"],
-      tablename,
-    }));
+    const workerPolicies: Array<{
+      cmd: string; policyname: string; roles: string[]; tablename: string;
+    }> = [];
 
     expect(policies.rows).toEqual([
       ...universalPolicies,
       ...memberPolicies,
+      { cmd: "INSERT", policyname: "audit_events_member_insert", roles: ["syntholo_member_api"], tablename: "audit_events" },
+      { cmd: "INSERT", policyname: "audit_events_staff_insert", roles: ["syntholo_staff_api"], tablename: "audit_events" },
+      { cmd: "INSERT", policyname: "outbox_events_member_insert", roles: ["syntholo_member_api"], tablename: "outbox_events" },
+      { cmd: "INSERT", policyname: "outbox_events_staff_insert", roles: ["syntholo_staff_api"], tablename: "outbox_events" },
       ...workerPolicies,
     ].sort(
       (left, right) =>
@@ -759,9 +778,10 @@ describe("PostgreSQL account role boundary", () => {
     expect(policies.rows.some(({ cmd, roles }) =>
       cmd === "DELETE" && roles.includes("syntholo_member_api")
     )).toBe(false);
-    expect(policies.rows.some(({ roles, tablename }) =>
+    expect(policies.rows.some(({ roles, tablename, cmd }) =>
       roles.includes("syntholo_member_api")
-      && ["audit_events", "outbox_events", "jobs"].includes(tablename)
+      && ["audit_events", "outbox_events"].includes(tablename)
+      && cmd !== "INSERT"
     )).toBe(false);
   });
 
@@ -945,6 +965,182 @@ describe("PostgreSQL account role boundary", () => {
     expect(memberDb.pool.totalCount).toBe(1);
   });
 
+  it("commits attested member and staff audit/outbox facts through actual runtime logins", async () => {
+    await seedFoundationRows(harness.database);
+    const occurredAt = new Date("2026-08-13T16:00:00.000Z");
+    const member = createUnitOfWork(memberDb, {
+      accountId: accountA,
+      actor: {
+        accountId: accountA,
+        actorId: identityA,
+        authenticatedAt: occurredAt,
+        clerkUserId: "member_a",
+        kind: "member",
+        membershipId: membershipA,
+        role: "owner",
+      },
+      clock: { now: () => occurredAt },
+      correlationId: "10000000-0000-4000-8000-000000000093",
+    });
+    await member.transaction(async (transaction) => {
+      await transaction.accounts.rename("Member attested");
+      await transaction.audit.append({
+        action: "account_name_changed",
+        payload: { changedFields: ["name"] },
+        targetId: accountA,
+        targetType: "account",
+      });
+      await transaction.outbox.enqueue(transaction.outbox.create({
+        aggregateId: accountA,
+        eventId: "10000000-0000-4000-8000-000000000094",
+        payload: { changedFields: ["name"] },
+        type: "foundation.account_name_changed.v1",
+      }));
+    });
+    expect(await currentTrustedScope(memberDb)).toEqual({
+      account_id: null,
+      actor_id: null,
+      actor_kind: null,
+      correlation_id: null,
+    });
+    const retryEventId = "10000000-0000-4000-8000-000000000083";
+    await Promise.all(Array.from({ length: 8 }, () => member.transaction(async (transaction) => {
+      await transaction.outbox.enqueueOnce(transaction.outbox.create({
+        aggregateId: accountA,
+        eventId: retryEventId,
+        payload: { changedFields: ["name"] },
+        type: "foundation.account_name_changed.v1",
+      }));
+    })));
+    expect((await harness.database.pool.query(
+      "select count(*)::int as count from outbox_events where event_id=$1",
+      [retryEventId],
+    )).rows[0]?.count).toBe(1);
+    await expect(member.transaction(async (transaction) => {
+      await transaction.outbox.enqueueOnce(transaction.outbox.create({
+        aggregateId: accountA,
+        eventId: retryEventId,
+        payload: { changedFields: ["status"] },
+        type: "foundation.account_name_changed.v1",
+      }));
+    })).rejects.toThrow("OUTBOX_EVENT_CONFLICT");
+    await expect(memberDb.pool.query(
+      `select public.syntholo_enqueue_outbox_once(
+        $1,null,'system','forged',$2,'foundation.aggregate_created.v1',
+        'foundation_1',$3,'{"referenceId":"foundation_1"}'::jsonb)`,
+      [
+        "10000000-0000-4000-8000-000000000081",
+        "10000000-0000-4000-8000-000000000082",
+        occurredAt,
+      ],
+    )).rejects.toMatchObject({ code: "42501" });
+    await expect(member.transaction(async () => {
+      throw new Error("EXPECTED_UOW_ROLLBACK");
+    })).rejects.toThrow("EXPECTED_UOW_ROLLBACK");
+    expect(await currentTrustedScope(memberDb)).toEqual({
+      account_id: null,
+      actor_id: null,
+      actor_kind: null,
+      correlation_id: null,
+    });
+
+    const staff = createUnitOfWork(staffDb, {
+      accountId: null,
+      actor: {
+        actorId: "20000000-0000-4000-8000-000000000095",
+        authenticatedAt: occurredAt,
+        kind: "staff",
+        permissions: ["foundation:write"],
+        role: "admin",
+        staffId: "20000000-0000-4000-8000-000000000096",
+        workosUserId: "staff_a",
+      },
+      clock: { now: () => occurredAt },
+      correlationId: "20000000-0000-4000-8000-000000000097",
+    });
+    await staff.transaction(async (transaction) => {
+      await transaction.audit.append({
+        action: "foundation_tested",
+        payload: { referenceId: "foundation_1" },
+        targetId: null,
+        targetType: "foundation",
+      });
+      await transaction.outbox.enqueue(transaction.outbox.create({
+        aggregateId: "foundation_1",
+        eventId: "20000000-0000-4000-8000-000000000098",
+        payload: { referenceId: "foundation_1" },
+        type: "foundation.aggregate_created.v1",
+      }));
+    });
+
+    expect(() => createUnitOfWork(memberDb, {
+      accountId: accountB,
+      actor: {
+        accountId: accountA,
+        actorId: identityA,
+        authenticatedAt: occurredAt,
+        clerkUserId: "member_a",
+        kind: "member",
+        membershipId: membershipA,
+        role: "owner",
+      },
+      clock: { now: () => occurredAt },
+      correlationId: "10000000-0000-4000-8000-000000000093",
+    })).toThrow("ACTOR_ACCOUNT_MISMATCH");
+
+    const persisted = await harness.database.pool.query(
+      `select actor_type, actor_id, account_id, correlation_id
+       from audit_events where correlation_id in ($1,$2) order by actor_type`,
+      ["10000000-0000-4000-8000-000000000093",
+        "20000000-0000-4000-8000-000000000097"],
+    );
+    expect(persisted.rows).toEqual([
+      {
+        account_id: accountA,
+        actor_id: identityA,
+        actor_type: "member",
+        correlation_id: "10000000-0000-4000-8000-000000000093",
+      },
+      {
+        account_id: null,
+        actor_id: "20000000-0000-4000-8000-000000000095",
+        actor_type: "staff",
+        correlation_id: "20000000-0000-4000-8000-000000000097",
+      },
+    ]);
+  });
+
+  it.each([
+    ["cross-account", accountB],
+    ["null-account", null],
+  ])("denies %s audit and outbox inserts under an account-A member scope", async (_label, rowAccount) => {
+    await seedFoundationRows(harness.database);
+    const correlationId = "10000000-0000-4000-8000-000000000087";
+    const scopedInsert = (statement: string) => memberDb.transaction(async (transaction) => {
+      await transaction.execute(sql`select
+        set_config('app.account_id', ${accountA}, true),
+        set_config('app.actor_id', ${identityA}, true),
+        set_config('app.actor_kind', 'member', true),
+        set_config('app.correlation_id', ${correlationId}, true)`);
+      await transaction.execute(sql.raw(statement));
+    });
+    const accountSql = rowAccount === null ? "null" : `'${rowAccount}'::uuid`;
+    await expect(scopedInsert(
+      `insert into audit_events
+       (account_id,actor_type,actor_id,action,target_type,correlation_id,payload,occurred_at)
+       values (${accountSql},'member','${identityA}','foundation_tested','foundation',
+         '${correlationId}'::uuid,'{}',now())`,
+    )).rejects.toMatchObject({ cause: { code: "42501" } });
+    await expect(scopedInsert(
+      `insert into outbox_events
+       (event_id,account_id,actor_type,actor_id,correlation_id,type,aggregate_id,
+        occurred_at,payload,available_at)
+       values ('10000000-0000-4000-8000-000000000086',${accountSql},'member',
+         '${identityA}','${correlationId}'::uuid,'foundation.aggregate_created.v1',
+         'foundation_1',now(),'{}',now())`,
+    )).rejects.toMatchObject({ cause: { code: "42501" } });
+  });
+
   it("rejects a non-canonical scope before opening a database connection", async () => {
     const baseUrl = process.env.TEST_DATABASE_URL;
     if (baseUrl === undefined) {
@@ -976,7 +1172,12 @@ describe("PostgreSQL account role boundary", () => {
     });
     await expect(memberDb.insert(outboxEvents).values({
       accountId: accountA,
+      actorId: "member-test",
+      actorType: "member",
       aggregateId: accountA,
+      correlationId: "10000000-0000-4000-8000-000000000099",
+      eventId: "10000000-0000-4000-8000-000000000088",
+      occurredAt: new Date("2026-08-13T16:00:00.000Z"),
       payload: {},
       type: "forbidden",
     })).rejects.toMatchObject({ cause: { code: "42501" } });
@@ -1003,7 +1204,7 @@ describe("PostgreSQL account role boundary", () => {
       .from(memberships);
     const auditRows = await staffDb.select({ id: auditEvents.id })
       .from(auditEvents);
-    const outboxRows = await staffDb.select({ id: outboxEvents.id })
+    const outboxRows = await staffDb.select({ id: outboxEvents.eventId })
       .from(outboxEvents);
     const jobRows = await staffDb.select({ id: jobs.id }).from(jobs);
     expect(accountRows).toHaveLength(2);
@@ -1028,40 +1229,46 @@ describe("PostgreSQL account role boundary", () => {
     await expect(workerDb.select().from(memberIdentities)).rejects
       .toMatchObject({ cause: { code: "42501" } });
 
-    const insertedAudit = await workerDb.insert(auditEvents).values({
+    await expect(workerDb.insert(auditEvents).values({
       accountId: accountA,
       action: "processed",
+      actorId: "worker-test",
       actorType: "system",
+      correlationId: "10000000-0000-4000-8000-000000000099",
+      occurredAt: new Date("2026-08-13T16:00:00.000Z"),
       targetType: "job",
-    }).returning({ id: auditEvents.id });
-    expect(insertedAudit).toHaveLength(1);
+    })).rejects.toMatchObject({ cause: { code: "42501" } });
     await expect(workerDb.update(auditEvents).set({ action: "forbidden" }))
       .rejects.toMatchObject({ cause: { code: "42501" } });
 
-    const insertedOutbox = await workerDb.insert(outboxEvents).values({
+    await expect(workerDb.insert(outboxEvents).values({
       accountId: accountA,
+      actorId: "worker-test",
+      actorType: "system",
       aggregateId: accountA,
+      correlationId: "10000000-0000-4000-8000-000000000099",
+      eventId: "10000000-0000-4000-8000-000000000089",
+      occurredAt: new Date("2026-08-13T16:00:00.000Z"),
       payload: {},
       type: "worker.test",
-    }).returning({ id: outboxEvents.id });
-    expect(insertedOutbox).toHaveLength(1);
-    const updatedOutbox = await workerDb.update(outboxEvents)
+    })).rejects.toMatchObject({ cause: { code: "42501" } });
+    await expect(workerDb.update(outboxEvents)
       .set({ status: "processing" })
-      .where(eq(outboxEvents.id, insertedOutbox[0]!.id))
-      .returning({ id: outboxEvents.id });
-    expect(updatedOutbox).toHaveLength(1);
+      .where(eq(outboxEvents.eventId, "10000000-0000-4000-8000-000000000089")))
+      .rejects.toMatchObject({ cause: { code: "42501" } });
 
-    const insertedJob = await workerDb.insert(jobs).values({
+    await expect(workerDb.insert(jobs).values({
       accountId: accountA,
+      correlationId: "10000000-0000-4000-8000-000000000099",
       payload: {},
+      sourceActorId: "worker-test",
+      sourceActorType: "system",
       type: "worker.test",
-    }).returning({ id: jobs.id });
-    expect(insertedJob).toHaveLength(1);
-    const updatedJob = await workerDb.update(jobs)
+    })).rejects.toMatchObject({ cause: { code: "42501" } });
+    await expect(workerDb.update(jobs)
       .set({ status: "running", workerId: "worker-test" })
-      .where(eq(jobs.id, insertedJob[0]!.id))
-      .returning({ id: jobs.id });
-    expect(updatedJob).toHaveLength(1);
+      .where(eq(jobs.id, "10000000-0000-4000-8000-000000000089")))
+      .rejects.toMatchObject({ cause: { code: "42501" } });
 
     const insertedReceipt = await workerDb.insert(providerEventReceipts).values({
       provider: "stripe",
@@ -1071,6 +1278,65 @@ describe("PostgreSQL account role boundary", () => {
     await expect(workerDb.delete(providerEventReceipts)).rejects.toMatchObject({
       cause: { code: "42501" },
     });
+  });
+
+  it("runs the function-only outbox, job, receipt, and worker-audit lifecycle as the actual worker login", async () => {
+    await seedFoundationRows(harness.database);
+    const now = new Date("2026-08-13T18:00:00.000Z");
+    const eventId = "30000000-0000-4000-8000-000000000081";
+    const correlationId = "30000000-0000-4000-8000-000000000082";
+    await harness.database.pool.query(
+      `insert into outbox_events
+       (event_id, account_id, actor_type, actor_id, correlation_id, type,
+        aggregate_id, occurred_at, payload, available_at)
+       values ($1,$2,'member',$3,$4,'foundation.notification_sent.v1',
+         $2::uuid::text,$5,'{"referenceId":"account_1"}',$5)`,
+      [eventId, accountA, identityA, correlationId, now],
+    );
+    const outbox = new OutboxProcessorRepository(workerDb, { leaseMs: 10_000 });
+    const jobsRepository = new JobRepository(workerDb, { leaseMs: 10_000 });
+    const receipts = new HandlerReceiptRepository(workerDb, { leaseMs: 10_000 });
+    const outboxClaim = (await outbox.claim(1, "actual-worker", now))[0]!;
+    await expect(outbox.dispatch(
+      outboxClaim,
+      ["foundation_audit_projection"],
+      now,
+    )).resolves.toEqual({ jobsCreated: 1, kind: "published" });
+    const jobClaim = (await jobsRepository.claim(1, "actual-worker", now))[0]!;
+    const receipt = await receipts.acquire(jobClaim, now);
+    expect(receipt).toMatchObject({ kind: "acquired", eventId });
+    if (receipt.kind !== "acquired") throw new Error("EXPECTED_RECEIPT");
+    await expect(receipts.complete(receipt, new Date(now.getTime() + 1)))
+      .resolves.toEqual({ kind: "completed" });
+    await expect(jobsRepository.complete(jobClaim, new Date(now.getTime() + 2)))
+      .resolves.toEqual({ kind: "completed" });
+
+    const persisted = await harness.database.pool.query(
+      `select o.status as event_status, j.status as job_status,
+              r.status as receipt_status, a.account_id, a.actor_type,
+              a.actor_id, a.correlation_id, a.action, a.payload
+       from outbox_events o
+       join jobs j on j.payload->>'eventId' = o.event_id::text
+       join event_handler_receipts r on r.job_id = j.id
+       join audit_events a on a.target_id = o.event_id::text
+       where o.event_id = $1`,
+      [eventId],
+    );
+    expect(persisted.rows).toEqual([{
+      account_id: accountA,
+      action: "handler_delivery_completed",
+      actor_id: "actual-worker",
+      actor_type: "system",
+      correlation_id: correlationId,
+      event_status: "published",
+      job_status: "completed",
+      payload: {
+        eventId,
+        handlerName: "foundation_audit_projection",
+        outcome: "completed",
+      },
+      receipt_status: "completed",
+    }]);
   });
 
   it("grants only the explicit current runtime table privilege matrix", async () => {
@@ -1100,9 +1366,16 @@ describe("PostgreSQL account role boundary", () => {
           }),
         ),
       ),
+      ...["audit_events", "outbox_events"].map((table_name) => ({
+        grantee: "syntholo_member_api",
+        privilege_type: "INSERT",
+        table_name,
+      })),
       ...[
         "accounts",
         "audit_events",
+        "event_handler_receipts",
+        "job_attempts",
         "jobs",
         "member_identities",
         "memberships",
@@ -1114,10 +1387,12 @@ describe("PostgreSQL account role boundary", () => {
         privilege_type: "SELECT",
         table_name,
       })),
+      ...["audit_events", "outbox_events"].map((table_name) => ({
+        grantee: "syntholo_staff_api",
+        privilege_type: "INSERT",
+        table_name,
+      })),
       ...[
-        ["audit_events", ["INSERT", "SELECT"]],
-        ["jobs", ["INSERT", "SELECT", "UPDATE"]],
-        ["outbox_events", ["INSERT", "SELECT", "UPDATE"]],
         ["provider_event_receipts", ["INSERT", "SELECT", "UPDATE"]],
       ].flatMap(([table_name, privileges]) =>
         (privileges as string[]).map((privilege_type) => ({
@@ -1131,6 +1406,109 @@ describe("PostgreSQL account role boundary", () => {
         `${right.grantee}:${right.table_name}:${right.privilege_type}`,
       )
     ));
+  });
+
+  it("keeps audit immutable for the owner and every runtime capability", async () => {
+    await seedFoundationRows(harness.database);
+    for (const database of [harness.database, memberDb, staffDb, workerDb]) {
+      await expect(database.pool.query("update audit_events set action='forbidden'"))
+        .rejects.toMatchObject({ code: expect.stringMatching(/42501|55000/u) });
+      await expect(database.pool.query("delete from audit_events"))
+        .rejects.toMatchObject({ code: expect.stringMatching(/42501|55000/u) });
+      await expect(database.pool.query("truncate audit_events"))
+        .rejects.toMatchObject({ code: expect.stringMatching(/42501|55000/u) });
+    }
+    const triggers = await harness.database.pool.query(
+      `select tgname, tgenabled from pg_trigger
+       where tgrelid='audit_events'::regclass and not tgisinternal
+       order by tgname`,
+    );
+    expect(triggers.rows).toEqual([
+      { tgenabled: "O", tgname: "audit_events_account_id_immutable" },
+      { tgenabled: "A", tgname: "audit_events_append_only_rows" },
+      { tgenabled: "A", tgname: "audit_events_append_only_truncate" },
+    ]);
+  });
+
+  it("locks every Task 7 transition function to worker/migrator with a fixed search path", async () => {
+    const functions = await harness.database.pool.query<{
+      executable_by_public: boolean;
+      executable_by_member: boolean;
+      executable_by_migrator: boolean;
+      executable_by_staff: boolean;
+      executable_by_worker: boolean;
+      identity_arguments: string;
+      name: string;
+      proconfig: string[];
+      prosecdef: boolean;
+    }>(
+      `select p.proname as name, p.prosecdef, p.proconfig,
+              pg_get_function_identity_arguments(p.oid) as identity_arguments,
+              has_function_privilege('public', p.oid, 'execute') as executable_by_public,
+              has_function_privilege('syntholo_member_api', p.oid, 'execute') as executable_by_member,
+              has_function_privilege('syntholo_staff_api', p.oid, 'execute') as executable_by_staff,
+              has_function_privilege('syntholo_migrator', p.oid, 'execute') as executable_by_migrator,
+              has_function_privilege('syntholo_worker', p.oid, 'execute') as executable_by_worker
+       from pg_proc p
+       where p.pronamespace='public'::regnamespace
+         and p.proname like 'syntholo_%'
+         and p.proname in (
+           'syntholo_claim_jobs','syntholo_complete_job','syntholo_extend_job_lease','syntholo_fail_job',
+           'syntholo_quarantine_job_payload','syntholo_claim_outbox',
+           'syntholo_dispatch_outbox','syntholo_fail_outbox',
+           'syntholo_acquire_handler_receipt','syntholo_complete_handler_receipt',
+           'syntholo_abandon_handler_receipt','syntholo_enqueue_outbox_once'
+         ) order by p.proname`,
+    );
+    expect(functions.rows).toHaveLength(12);
+    expect(functions.rows.map(({ identity_arguments, name }) => ({ identity_arguments, name })))
+      .toEqual([
+        { name: "syntholo_abandon_handler_receipt", identity_arguments: "p_handler text, p_event uuid, p_job uuid, p_worker text, p_job_attempt integer, p_job_generation integer, p_job_token uuid, p_attempt integer, p_generation integer, p_token uuid, p_now timestamp with time zone" },
+        { name: "syntholo_acquire_handler_receipt", identity_arguments: "p_job uuid, p_worker text, p_job_attempt integer, p_job_generation integer, p_job_token uuid, p_now timestamp with time zone, p_lease_ms integer" },
+        { name: "syntholo_claim_jobs", identity_arguments: "p_limit integer, p_worker text, p_now timestamp with time zone, p_lease_ms integer" },
+        { name: "syntholo_claim_outbox", identity_arguments: "p_limit integer, p_worker text, p_now timestamp with time zone, p_lease_ms integer" },
+        { name: "syntholo_complete_handler_receipt", identity_arguments: "p_handler text, p_event uuid, p_job uuid, p_worker text, p_job_attempt integer, p_job_generation integer, p_job_token uuid, p_attempt integer, p_generation integer, p_token uuid, p_now timestamp with time zone" },
+        { name: "syntholo_complete_job", identity_arguments: "p_job uuid, p_worker text, p_attempt integer, p_generation integer, p_token uuid, p_now timestamp with time zone" },
+        { name: "syntholo_dispatch_outbox", identity_arguments: "p_event uuid, p_worker text, p_attempt integer, p_generation integer, p_token uuid, p_now timestamp with time zone, p_handlers text[]" },
+        { name: "syntholo_enqueue_outbox_once", identity_arguments: "p_event uuid, p_account uuid, p_actor_type text, p_actor_id text, p_correlation uuid, p_type text, p_aggregate text, p_occurred timestamp with time zone, p_payload jsonb" },
+        { name: "syntholo_extend_job_lease", identity_arguments: "p_job uuid, p_worker text, p_attempt integer, p_generation integer, p_token uuid, p_now timestamp with time zone, p_lease_ms integer" },
+        { name: "syntholo_fail_job", identity_arguments: "p_job uuid, p_worker text, p_attempt integer, p_generation integer, p_token uuid, p_now timestamp with time zone, p_code text, p_message text, p_run_at timestamp with time zone" },
+        { name: "syntholo_fail_outbox", identity_arguments: "p_event uuid, p_worker text, p_attempt integer, p_generation integer, p_token uuid, p_now timestamp with time zone, p_run_at timestamp with time zone" },
+        { name: "syntholo_quarantine_job_payload", identity_arguments: "p_job uuid, p_worker text, p_attempt integer, p_generation integer, p_token uuid, p_now timestamp with time zone" },
+      ]);
+    expect(functions.rows.every((row) =>
+      row.prosecdef && !row.executable_by_public
+      && row.proconfig.includes("search_path=pg_catalog, public")
+    )).toBe(true);
+    const enqueue = functions.rows.find(({ name }) => name === "syntholo_enqueue_outbox_once");
+    expect(enqueue).toMatchObject({
+      executable_by_member: true,
+      executable_by_migrator: false,
+      executable_by_staff: true,
+      executable_by_worker: false,
+      identity_arguments: "p_event uuid, p_account uuid, p_actor_type text, p_actor_id text, p_correlation uuid, p_type text, p_aggregate text, p_occurred timestamp with time zone, p_payload jsonb",
+    });
+    expect(functions.rows.filter(({ name }) => name !== "syntholo_enqueue_outbox_once")
+      .every((row) => row.executable_by_worker && row.executable_by_migrator
+        && !row.executable_by_member && !row.executable_by_staff)).toBe(true);
+    const identityTrigger = await harness.database.pool.query(
+      `select pg_get_function_identity_arguments(p.oid) as identity_arguments,
+              p.prosecdef, p.proconfig,
+              has_function_privilege('public',p.oid,'execute') as public_execute,
+              has_function_privilege('syntholo_member_api',p.oid,'execute') as member_execute,
+              has_function_privilege('syntholo_staff_api',p.oid,'execute') as staff_execute,
+              has_function_privilege('syntholo_worker',p.oid,'execute') as worker_execute
+       from pg_proc p where p.oid='syntholo_sync_outbox_event_identity()'::regprocedure`,
+    );
+    expect(identityTrigger.rows).toEqual([{
+      identity_arguments: "",
+      member_execute: false,
+      proconfig: ["search_path=pg_catalog, public"],
+      prosecdef: false,
+      public_execute: false,
+      staff_execute: false,
+      worker_execute: false,
+    }]);
   });
 
   it("revokes PUBLIC paths and grants the intended migrator administration ACLs", async () => {
@@ -1223,13 +1601,12 @@ describe("PostgreSQL account role boundary", () => {
     );
     expect(migratorTableGrants.rows).toEqual(foundationTables.flatMap(
       (table_name) => [
-        "DELETE",
+        ...(table_name === "audit_events" ? [] : ["DELETE"]),
         "INSERT",
         "REFERENCES",
         "SELECT",
         "TRIGGER",
-        "TRUNCATE",
-        "UPDATE",
+        ...(table_name === "audit_events" ? [] : ["TRUNCATE", "UPDATE"]),
       ].map((privilege_type) => ({ privilege_type, table_name })),
     ).sort((left, right) =>
       `${left.table_name}:${left.privilege_type}`.localeCompare(
@@ -1238,7 +1615,7 @@ describe("PostgreSQL account role boundary", () => {
     ));
   });
 
-  it("upgrades a journaled 0001 database and applies all migrations fresh", async () => {
+  it("upgrades the exact populated 0001-0003 journal and applies all migrations fresh", async () => {
     const baseUrl = process.env.TEST_DATABASE_URL;
     if (baseUrl === undefined) {
       throw new Error("TEST_DATABASE_URL_REQUIRED");
@@ -1250,28 +1627,38 @@ describe("PostgreSQL account role boundary", () => {
     });
     const upgradeName = databaseName("upgrade");
     const freshName = databaseName("fresh");
-    const temporaryMigrations = await mkdtemp(join(tmpdir(), "syntholo-0001-"));
+    const incompatibleName = databaseName("incompatible");
+    const temporaryMigrations = await mkdtemp(join(tmpdir(), "syntholo-0003-"));
     let upgradeDb: Database | undefined;
     let freshDb: Database | undefined;
+    let incompatibleDb: Database | undefined;
 
     try {
       await dropDatabase(maintenance, upgradeName);
       await dropDatabase(maintenance, freshName);
+      await dropDatabase(maintenance, incompatibleName);
       await maintenance.query(`create database ${quoteDatabaseName(upgradeName)}`);
       await maintenance.query(`create database ${quoteDatabaseName(freshName)}`);
+      await maintenance.query(`create database ${quoteDatabaseName(incompatibleName)}`);
 
       await mkdir(join(temporaryMigrations, "meta"));
-      await writeFile(
-        join(temporaryMigrations, "0001_foundation.sql"),
-        await readFile(new URL("../drizzle/0001_foundation.sql", import.meta.url)),
-      );
+      for (const migration of [
+        "0001_foundation.sql",
+        "0002_roles_and_rls.sql",
+        "0003_staff_authentication.sql",
+      ]) {
+        await writeFile(
+          join(temporaryMigrations, migration),
+          await readFile(new URL(`../drizzle/${migration}`, import.meta.url)),
+        );
+      }
       const fullJournal = JSON.parse(await readFile(
         new URL("../drizzle/meta/_journal.json", import.meta.url),
         "utf8",
       )) as { entries: unknown[] };
       await writeFile(
         join(temporaryMigrations, "meta/_journal.json"),
-        JSON.stringify({ ...fullJournal, entries: fullJournal.entries.slice(0, 1) }),
+        JSON.stringify({ ...fullJournal, entries: fullJournal.entries.slice(0, 3) }),
       );
 
       upgradeDb = createDatabase({
@@ -1279,20 +1666,78 @@ describe("PostgreSQL account role boundary", () => {
         url: databaseUrl(baseUrl, upgradeName),
       });
       await migrate(upgradeDb, { migrationsFolder: temporaryMigrations });
-      const beforeUpgrade = await upgradeDb.pool.query<{ count: string }>(
-        "select count(*)::text as count from drizzle.__drizzle_migrations",
+      const beforeUpgrade = await upgradeDb.pool.query<{ hash: string }>(
+        "select hash from drizzle.__drizzle_migrations order by id",
       );
-      expect(beforeUpgrade.rows[0]?.count).toBe("1");
+      expect(beforeUpgrade.rows.map(({ hash }) => hash)).toEqual([
+        "bf3b66561107047f8c317d81bb561e9a29dc6207a14469a3ce588ec1f8ddc60c",
+        "6508044b65dcce22b5d9a25b954a40768b813d84f943247e59f6c6391cec60a4",
+        "5b1e18eeeb392048ebcd7436622c60702694758b84edc209afb91ba861b8d9da",
+      ]);
+      await upgradeDb.pool.query(`
+        insert into audit_events
+          (actor_type, action, target_type, payload)
+        values ('system', 'legacy_created', 'foundation', '{}');
+        insert into outbox_events
+          (type, aggregate_id, payload, status, attempts, published_at)
+        values
+          ('legacy.published', 'legacy_1', '{}', 'published', 14, null),
+          ('legacy.running', 'legacy_2', '{}', 'processing', 14, null),
+          ('legacy.pending', 'legacy_3', '{}', 'pending', 14, now());
+        insert into jobs
+          (type, payload, status, attempts, max_attempts, completed_at)
+        values
+          ('legacy.completed', '{}', 'completed', 5, 5, null),
+          ('legacy.running', '{}', 'running', 1, 5, null)
+      `);
       await migrateDatabase(upgradeDb);
       const afterUpgrade = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterUpgrade.rows[0]?.count).toBe("3");
+      expect(afterUpgrade.rows[0]?.count).toBe("4");
       await migrateDatabase(upgradeDb);
       const afterRerun = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterRerun.rows[0]?.count).toBe("3");
+      expect(afterRerun.rows[0]?.count).toBe("4");
+      const normalized = await upgradeDb.pool.query(
+        `select
+          (select bool_and(actor_id is not null and correlation_id is not null)
+           from audit_events) as audit_provenance,
+          (select bool_and(max_attempts >= attempts and status <> 'processing')
+           from outbox_events) as outbox_state,
+          (select bool_and(max_attempts >= attempts and status <> 'running')
+           from jobs) as job_state`,
+      );
+      expect(normalized.rows).toEqual([{
+        audit_provenance: true,
+        job_state: true,
+        outbox_state: true,
+      }]);
+
+      incompatibleDb = createDatabase({
+        applicationName: "syntholo-rls-incompatible-upgrade-test",
+        url: databaseUrl(baseUrl, incompatibleName),
+      });
+      await migrate(incompatibleDb, { migrationsFolder: temporaryMigrations });
+      await incompatibleDb.pool.query(
+        "insert into audit_events (actor_type, action, target_type, payload) values ('system','','foundation','{}')",
+      );
+      await expect(migrateDatabase(incompatibleDb)).rejects.toThrow(
+        "SYNTHOLO_0004_LEGACY_DATA_PREFLIGHT_FAILED",
+      );
+      const rejected = await incompatibleDb.pool.query(
+        `select
+           (select count(*)::int from drizzle.__drizzle_migrations) as journal_count,
+           (select action from audit_events limit 1) as action,
+           exists (select 1 from information_schema.columns
+             where table_name='outbox_events' and column_name='event_id') as mutated`,
+      );
+      expect(rejected.rows).toEqual([{
+        action: "",
+        journal_count: 3,
+        mutated: false,
+      }]);
 
       freshDb = createDatabase({
         applicationName: "syntholo-rls-fresh-test",
@@ -1302,17 +1747,25 @@ describe("PostgreSQL account role boundary", () => {
       const freshJournal = await freshDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(freshJournal.rows[0]?.count).toBe("3");
+      expect(freshJournal.rows[0]?.count).toBe("4");
     } finally {
-      await Promise.allSettled([upgradeDb?.close(), freshDb?.close()]);
+      await Promise.allSettled([
+        upgradeDb?.close(),
+        freshDb?.close(),
+        incompatibleDb?.close(),
+      ]);
       try {
         await dropDatabase(maintenance, upgradeName);
       } finally {
         try {
           await dropDatabase(maintenance, freshName);
         } finally {
-          await maintenance.end();
-          await rm(temporaryMigrations, { force: true, recursive: true });
+          try {
+            await dropDatabase(maintenance, incompatibleName);
+          } finally {
+            await maintenance.end();
+            await rm(temporaryMigrations, { force: true, recursive: true });
+          }
         }
       }
     }

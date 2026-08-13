@@ -31,9 +31,11 @@ policy.
 | `accounts` | customer (`id`) | all current table privileges; admin policy | `SELECT`, `INSERT`, `UPDATE`; one command-specific scope policy each | `SELECT`; cross-account read policy | — |
 | `member_identities` | customer (`account_id`) | all; admin policy | `SELECT`, `INSERT`, `UPDATE`; one command-specific scope policy each | `SELECT`; cross-account read policy | — |
 | `memberships` | customer (`account_id`) | all; admin policy | `SELECT`, `INSERT`, `UPDATE`; one command-specific scope policy each | `SELECT`; cross-account read policy | — |
-| `audit_events` | customer when `account_id` is set | all; admin policy | no grant and no policy | `SELECT`; cross-account read policy | `SELECT`, `INSERT`; operational read/insert policies |
-| `outbox_events` | customer when `account_id` is set | all; admin policy | no grant and no policy | `SELECT`; cross-account read policy | `SELECT`, `INSERT`, `UPDATE`; operational policies |
-| `jobs` | customer when `account_id` is set | all; admin policy | no grant and no policy | `SELECT`; cross-account read policy | `SELECT`, `INSERT`, `UPDATE`; operational policies |
+| `audit_events` | customer/global fact | insert/select/trigger only; admin policy | scoped `INSERT` only | `SELECT`, attested `INSERT` | — |
+| `outbox_events` | customer/global operation | all; admin policy | scoped canonical `INSERT` only | `SELECT`, attested canonical `INSERT` | — |
+| `jobs` | customer/global operation | all; admin policy | — | `SELECT` | — |
+| `job_attempts` | attempt history | all; admin policy | — | `SELECT` | — |
+| `event_handler_receipts` | delivery fence | all; admin policy | — | `SELECT` | — |
 | `staff_identities` | global staff identity | all | — | `SELECT` for authorized identity lookup | — |
 | `staff_sessions` | global staff secret | all | — | `SELECT`; mutations only through narrow security-definer functions | — |
 | `staff_login_attempts` | global short-lived staff secret | all | — | no direct table grant; create/consume only through narrow security-definer functions | — |
@@ -41,12 +43,13 @@ policy.
 
 Every customer-owned foundation table has RLS both enabled and forced. Member
 policies fail closed when `app.account_id` is absent or empty. Member API has no
-`DELETE` privilege or policy anywhere and no direct access to audit, outbox, jobs,
-staff identity, or provider receipt rows. A future Task 7 member operation must add
+`DELETE` privilege or policy anywhere and no read access to audit, outbox, jobs,
+staff identity, or provider receipt rows. Any future member operation must add
 both its command-specific grant and matching scoped policy in the same migration;
 an accidental grant alone must not activate an existing `FOR ALL` policy. Staff
-policies are read-only; cross-account
-writes require a future, explicitly authorized and audited use case. Worker has no
+domain/customer-table policies are read-only; Task 7 additionally permits only
+provenance-attested initial audit/outbox inserts. Other cross-account writes
+require a future, explicitly authorized and audited use case. Worker has no
 account, member identity, membership, or staff identity access, and cannot delete
 operational rows. The migrator policy exists because a non-bypass capability with
 table grants would otherwise still be blocked by forced RLS.
@@ -190,7 +193,7 @@ topology explicitly before retrying.
 
 ## Account-scoped transaction sequence
 
-`withAccountScope` is the canonical member transaction boundary:
+`createUnitOfWork` is the canonical member mutation boundary:
 
 1. Validate `accountId` as a lowercase canonical UUID before opening or using a
    database transaction. Failure returns the stable, secret-free
@@ -199,19 +202,20 @@ topology explicitly before retrying.
 3. Execute the parameterized
    `select set_config('app.account_id', accountId, true)`. The third argument makes
    the setting transaction-local, equivalent to `SET LOCAL`.
-4. Execute repository queries with parameterized Drizzle predicates. RLS remains
+4. Execute only its frozen transaction-bound domain repositories. Raw Drizzle,
+   builders, pool clients, and `set_config` are not exposed. RLS remains
    an independent second check.
 5. Commit or roll back. PostgreSQL clears the local setting in both cases before
    the pooled connection can serve another request.
 
-Never concatenate an account ID into SQL, issue session-level `SET app.account_id`,
+The transaction also installs trusted `app.actor_id`, `app.actor_kind`, and
+`app.correlation_id` provenance. Never concatenate an account ID into SQL, issue session-level `SET app.account_id`,
 or run a member query outside this transaction. Back-to-back account A/account B,
 success, rollback, and unset-scope cases are covered against a one-connection pool
 to detect scope leakage.
 
-The `withAccountScope` callback is a trusted package/server-code boundary. Never
-pass it untrusted SQL, a plugin callback, or a user-supplied function: the callback
-receives the transaction and trusted code could deliberately overwrite a GUC.
+`withAccountScope` and `DatabaseTransaction` remain package-internal mechanics;
+they are not root exports and must not be offered to use-case callbacks.
 
 `AccountRepository.getById({ accountId }, id)` is the only exported customer read
 for accounts. It applies both the account scope and an explicit `accounts.id`
@@ -230,14 +234,32 @@ weaken normal account RLS.
 
 ## Forbidden examples
 
-- A member pool selecting `accounts` without `withAccountScope`: returns no rows.
+- A member pool selecting `accounts` without a scoped repository: returns no rows.
 - A member scoped to account A requesting account B through SQL or
   `AccountRepository`: returns no row/`null`.
-- A member inserting audit/outbox/job rows, reading staff/provider rows, or deleting
-  an account: PostgreSQL permission denied.
+- A member inserting an initial same-account attested audit/outbox row is allowed;
+  reading those rows, inserting jobs, forging provenance/state, or deleting an
+  account is denied.
 - A staff pool updating any customer-owned foundation row: PostgreSQL permission
   denied even though staff can read across accounts.
 - A worker pool reading accounts or member identities, mutating an audit row, or
   deleting a provider receipt: PostgreSQL permission denied.
 - A pooled runtime URL used for DDL, or a direct migration/owner URL used for
   member, staff, or worker requests: configuration error and deployment violation.
+
+Audit UPDATE, DELETE, and TRUNCATE are rejected by `ENABLE ALWAYS` triggers even
+for the table owner and migrator, and their table ACLs omit those commands. A
+database owner can still disable/drop a trigger with DDL; owner/DDL credentials
+are therefore a trusted operational boundary and never a runtime credential.
+
+Migration 0004 adds leased `SKIP LOCKED` job/outbox claims, per-attempt random
+fences, bounded retries/dead letters, atomic outbox-to-handler-job dispatch, and
+recoverable `(handler_name,event_id)` receipts. Worker access to these tables is
+only through the exact fixed-search-path claim, lease-renewal, transition,
+dispatch, receipt, and fenced worker-audit functions; it has no direct table
+read or write grant. During a rolling release, `outbox_events.id` is retained as
+a synchronized compatibility identity while `event_id` is the primary domain
+identity; the insert trigger and equality constraint keep old and new binaries
+consistent. The worker startup attests the
+exact `syntholo_worker` capability before polling; it drains active batches before
+closing its database connection.

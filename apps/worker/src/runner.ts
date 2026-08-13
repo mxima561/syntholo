@@ -1,28 +1,140 @@
 import { hostname } from "node:os";
+import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
+import {
+  assertDatabaseCapability,
+  createDatabase,
+  HandlerReceiptRepository,
+  JobRepository,
+  OutboxProcessorRepository,
+  PermanentOutboxDispatchError,
+  type ClassifiedJobFailure,
+  type ClaimedJob,
+  type HandlerReceiptClaim,
+} from "@syntholo/database";
 import {
   parseWorkerConfig,
   type RuntimeEnvironment,
   type WorkerConfig,
 } from "./config.js";
+import {
+  createHandlerRegistry,
+  FatalWorkerConsistencyError,
+  HandlerFailure,
+  type JobHandler,
+} from "./handlers/index.js";
 
 export type WorkerJob = Readonly<{
   id: string;
   type: string;
 }>;
 
+export function createWorkerId(host: string, processId: number): string {
+  if (!Number.isInteger(processId) || processId < 1) throw new Error("WORKER_ID_INVALID");
+  const safeHost = host.replace(/[^A-Za-z0-9._:-]/gu, "-").replace(/^-+/u, "") || "host";
+  const suffix = `-${processId}-${createHash("sha256").update(host).digest("hex").slice(0, 12)}`;
+  return `${safeHost.slice(0, 128 - suffix.length)}${suffix}`;
+}
+
+export type HandlerReceiptPort = Readonly<{
+  acquire(
+    job: ClaimedJob,
+    now: Date,
+  ): Promise<HandlerReceiptClaim | Readonly<{ kind: "busy"; leaseExpiresAt: Date }> | Readonly<{ kind: "completed" }>>;
+  abandon(
+    claim: HandlerReceiptClaim,
+    now: Date,
+  ): Promise<Readonly<{ kind: "abandoned" | "stale_claim" }>>;
+  complete(
+    claim: HandlerReceiptClaim,
+    now: Date,
+  ): Promise<Readonly<{ kind: "completed" | "stale_claim" }>>;
+}>;
+
+export function createDomainEventJobHandler(
+  receipts: HandlerReceiptPort,
+  clock: Readonly<{ now(): Date }>,
+): JobHandler {
+  return async (job) => {
+    const eventId = job.payload.eventId;
+    const handlerName = job.payload.handlerName;
+    if (
+      typeof eventId !== "string"
+      || typeof handlerName !== "string"
+      || handlerName !== "foundation_audit_projection"
+    ) {
+      throw new HandlerFailure({ code: "JOB_INPUT_INVALID", permanent: true });
+    }
+    let receipt;
+    try {
+      receipt = await receipts.acquire(job, clock.now());
+    } catch {
+      throw new FatalWorkerConsistencyError();
+    }
+    if (receipt.kind === "completed") return;
+    if (receipt.kind === "busy") {
+      throw new HandlerFailure({
+        code: "JOB_DEPENDENCY_UNAVAILABLE",
+        permanent: false,
+        retryAt: receipt.leaseExpiresAt,
+      });
+    }
+    try {
+      const completed = await receipts.complete(receipt, clock.now());
+      if (completed.kind !== "completed") throw new FatalWorkerConsistencyError();
+    } catch (error) {
+      if (error instanceof FatalWorkerConsistencyError) throw error;
+      let abandoned;
+      try {
+        abandoned = await receipts.abandon(receipt, clock.now());
+      } catch {
+        throw new FatalWorkerConsistencyError();
+      }
+      if (abandoned.kind !== "abandoned") throw new FatalWorkerConsistencyError();
+      throw error;
+    }
+  };
+}
+
 export type WorkerDependencies<TJob extends WorkerJob> = Readonly<{
   config: WorkerConfig;
   workerId: string;
   clock: Readonly<{ now(): Date }>;
   jobs: Readonly<{
+    readonly heartbeatIntervalMs: number;
     claim(
       concurrency: number,
       workerId: string,
       now: Date,
     ): Promise<readonly TJob[]>;
+    complete(
+      job: TJob,
+      now: Date,
+    ): Promise<Readonly<{ kind: string }>>;
+    extendLease(
+      job: TJob,
+      now: Date,
+    ): Promise<Readonly<{ kind: string; leaseExpiresAt?: Date }>>;
+    fail(
+      job: TJob,
+      failure: Readonly<{
+        code: "JOB_DEPENDENCY_UNAVAILABLE" | "JOB_HANDLER_FAILED" | "JOB_INPUT_INVALID";
+        permanent: boolean;
+        retryAt?: Date;
+      }>,
+      now: Date,
+      random: number,
+    ): Promise<Readonly<{
+      kind: string;
+      runAt?: Date;
+    }>>;
   }>;
-  handlers: Readonly<{ handle(job: TJob): Promise<void> }>;
+  handlers: Readonly<{ handle(job: TJob, signal: AbortSignal): Promise<void> }>;
+  random(): number;
+  heartbeatWait?: (delayMs: number, signal: AbortSignal) => Promise<void>;
+  fatalDrainTimeoutMs?: number;
+  fatalDrainWait?: (delayMs: number, signal: AbortSignal) => Promise<void>;
+  fatalSignal?: AbortSignal;
   wait?: (delayMs: number, signal: AbortSignal) => Promise<void>;
 }>;
 
@@ -43,6 +155,86 @@ export function abortableDelay(
   });
 }
 
+async function processJob<TJob extends WorkerJob>(
+  dependencies: WorkerDependencies<TJob>,
+  job: TJob,
+  fatalSignals: readonly AbortSignal[],
+): Promise<void> {
+  const lifecycleController = new AbortController();
+  const abortForFatalSibling = () => lifecycleController.abort();
+  for (const fatalSignal of fatalSignals) {
+    if (fatalSignal.aborted) lifecycleController.abort();
+    else fatalSignal.addEventListener("abort", abortForFatalSibling, { once: true });
+  }
+  try {
+  const heartbeat = (async () => {
+    const wait = dependencies.heartbeatWait ?? abortableDelay;
+    while (!lifecycleController.signal.aborted) {
+      await wait(dependencies.jobs.heartbeatIntervalMs, lifecycleController.signal);
+      if (lifecycleController.signal.aborted) return;
+      const extended = await dependencies.jobs.extendLease(job, dependencies.clock.now());
+      if (extended.kind !== "extended") throw new FatalWorkerConsistencyError();
+    }
+  })();
+  const handler = dependencies.handlers.handle(job, lifecycleController.signal)
+    .then(() => ({ kind: "handler_completed" as const }))
+    .catch((error: unknown) => ({ error, kind: "handler_failed" as const }));
+  const lease = heartbeat
+    .then(() => ({ kind: "heartbeat_stopped" as const }))
+    .catch((error: unknown) => ({ error, kind: "heartbeat_failed" as const }));
+  const first = await Promise.race([handler, lease]);
+  if (first.kind === "heartbeat_failed") {
+    lifecycleController.abort();
+    await Promise.race([
+      handler,
+      (dependencies.fatalDrainWait ?? abortableDelay)(
+        dependencies.fatalDrainTimeoutMs ?? 5_000,
+        new AbortController().signal,
+      ),
+    ]);
+    throw new FatalWorkerConsistencyError();
+  }
+  if (first.kind === "heartbeat_stopped") {
+    lifecycleController.abort();
+    throw new FatalWorkerConsistencyError();
+  }
+  lifecycleController.abort();
+  const leaseResult = await lease;
+  if (leaseResult.kind !== "heartbeat_stopped") {
+    throw new FatalWorkerConsistencyError();
+  }
+  if (first.kind === "handler_failed") {
+    const handlerError = first.error;
+    if (handlerError instanceof FatalWorkerConsistencyError) throw handlerError;
+    const failure: ClassifiedJobFailure = handlerError instanceof HandlerFailure
+      ? handlerError.failure
+      : { code: "JOB_HANDLER_FAILED", permanent: false };
+    const failed = await dependencies.jobs.fail(
+      job,
+      failure,
+      dependencies.clock.now(),
+      dependencies.random(),
+    );
+    if (failed.kind === "stale_claim") {
+      throw new Error("WORKER_TRANSITION_FAILED");
+    }
+    return;
+  }
+
+  const completed = await dependencies.jobs.complete(
+    job,
+    dependencies.clock.now(),
+  );
+  if (completed.kind !== "completed") {
+    throw new Error("WORKER_TRANSITION_FAILED");
+  }
+  } finally {
+    for (const fatalSignal of fatalSignals) {
+      fatalSignal.removeEventListener("abort", abortForFatalSibling);
+    }
+  }
+}
+
 export async function runWorker<TJob extends WorkerJob>(
   dependencies: WorkerDependencies<TJob>,
   signal: AbortSignal,
@@ -61,7 +253,42 @@ export async function runWorker<TJob extends WorkerJob>(
       dependencies.workerId,
       dependencies.clock.now(),
     );
-    await Promise.all(jobs.map((job) => dependencies.handlers.handle(job)));
+    const batchController = new AbortController();
+    let reportFailure!: (error: unknown) => void;
+    const firstFailure = new Promise<unknown>((resolve) => {
+      reportFailure = resolve;
+    });
+    const processing = jobs.map((job) =>
+      processJob(
+        dependencies,
+        job,
+        dependencies.fatalSignal === undefined
+          ? [batchController.signal]
+          : [batchController.signal, dependencies.fatalSignal],
+      ).catch((error: unknown) => {
+        reportFailure(error);
+        throw error;
+      })
+    );
+    const allSettled = Promise.allSettled(processing);
+    const outcome = await Promise.race([
+      allSettled.then((settled) => ({ kind: "settled" as const, settled })),
+      firstFailure.then((error) => ({ error, kind: "failed" as const })),
+    ]);
+    if (outcome.kind === "failed") {
+      batchController.abort();
+      await Promise.race([
+        allSettled,
+        (dependencies.fatalDrainWait ?? abortableDelay)(
+          dependencies.fatalDrainTimeoutMs ?? 5_000,
+          new AbortController().signal,
+        ),
+      ]);
+      throw new Error("WORKER_TRANSITION_FAILED");
+    }
+    if (outcome.settled.some(({ status }) => status === "rejected")) {
+      throw new Error("WORKER_TRANSITION_FAILED");
+    }
 
     if (jobs.length === 0 && !signal.aborted) {
       await wait(config.idleDelayMs, signal);
@@ -74,19 +301,126 @@ type WorkerRuntimeDependencies<TJob extends WorkerJob> = Omit<
   "config"
 >;
 
+export type OutboxPumpDependencies = Readonly<{
+  config: WorkerConfig;
+  workerId: string;
+  clock: Readonly<{ now(): Date }>;
+  outbox: Pick<OutboxProcessorRepository, "claim" | "dispatch" | "fail">;
+  handlersForEvent(event: import("@syntholo/database").ClaimedOutboxEvent): readonly string[];
+  random(): number;
+  wait?: (delayMs: number, signal: AbortSignal) => Promise<void>;
+}>;
+
+export async function runOutboxPump(
+  dependencies: OutboxPumpDependencies,
+  signal: AbortSignal,
+): Promise<void> {
+  const wait = dependencies.wait ?? abortableDelay;
+  while (!signal.aborted) {
+    const claims = await dependencies.outbox.claim(
+      dependencies.config.concurrency,
+      dependencies.workerId,
+      dependencies.clock.now(),
+    );
+    const settled = await Promise.allSettled(claims.map(async (claim) => {
+      let transitioned;
+      try {
+        transitioned = await dependencies.outbox.dispatch(
+          claim,
+          dependencies.handlersForEvent(claim),
+          dependencies.clock.now(),
+        );
+      } catch (error) {
+        const failed = await dependencies.outbox.fail(
+          claim,
+          dependencies.clock.now(),
+          { permanent: error instanceof PermanentOutboxDispatchError
+            || (error instanceof HandlerFailure && error.failure.permanent) },
+          dependencies.random(),
+        );
+        if (failed.kind === "stale_claim") throw new Error("WORKER_TRANSITION_FAILED");
+        return;
+      }
+      if (transitioned.kind === "stale_claim") {
+        throw new Error("WORKER_TRANSITION_FAILED");
+      }
+    }));
+    if (settled.some(({ status }) => status === "rejected")) {
+      throw new Error("WORKER_TRANSITION_FAILED");
+    }
+    if (claims.length === 0 && !signal.aborted) {
+      await wait(dependencies.config.idleDelayMs, signal);
+    }
+  }
+}
+
+export async function superviseWorkerPumps(
+  controller: AbortController,
+  pumps: readonly [() => Promise<void>, () => Promise<void>],
+  options?: Readonly<{
+    abortActive?(): void;
+    close(): Promise<void>;
+    fatalDrainTimeoutMs: number;
+    fatalDrainWait?: (delayMs: number, signal: AbortSignal) => Promise<void>;
+    forceTerminate(exitCode: 1): void;
+  }>,
+): Promise<void> {
+  let reportFailure!: (error: unknown) => void;
+  const firstFailure = new Promise<unknown>((resolve) => {
+    reportFailure = resolve;
+  });
+  const running = pumps.map(async (pump) => {
+    try {
+      await pump();
+    } catch (error) {
+      controller.abort();
+      reportFailure(error);
+      throw error;
+    }
+  });
+  const allSettled = Promise.allSettled(running);
+  const outcome = await Promise.race([
+    allSettled.then((settled) => ({ kind: "settled" as const, settled })),
+    firstFailure.then((error) => ({ error, kind: "failed" as const })),
+  ]);
+  if (outcome.kind === "failed") {
+    controller.abort();
+    options?.abortActive?.();
+    if (options === undefined) {
+      await allSettled;
+    } else {
+      const drainedAndClosed = allSettled.then(async () => options.close());
+      await Promise.race([
+        drainedAndClosed.catch(() => undefined),
+        (options.fatalDrainWait ?? abortableDelay)(
+          options.fatalDrainTimeoutMs,
+          new AbortController().signal,
+        ),
+      ]);
+      options.forceTerminate(1);
+    }
+    throw outcome.error;
+  }
+  const failed = outcome.settled.find((result): result is PromiseRejectedResult =>
+    result.status === "rejected"
+  );
+  if (failed) throw failed.reason;
+  if (options !== undefined) await options.close();
+}
+
 export type StartWorkerOptions<TJob extends WorkerJob> = Readonly<{
   env?: RuntimeEnvironment;
   signal: AbortSignal;
   createDependencies(
     config: WorkerConfig,
-  ): WorkerRuntimeDependencies<TJob>;
+  ): WorkerRuntimeDependencies<TJob> | Promise<WorkerRuntimeDependencies<TJob>>;
 }>;
 
 export async function startWorker<TJob extends WorkerJob>(
   options: StartWorkerOptions<TJob>,
 ): Promise<void> {
   const config = parseWorkerConfig(options.env ?? process.env);
-  const dependencies = options.createDependencies(config);
+  const dependencies = await options.createDependencies(config);
   await runWorker(
     {
       ...dependencies,
@@ -103,19 +437,67 @@ function isMainModule(): boolean {
 
 async function main(): Promise<void> {
   const controller = new AbortController();
+  const fatalController = new AbortController();
   const stop = () => controller.abort();
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
-  await startWorker({
-    signal: controller.signal,
-    createDependencies: () => ({
-      workerId: `${hostname()}-${process.pid}`,
-      clock: { now: () => new Date() },
-      jobs: { claim: async () => [] },
-      handlers: { handle: async () => undefined },
-    }),
+  const config = parseWorkerConfig(process.env);
+  const database = createDatabase({
+    applicationName: `syntholo-worker-${config.releaseSha}`,
+    url: config.databaseUrl,
   });
+  let supervisorOwnsClose = false;
+  try {
+    await assertDatabaseCapability(database, "syntholo_worker");
+    const workerId = createWorkerId(hostname(), process.pid);
+    const clock = { now: () => new Date() };
+    const receipts = new HandlerReceiptRepository(database, { leaseMs: 60_000 });
+    const handlers = createHandlerRegistry({
+      "foundation.domain_event_handler.v1": createDomainEventJobHandler(receipts, clock),
+    });
+    const jobs = new JobRepository(database, { leaseMs: 60_000 });
+    const outbox = new OutboxProcessorRepository(database, { leaseMs: 60_000 });
+    supervisorOwnsClose = true;
+    await superviseWorkerPumps(controller, [
+      () => runWorker({
+        clock,
+        config,
+        fatalSignal: fatalController.signal,
+        handlers,
+        jobs,
+        random: Math.random,
+        workerId,
+      }, controller.signal),
+      () => runOutboxPump({
+        clock,
+        config,
+        handlersForEvent: (event) => {
+          switch (event.eventType) {
+            case "commerce.payment_paid.v1":
+            case "foundation.account_name_changed.v1":
+            case "foundation.aggregate_created.v1":
+            case "foundation.lock_lost.v1":
+            case "foundation.notification_sent.v1":
+              return ["foundation_audit_projection"];
+            default:
+              throw new HandlerFailure({ code: "JOB_INPUT_INVALID", permanent: true });
+          }
+        },
+        outbox,
+        random: Math.random,
+        workerId,
+      }, controller.signal),
+    ], {
+      abortActive: () => fatalController.abort(),
+      close: () => database.close(),
+      fatalDrainTimeoutMs: 5_000,
+      forceTerminate: (exitCode) => process.exit(exitCode),
+    });
+  } finally {
+    controller.abort();
+    if (!supervisorOwnsClose) await database.close();
+  }
 }
 
 if (isMainModule()) {

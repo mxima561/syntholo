@@ -6,6 +6,8 @@ export {
 } from "./identity.js";
 export {
   auditEvents,
+  eventHandlerReceipts,
+  jobAttempts,
   jobs,
   outboxEvents,
   providerEventReceipts,

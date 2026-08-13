@@ -135,6 +135,8 @@ describe("foundation migration", () => {
         [[
           "accounts",
           "audit_events",
+          "event_handler_receipts",
+          "job_attempts",
           "jobs",
           "member_identities",
           "memberships",
@@ -161,8 +163,8 @@ describe("foundation migration", () => {
       );
 
       expect(first.stderr).toBe("");
-      expect(migratedTables.rows[0]?.count).toBe("10");
-      expect(firstJournal.rows).toHaveLength(3);
+      expect(migratedTables.rows[0]?.count).toBe("12");
+      expect(firstJournal.rows).toHaveLength(4);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
       const rerun = await runDatabaseNpm(
@@ -202,6 +204,8 @@ describe("foundation migration", () => {
       [[
         "accounts",
         "audit_events",
+        "event_handler_receipts",
+        "job_attempts",
         "jobs",
         "member_identities",
         "memberships",
@@ -216,6 +220,8 @@ describe("foundation migration", () => {
     expect(result.rows.map((row) => row.table_name)).toEqual([
       "accounts",
       "audit_events",
+      "event_handler_receipts",
+      "job_attempts",
       "jobs",
       "member_identities",
       "memberships",
@@ -224,6 +230,101 @@ describe("foundation migration", () => {
       "staff_identities",
       "staff_login_attempts",
       "staff_sessions",
+    ]);
+  });
+
+  it("keeps the exact Task 7 constraint, recovery-index, and trigger inventory", async () => {
+    const exactConstraints = await harness.database.pool.query(
+      `select count(*)::int as count,
+              md5(string_agg(conrelid::regclass::text||':'||conname||':'||
+                pg_get_constraintdef(oid,true), E'\\n'
+                order by conrelid::regclass::text,conname)) as hash
+       from pg_constraint where conrelid in (
+         'audit_events'::regclass,'outbox_events'::regclass,'jobs'::regclass,
+         'job_attempts'::regclass,'event_handler_receipts'::regclass)`,
+    );
+    expect(exactConstraints.rows).toEqual([{
+      count: 72,
+      hash: "6788699933d75570f5b162b6ff72f438",
+    }]);
+    const constraints = await harness.database.pool.query<{ conname: string }>(
+      `select conname from pg_constraint
+       where conrelid in ('audit_events'::regclass,'outbox_events'::regclass,
+         'jobs'::regclass,'job_attempts'::regclass,'event_handler_receipts'::regclass)
+         and conname = any($1::text[]) order by conname`,
+      [[
+        "audit_events_payload_size_check",
+        "event_handler_receipts_state_check",
+        "event_handler_receipts_updated_check",
+        "job_attempts_finish_check",
+        "job_attempts_time_check",
+        "jobs_max_attempts_upper_check",
+        "jobs_state_fields_check",
+        "outbox_events_attempt_bounds_check",
+        "outbox_events_identity_check",
+        "outbox_events_state_fields_check",
+      ]],
+    );
+    expect(constraints.rows.map(({ conname }) => conname)).toEqual([
+      "audit_events_payload_size_check",
+      "event_handler_receipts_state_check",
+      "event_handler_receipts_updated_check",
+      "job_attempts_finish_check",
+      "job_attempts_time_check",
+      "jobs_max_attempts_upper_check",
+      "jobs_state_fields_check",
+      "outbox_events_attempt_bounds_check",
+      "outbox_events_identity_check",
+      "outbox_events_state_fields_check",
+    ]);
+    const exactIndexes = await harness.database.pool.query(
+      `select count(*)::int as count,
+              md5(string_agg(tablename||':'||indexname||':'||indexdef, E'\\n'
+                order by tablename,indexname)) as hash
+       from pg_indexes where schemaname='public' and tablename in (
+         'audit_events','outbox_events','jobs','job_attempts','event_handler_receipts')`,
+    );
+    expect(exactIndexes.rows).toEqual([{
+      count: 16,
+      hash: "7fed100399d35d25ae2d78da5f8e7e18",
+    }]);
+    const indexes = await harness.database.pool.query<{ indexname: string }>(
+      `select indexname from pg_indexes where schemaname='public'
+       and indexname = any($1::text[]) order by indexname`,
+      [[
+        "event_handler_receipts_recovery_idx",
+        "job_attempts_account_started_idx",
+        "jobs_claim_idx",
+        "jobs_recovery_idx",
+        "outbox_events_claim_idx",
+        "outbox_events_recovery_idx",
+      ]],
+    );
+    expect(indexes.rows.map(({ indexname }) => indexname)).toEqual([
+      "event_handler_receipts_recovery_idx",
+      "job_attempts_account_started_idx",
+      "jobs_claim_idx",
+      "jobs_recovery_idx",
+      "outbox_events_claim_idx",
+      "outbox_events_recovery_idx",
+    ]);
+    const triggers = await harness.database.pool.query<{ tgname: string }>(
+      `select tgname from pg_trigger where not tgisinternal
+       and tgrelid in ('audit_events'::regclass,'outbox_events'::regclass,
+         'jobs'::regclass,'job_attempts'::regclass,'event_handler_receipts'::regclass)
+       order by tgname`,
+    );
+    expect(triggers.rows.map(({ tgname }) => tgname)).toEqual([
+      "audit_events_account_id_immutable",
+      "audit_events_append_only_rows",
+      "audit_events_append_only_truncate",
+      "event_handler_receipts_account_id_immutable",
+      "event_handler_receipts_parent_account",
+      "job_attempts_account_id_immutable",
+      "job_attempts_parent_account",
+      "jobs_account_id_immutable",
+      "outbox_events_account_id_immutable",
+      "outbox_events_identity_compatibility",
     ]);
   });
 

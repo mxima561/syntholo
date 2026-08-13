@@ -98,7 +98,14 @@ export type DatabaseFactories = typeof databaseFactories;
 
 export async function resetTestDatabase(database: Database): Promise<void> {
   await database.pool.query(`
+    alter table audit_events disable trigger audit_events_append_only_rows;
+    alter table audit_events disable trigger audit_events_append_only_truncate
+  `);
+  try {
+  await database.pool.query(`
     truncate table
+      event_handler_receipts,
+      job_attempts,
       staff_login_attempts,
       staff_sessions,
       provider_event_receipts,
@@ -111,6 +118,12 @@ export async function resetTestDatabase(database: Database): Promise<void> {
       accounts
     restart identity cascade
   `);
+  } finally {
+    await database.pool.query(`
+      alter table audit_events enable always trigger audit_events_append_only_rows;
+      alter table audit_events enable always trigger audit_events_append_only_truncate
+    `);
+  }
   factorySequence = 0;
 }
 
