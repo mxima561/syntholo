@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 import type { RequestContext } from "@syntholo/contracts";
+import type { FastifyRequest, onSendAsyncHookHandler } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { z } from "zod";
 
 const CORRELATION_ID_HEADER = "x-correlation-id";
 const CorrelationIdSchema = z.string().uuid();
+const canonicalCorrelationIds = new WeakMap<FastifyRequest, string>();
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -28,16 +30,52 @@ export function correlationIdForRequest(request: IncomingMessage): string {
   return parsed.success ? parsed.data : randomUUID();
 }
 
+export function canonicalCorrelationId(request: FastifyRequest): string {
+  const correlationId = canonicalCorrelationIds.get(request);
+  if (correlationId === undefined) throw new Error("REQUEST_CONTEXT_UNAVAILABLE");
+  return correlationId;
+}
+
+const enforceCorrelationHeader: onSendAsyncHookHandler = async (
+  request,
+  reply,
+  payload,
+) => {
+  void reply.header(CORRELATION_ID_HEADER, canonicalCorrelationId(request));
+  return payload;
+};
+
 export const requestContextPlugin = fastifyPlugin(
   async (app) => {
     app.decorateRequest("context", null as unknown as RequestContext);
     app.addHook("onRequest", async (request, reply) => {
-      request.context = Object.freeze({ correlationId: request.id });
-      void reply.header(CORRELATION_ID_HEADER, request.id);
+      const correlationId = request.id;
+      const context = Object.freeze({ correlationId });
+      canonicalCorrelationIds.set(request, correlationId);
+      Object.defineProperties(request, {
+        id: {
+          configurable: false,
+          enumerable: true,
+          value: correlationId,
+          writable: false,
+        },
+        context: {
+          configurable: false,
+          enumerable: true,
+          value: context,
+          writable: false,
+        },
+      });
+      void reply.header(CORRELATION_ID_HEADER, correlationId);
     });
-    app.addHook("onSend", async (request, reply, payload) => {
-      void reply.header(CORRELATION_ID_HEADER, request.id);
-      return payload;
+    app.addHook("onRoute", (routeOptions) => {
+      const routeHooks =
+        routeOptions.onSend === undefined
+          ? []
+          : Array.isArray(routeOptions.onSend)
+            ? routeOptions.onSend
+            : [routeOptions.onSend];
+      routeOptions.onSend = [...routeHooks, enforceCorrelationHeader];
     });
   },
   { name: "request-context" },

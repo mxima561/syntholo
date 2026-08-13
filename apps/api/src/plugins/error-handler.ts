@@ -1,6 +1,7 @@
 import { ApiErrorSchema } from "@syntholo/contracts";
 import type { FastifyError, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { canonicalCorrelationId } from "./context.js";
 
 const AppErrorStatusSchema = z.number().int().min(400).max(599);
 const AppErrorCodeSchema = z.string().min(1);
@@ -55,7 +56,7 @@ export function safeErrorHandler(
       error: {
         code: error.code,
         message: error.safeMessage,
-        correlationId: request.id,
+        correlationId: canonicalCorrelationId(request),
         ...(error.details === undefined ? {} : { details: error.details }),
       },
     });
@@ -71,7 +72,7 @@ export function safeErrorHandler(
       message: isValidationError
         ? "Request validation failed"
         : "Internal server error",
-      correlationId: request.id,
+      correlationId: canonicalCorrelationId(request),
     },
   });
   void reply.status(isValidationError ? 400 : 500).send(payload);

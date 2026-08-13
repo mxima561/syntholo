@@ -3,6 +3,7 @@ import Fastify, {
   type FastifyServerOptions,
 } from "fastify";
 import rawBody from "fastify-raw-body";
+import { z } from "zod";
 import { correlationIdForRequest, requestContextPlugin } from "./plugins/context.js";
 import { safeErrorHandler } from "./plugins/error-handler.js";
 import {
@@ -18,11 +19,38 @@ export type ApiDependencies = Readonly<{
   }>;
 }>;
 
+const ApiDependenciesSchema = z
+  .object({
+    releaseSha: z.string().trim().min(1),
+    logger: z
+      .union([z.boolean(), z.record(z.string(), z.unknown())])
+      .optional(),
+    health: z
+      .object({
+        dependencies: z.array(
+          z
+            .object({
+              name: z.string().trim().min(1),
+              check: z.custom<ReadinessDependency["check"]>(
+                (value) => typeof value === "function",
+              ),
+            })
+            .strict(),
+        ),
+      })
+      .strict(),
+  })
+  .strict();
+
 export async function buildApp(
   dependencies: ApiDependencies,
 ): Promise<FastifyInstance> {
+  const parsedDependencies = ApiDependenciesSchema.safeParse(dependencies);
+  if (!parsedDependencies.success) {
+    throw new Error("API_DEPENDENCIES_INVALID");
+  }
   const app = Fastify({
-    logger: dependencies.logger ?? false,
+    logger: (parsedDependencies.data.logger ?? false) as FastifyServerOptions["logger"],
     requestIdHeader: false,
     genReqId: correlationIdForRequest,
   });
@@ -37,8 +65,8 @@ export async function buildApp(
   app.setErrorHandler(safeErrorHandler);
   await app.register(healthRoutes, {
     prefix: "/v1/health",
-    releaseSha: dependencies.releaseSha,
-    dependencies: dependencies.health.dependencies,
+    releaseSha: parsedDependencies.data.releaseSha,
+    dependencies: parsedDependencies.data.health.dependencies,
   });
 
   return app;

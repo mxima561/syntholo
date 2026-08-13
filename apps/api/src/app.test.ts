@@ -100,12 +100,18 @@ describe("buildApp", () => {
     await app.close();
   });
 
-  it("overwrites a route-provided response header with the request correlation id", async () => {
+  it("overwrites a route-level onSend header with the canonical correlation id", async () => {
     const app = await buildApp(fakes());
-    app.get("/header-override", async (_request, reply) => {
-      void reply.header("x-correlation-id", "route-controlled-secret");
-      return { ok: true };
-    });
+    app.get(
+      "/header-override",
+      {
+        onSend: async (_request, reply, payload) => {
+          void reply.header("x-correlation-id", "late-route-controlled-secret");
+          return payload;
+        },
+      },
+      async () => ({ ok: true }),
+    );
 
     const response = await app.inject({
       method: "GET",
@@ -114,7 +120,99 @@ describe("buildApp", () => {
     });
 
     expect(response.headers["x-correlation-id"]).toBe(validCorrelationId);
-    expect(response.payload).not.toContain("route-controlled-secret");
+    expect(response.payload).not.toContain("late-route-controlled-secret");
+
+    await app.close();
+  });
+
+  it("prevents request id and context reassignment on a successful response", async () => {
+    const app = await buildApp(fakes());
+    app.get("/mutate-context", async (request) => {
+      const idMutationAccepted = Reflect.set(
+        request,
+        "id",
+        "route-controlled-secret",
+      );
+      const contextMutationAccepted = Reflect.set(request, "context", {
+        correlationId: "context-controlled-secret",
+      });
+      const nestedMutationAccepted = Reflect.set(
+        request.context,
+        "correlationId",
+        "nested-controlled-secret",
+      );
+      return {
+        idMutationAccepted,
+        contextMutationAccepted,
+        nestedMutationAccepted,
+        requestId: request.id,
+        contextId: request.context.correlationId,
+      };
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/mutate-context",
+      headers: { "x-correlation-id": validCorrelationId },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers["x-correlation-id"]).toBe(validCorrelationId);
+    expect(response.json()).toEqual({
+      idMutationAccepted: false,
+      contextMutationAccepted: false,
+      nestedMutationAccepted: false,
+      requestId: validCorrelationId,
+      contextId: validCorrelationId,
+    });
+    expect(response.payload).not.toContain("controlled-secret");
+
+    await app.close();
+  });
+
+  it("keeps a generated canonical id through reassignment attempts and AppError", async () => {
+    let originalCorrelationId: string | undefined;
+    const app = await buildApp(fakes());
+    app.get("/mutate-context-error", async (request) => {
+      originalCorrelationId = request.id;
+      const idMutationAccepted = Reflect.set(
+        request,
+        "id",
+        "route-controlled-secret",
+      );
+      const contextMutationAccepted = Reflect.set(request, "context", {
+        correlationId: "context-controlled-secret",
+      });
+      const nestedMutationAccepted = Reflect.set(
+        request.context,
+        "correlationId",
+        "nested-controlled-secret",
+      );
+      throw new AppError("CONTEXT_MUTATION", 409, "Safe context error", {
+        idMutationAccepted,
+        contextMutationAccepted,
+        nestedMutationAccepted,
+      });
+    });
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/mutate-context-error",
+    });
+    const body = ApiErrorSchema.parse(response.json());
+
+    expect(response.statusCode).toBe(409);
+    expect(originalCorrelationId).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(body.error.correlationId).toBe(originalCorrelationId);
+    expect(response.headers["x-correlation-id"]).toBe(originalCorrelationId);
+    expect(body.error.details).toEqual({
+      idMutationAccepted: false,
+      contextMutationAccepted: false,
+      nestedMutationAccepted: false,
+    });
+    expect(response.payload).not.toContain("controlled-secret");
 
     await app.close();
   });
@@ -435,6 +533,86 @@ describe("safe error handling", () => {
 });
 
 describe("API configuration and startup", () => {
+  it.each([
+    ["empty release", fakes({ releaseSha: "" })],
+    ["whitespace release", fakes({ releaseSha: "   " })],
+    ["non-string release", { ...fakes(), releaseSha: 42 }],
+    ["missing health", { releaseSha: "test", logger: false }],
+    [
+      "non-array dependencies",
+      { ...fakes(), health: { dependencies: "provider-secret" } },
+    ],
+    [
+      "empty dependency name",
+      {
+        ...fakes(),
+        health: {
+          dependencies: [{ name: "   ", check: async () => ({}) }],
+        },
+      },
+    ],
+    [
+      "non-function dependency check",
+      {
+        ...fakes(),
+        health: {
+          dependencies: [{ name: "provider-secret", check: "not-a-function" }],
+        },
+      },
+    ],
+  ])("rejects invalid injected composition: %s", async (_case, dependencies) => {
+    await expect(
+      buildApp(dependencies as unknown as ApiDependencies),
+    ).rejects.toThrow("API_DEPENDENCIES_INVALID");
+    try {
+      await buildApp(dependencies as unknown as ApiDependencies);
+    } catch (error) {
+      expect(String(error)).not.toContain("provider-secret");
+      expect(String(error)).not.toContain("not-a-function");
+    }
+  });
+
+  it("normalizes valid composition before both health contracts are served", async () => {
+    const app = await buildApp({
+      releaseSha: "  release-composition  ",
+      logger: false,
+      health: {
+        dependencies: [
+          {
+            name: "  postgres  ",
+            check: async () => ({ status: "ok", latencyMs: 5 }),
+          },
+        ],
+      },
+    });
+
+    const live = await app.inject({
+      method: "GET",
+      url: "/v1/health/live",
+    });
+    const ready = await app.inject({
+      method: "GET",
+      url: "/v1/health/ready",
+    });
+
+    expect(live.statusCode).toBe(200);
+    expect(HealthResponseSchema.parse(live.json())).toEqual({
+      status: "ok",
+      releaseSha: "release-composition",
+      service: "api",
+      dependencies: [],
+    });
+    expect(ready.statusCode).toBe(200);
+    expect(HealthResponseSchema.parse(ready.json())).toEqual({
+      status: "ok",
+      releaseSha: "release-composition",
+      service: "api",
+      dependencies: [{ name: "postgres", status: "ok", latencyMs: 5 }],
+    });
+
+    await app.close();
+  });
+
   it("parses and preserves validated production startup values", () => {
     expect(
       parseApiConfig({
