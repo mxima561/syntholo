@@ -1,0 +1,19 @@
+{
+  "name": "@syntholo/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./health": "./src/health.ts",
+    "./http": "./src/http.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@syntholo/domain": "^0.1.0",
+    "zod": "^4.1.11"
+  }
+}
