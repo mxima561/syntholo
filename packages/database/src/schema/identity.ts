@@ -132,5 +132,9 @@ export const staffIdentities = pgTable(
       "staff_identities_status_check",
       sql`${table.status} in ('active', 'suspended', 'disabled')`,
     ),
+    check(
+      "staff_identities_permissions_no_nulls_check",
+      sql`array_position(${table.permissions}, NULL) is null`,
+    ),
   ],
 );

@@ -57,6 +57,44 @@ describe("createDatabase", () => {
     ).toThrow("DATABASE_URL_INVALID");
   });
 
+  it.each([
+    "host",
+    "hostaddr",
+    "port",
+    "user",
+    "password",
+    "database",
+    "dbname",
+    "service",
+    "application_name",
+    "fallback_application_name",
+  ])("rejects the reserved PostgreSQL query key %s without exposing credentials", (key) => {
+    const credential = "query-secret";
+    const url = `postgres://url_user:${credential}@validated.example/database?${key}=override`;
+
+    let error: unknown;
+    try {
+      createDatabase({ url, applicationName: "database-unit-test" });
+    } catch (caught) {
+      error = caught;
+    }
+
+    expect(error).toEqual(new Error("DATABASE_URL_INVALID"));
+    expect(String(error)).not.toContain(credential);
+    expect(String(error)).not.toContain(url);
+  });
+
+  it.each([
+    "%68ost=override.example",
+    "APPLICATION_NAME=override-name",
+    "sslmode=require&host=first.example&host=second.example",
+  ])("rejects an encoded, case-varied, or duplicate reserved query key: %s", (query) => {
+    expect(() => createDatabase({
+      url: `postgres://url_user:url_password@validated.example/database?${query}`,
+      applicationName: "database-unit-test",
+    })).toThrow("DATABASE_URL_INVALID");
+  });
+
   it("trims a complete local URL before configuring the lazy pool", async () => {
     const database = createDatabase({
       url: "  postgres://local_user:local_password@localhost:55432/local_db  ",

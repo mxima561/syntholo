@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
 import { createDatabase } from "../client.js";
 import {
@@ -10,6 +11,21 @@ import {
 } from "../../../testing/src/database.js";
 
 const execFileAsync = promisify(execFile);
+const databasePackageRoot = fileURLToPath(new URL("../..", import.meta.url));
+
+async function runDatabaseNpm(
+  args: string[],
+  environment: NodeJS.ProcessEnv,
+): Promise<{ stderr: string; stdout: string }> {
+  const npmExecPath = process.env.npm_execpath;
+  if (npmExecPath === undefined) {
+    throw new Error("NPM_EXEC_PATH_REQUIRED");
+  }
+  return execFileAsync(process.execPath, [npmExecPath, ...args], {
+    cwd: databasePackageRoot,
+    env: environment,
+  });
+}
 
 function disposableDatabaseName(kind: "target" | "trap"): string {
   return `syntholo_migration_${kind}_${process.pid}`;
@@ -18,6 +34,17 @@ function disposableDatabaseName(kind: "target" | "trap"): string {
 function databaseUrl(baseUrl: string, databaseName: string): string {
   const url = new URL(baseUrl);
   url.pathname = `/${databaseName}`;
+  return url.toString();
+}
+
+function databaseUrlWithParameters(
+  baseUrl: string,
+  parameters: Readonly<Record<string, string>>,
+): string {
+  const url = new URL(baseUrl);
+  for (const [key, value] of Object.entries(parameters)) {
+    url.searchParams.set(key, value);
+  }
   return url.toString();
 }
 
@@ -93,10 +120,10 @@ describe("foundation migration", () => {
         DATABASE_POOLED_URL: trapUrl,
         TEST_DATABASE_URL: targetUrl,
       });
-      const first = await execFileAsync("npm", ["run", "db:migrate"], {
-        cwd: process.cwd(),
-        env: childEnvironment,
-      });
+      const first = await runDatabaseNpm(
+        ["run", "db:migrate"],
+        childEnvironment,
+      );
 
       targetPool = new Pool({ connectionString: targetUrl, max: 1 });
       trapPool = new Pool({ connectionString: trapUrl, max: 1 });
@@ -136,10 +163,10 @@ describe("foundation migration", () => {
       expect(firstJournal.rows).toHaveLength(1);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
-      const rerun = await execFileAsync("npm", ["run", "db:migrate"], {
-        cwd: process.cwd(),
-        env: childEnvironment,
-      });
+      const rerun = await runDatabaseNpm(
+        ["run", "db:migrate"],
+        childEnvironment,
+      );
       const rerunJournal = await targetPool.query<{
         hash: string;
         created_at: string;
@@ -200,7 +227,9 @@ describe("foundation migration", () => {
       throw new Error("TEST_DATABASE_URL_REQUIRED");
     }
     const database = createDatabase({
-      url,
+      url: databaseUrlWithParameters(url, {
+        channel_binding: "prefer",
+      }),
       applicationName: "syntholo-foundation-integration",
     });
 
@@ -214,6 +243,20 @@ describe("foundation migration", () => {
     } finally {
       await database.close();
     }
+  });
+
+  it("rejects a conflicting URL application name before connecting", () => {
+    const url = process.env.TEST_DATABASE_URL;
+    if (url === undefined) {
+      throw new Error("TEST_DATABASE_URL_REQUIRED");
+    }
+
+    expect(() => createDatabase({
+      url: databaseUrlWithParameters(url, {
+        application_name: "url-override",
+      }),
+      applicationName: "syntholo-foundation-integration",
+    })).toThrow("DATABASE_URL_INVALID");
   });
 
   it("enforces provider identity and event uniqueness", async () => {
@@ -265,8 +308,15 @@ describe("foundation migration", () => {
     ).rejects.toMatchObject({ code: "23514" });
   });
 
-  it("stores staff permissions as a PostgreSQL string array", async () => {
-    const result = await harness.database.pool.query<{ permissions: string[] }>(
+  it("stores empty and populated staff permissions as PostgreSQL string arrays", async () => {
+    const empty = await harness.database.pool.query<{ permissions: string[] }>(
+      `insert into staff_identities
+        (provider, provider_user_id, role)
+       values ($1, $2, $3)
+       returning permissions`,
+      ["workos", "staff_empty_permissions", "admin"],
+    );
+    const populated = await harness.database.pool.query<{ permissions: string[] }>(
       `insert into staff_identities
         (provider, provider_user_id, role, permissions)
        values ($1, $2, $3, $4::text[])
@@ -279,25 +329,26 @@ describe("foundation migration", () => {
       ],
     );
 
-    expect(result.rows[0]?.permissions).toEqual([
+    expect(empty.rows[0]?.permissions).toEqual([]);
+    expect(populated.rows[0]?.permissions).toEqual([
       "content:publish",
       "support:assign",
     ]);
   });
 
-  it("rejects a JSON permission array containing non-strings", async () => {
+  it("rejects a PostgreSQL text array containing a null permission", async () => {
     await expect(
       harness.database.pool.query(
         `insert into staff_identities
           (provider, provider_user_id, role, permissions)
-         values ($1, $2, $3, $4::jsonb)`,
+         values ($1, $2, $3, $4::text[])`,
         [
           "workos",
           "staff_invalid_permissions",
           "admin",
-          JSON.stringify(["content:publish", 1, null, {}]),
+          ["content:publish", null],
         ],
       ),
-    ).rejects.toMatchObject({ code: "42804" });
+    ).rejects.toMatchObject({ code: "23514" });
   });
 });

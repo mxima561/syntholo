@@ -8,7 +8,7 @@
     "packages/*"
   ],
   "scripts": {
-    "db:schema:check": "drizzle-kit export --config packages/database/drizzle.config.ts",
+    "db:schema:check": "npm run db:schema:check -w @syntholo/database",
     "dev:web": "npm run dev -w @syntholo/web",
     "dev:api": "npm run dev -w @syntholo/api",
     "dev:worker": "npm run dev -w @syntholo/worker",

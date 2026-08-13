@@ -64,7 +64,9 @@ CREATE TABLE "staff_identities" (
   CONSTRAINT "staff_identities_role_check"
     CHECK ("role" IN ('coach', 'admin')),
   CONSTRAINT "staff_identities_status_check"
-    CHECK ("status" IN ('active', 'suspended', 'disabled'))
+    CHECK ("status" IN ('active', 'suspended', 'disabled')),
+  CONSTRAINT "staff_identities_permissions_no_nulls_check"
+    CHECK (array_position("permissions", NULL) IS NULL)
 );
 --> statement-breakpoint
 CREATE TABLE "audit_events" (

@@ -13,6 +13,19 @@ export type DatabaseConfig = Readonly<{
   applicationName: string;
 }>;
 
+const reservedConnectionQueryKeys = new Set([
+  "application_name",
+  "database",
+  "dbname",
+  "fallback_application_name",
+  "host",
+  "hostaddr",
+  "password",
+  "port",
+  "service",
+  "user",
+]);
+
 function validateDatabaseUrl(value: string): string {
   const url = value.trim();
   if (url === "") {
@@ -36,6 +49,9 @@ function validateDatabaseUrl(value: string): string {
     || parsed.password === ""
     || parsed.pathname.length <= 1
     || parsed.hash !== ""
+    || [...parsed.searchParams.keys()].some((key) =>
+      reservedConnectionQueryKeys.has(key.toLowerCase())
+    )
   ) {
     throw new Error("DATABASE_URL_INVALID");
   }
