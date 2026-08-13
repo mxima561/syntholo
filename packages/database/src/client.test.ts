@@ -65,6 +65,7 @@ describe("createDatabase", () => {
     "password",
     "database",
     "dbname",
+    "options",
     "replication",
     "service",
     "application_name",
@@ -87,9 +88,12 @@ describe("createDatabase", () => {
 
   it.each([
     "%68ost=override.example",
+    "%6fptions=override",
     "%72eplication=true",
     "APPLICATION_NAME=override-name",
+    "OPTIONS=override",
     "REPLICATION=true",
+    "sslmode=require&options=first&options=second",
     "sslmode=require&host=first.example&host=second.example",
   ])("rejects an encoded, case-varied, or duplicate reserved query key: %s", (query) => {
     const credential = "variant-secret";
@@ -120,6 +124,31 @@ describe("createDatabase", () => {
     expect(database.pool.totalCount).toBe(0);
 
     await database.close();
+  });
+
+  it("overrides hostile ambient PGOPTIONS with fail-closed startup settings", async () => {
+    const original = process.env.PGOPTIONS;
+    process.env.PGOPTIONS =
+      "-c row_security=off -c app.account_id=10000000-0000-4000-8000-000000000001";
+
+    try {
+      const database = createDatabase({
+        url: unusedDatabaseUrl,
+        applicationName: "database-unit-test",
+      });
+
+      expect(database.pool.options.options).toBe(
+        "-c row_security=on -c app.account_id=",
+      );
+      expect(database.pool.totalCount).toBe(0);
+      await database.close();
+    } finally {
+      if (original === undefined) {
+        delete process.env.PGOPTIONS;
+      } else {
+        process.env.PGOPTIONS = original;
+      }
+    }
   });
 
   it.each([

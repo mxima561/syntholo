@@ -20,6 +20,7 @@ const reservedConnectionQueryKeys = new Set([
   "fallback_application_name",
   "host",
   "hostaddr",
+  "options",
   "password",
   "port",
   "replication",
@@ -81,6 +82,7 @@ export function createDatabase(config: DatabaseConfig): Database {
   const pool = new Pool({
     application_name: applicationName,
     connectionString: url,
+    options: "-c row_security=on -c app.account_id=",
   });
   return Object.assign(drizzle(pool, { schema }), {
     close: () => pool.end(),

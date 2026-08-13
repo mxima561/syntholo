@@ -1,36 +1,117 @@
 DO $$
+DECLARE
+  capability_role text;
+  capability_oid oid;
+  capability_state record;
+  migration_actor_oid oid;
+  migration_actor_is_superuser boolean;
+  migration_actor_has_admin boolean;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'syntholo_migrator') THEN
-    CREATE ROLE syntholo_migrator
-      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-  ELSE
-    ALTER ROLE syntholo_migrator WITH
-      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-  END IF;
+  SELECT oid, rolsuper
+  INTO migration_actor_oid, migration_actor_is_superuser
+  FROM pg_roles
+  WHERE rolname = current_user;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'syntholo_member_api') THEN
-    CREATE ROLE syntholo_member_api
-      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-  ELSE
-    ALTER ROLE syntholo_member_api WITH
-      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-  END IF;
+  FOREACH capability_role IN ARRAY ARRAY[
+    'syntholo_migrator',
+    'syntholo_member_api',
+    'syntholo_staff_api',
+    'syntholo_worker'
+  ] LOOP
+    SELECT oid, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
+           rolreplication, rolbypassrls, rolconfig
+    INTO capability_state
+    FROM pg_roles
+    WHERE rolname = capability_role;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'syntholo_staff_api') THEN
-    CREATE ROLE syntholo_staff_api
-      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-  ELSE
-    ALTER ROLE syntholo_staff_api WITH
-      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-  END IF;
+    IF NOT FOUND THEN
+      BEGIN
+        EXECUTE format(
+          'CREATE ROLE %I NOLOGIN PASSWORD NULL',
+          capability_role
+        );
+      EXCEPTION
+        WHEN insufficient_privilege OR duplicate_object THEN
+          RAISE EXCEPTION 'SYNTHOLO_CAPABILITY_ROLE_PROVISIONING_REQUIRED'
+            USING ERRCODE = 'P0001';
+      END;
+    ELSE
+      capability_oid := capability_state.oid;
+      IF capability_state.rolcanlogin
+        OR capability_state.rolsuper
+        OR capability_state.rolcreatedb
+        OR capability_state.rolcreaterole
+        OR capability_state.rolreplication
+        OR capability_state.rolbypassrls
+        OR capability_state.rolconfig IS NOT NULL
+        OR EXISTS (
+          SELECT 1
+          FROM pg_db_role_setting
+          WHERE setrole = capability_oid
+        )
+        OR EXISTS (
+          SELECT 1
+          FROM pg_auth_members
+          WHERE member = capability_oid
+        )
+      THEN
+        RAISE EXCEPTION 'SYNTHOLO_CAPABILITY_ROLE_PROVISIONING_REQUIRED'
+          USING ERRCODE = 'P0001';
+      END IF;
 
-  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'syntholo_worker') THEN
-    CREATE ROLE syntholo_worker
-      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-  ELSE
-    ALTER ROLE syntholo_worker WITH
-      NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
-  END IF;
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_auth_members
+        WHERE roleid = capability_oid
+          AND member = migration_actor_oid
+          AND admin_option
+      )
+      INTO migration_actor_has_admin;
+
+      IF NOT migration_actor_is_superuser AND NOT migration_actor_has_admin THEN
+        RAISE EXCEPTION 'SYNTHOLO_CAPABILITY_ROLE_PROVISIONING_REQUIRED'
+          USING ERRCODE = 'P0001';
+      END IF;
+
+      BEGIN
+        EXECUTE format('ALTER ROLE %I PASSWORD NULL', capability_role);
+      EXCEPTION
+        WHEN insufficient_privilege THEN
+          RAISE EXCEPTION 'SYNTHOLO_CAPABILITY_ROLE_PROVISIONING_REQUIRED'
+            USING ERRCODE = 'P0001';
+      END;
+    END IF;
+
+    SELECT oid, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
+           rolreplication, rolbypassrls, rolconfig
+    INTO capability_state
+    FROM pg_roles
+    WHERE rolname = capability_role;
+    capability_oid := capability_state.oid;
+
+    IF NOT FOUND
+      OR capability_state.rolcanlogin
+      OR capability_state.rolsuper
+      OR capability_state.rolcreatedb
+      OR capability_state.rolcreaterole
+      OR capability_state.rolreplication
+      OR capability_state.rolbypassrls
+      OR capability_state.rolconfig IS NOT NULL
+      OR EXISTS (
+        SELECT 1
+        FROM pg_db_role_setting
+        WHERE setrole = capability_oid
+      )
+      OR EXISTS (
+        SELECT 1
+        FROM pg_auth_members
+        WHERE member = capability_oid
+      )
+    THEN
+      RAISE EXCEPTION 'SYNTHOLO_CAPABILITY_ROLE_PROVISIONING_REQUIRED'
+        USING ERRCODE = 'P0001';
+    END IF;
+  END LOOP;
 END;
 $$;
 --> statement-breakpoint
@@ -110,8 +191,20 @@ ALTER TABLE jobs ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
 ALTER TABLE jobs FORCE ROW LEVEL SECURITY;
 --> statement-breakpoint
-CREATE POLICY accounts_member_scope ON accounts
-  FOR ALL TO syntholo_member_api
+CREATE POLICY accounts_member_select ON accounts
+  FOR SELECT TO syntholo_member_api
+  USING (
+    id = NULLIF(current_setting('app.account_id', true), '')::uuid
+  );
+--> statement-breakpoint
+CREATE POLICY accounts_member_insert ON accounts
+  FOR INSERT TO syntholo_member_api
+  WITH CHECK (
+    id = NULLIF(current_setting('app.account_id', true), '')::uuid
+  );
+--> statement-breakpoint
+CREATE POLICY accounts_member_update ON accounts
+  FOR UPDATE TO syntholo_member_api
   USING (
     id = NULLIF(current_setting('app.account_id', true), '')::uuid
   )
@@ -128,8 +221,20 @@ CREATE POLICY accounts_migrator_admin ON accounts
   USING (true)
   WITH CHECK (true);
 --> statement-breakpoint
-CREATE POLICY member_identities_member_scope ON member_identities
-  FOR ALL TO syntholo_member_api
+CREATE POLICY member_identities_member_select ON member_identities
+  FOR SELECT TO syntholo_member_api
+  USING (
+    account_id = NULLIF(current_setting('app.account_id', true), '')::uuid
+  );
+--> statement-breakpoint
+CREATE POLICY member_identities_member_insert ON member_identities
+  FOR INSERT TO syntholo_member_api
+  WITH CHECK (
+    account_id = NULLIF(current_setting('app.account_id', true), '')::uuid
+  );
+--> statement-breakpoint
+CREATE POLICY member_identities_member_update ON member_identities
+  FOR UPDATE TO syntholo_member_api
   USING (
     account_id = NULLIF(current_setting('app.account_id', true), '')::uuid
   )
@@ -146,8 +251,20 @@ CREATE POLICY member_identities_migrator_admin ON member_identities
   USING (true)
   WITH CHECK (true);
 --> statement-breakpoint
-CREATE POLICY memberships_member_scope ON memberships
-  FOR ALL TO syntholo_member_api
+CREATE POLICY memberships_member_select ON memberships
+  FOR SELECT TO syntholo_member_api
+  USING (
+    account_id = NULLIF(current_setting('app.account_id', true), '')::uuid
+  );
+--> statement-breakpoint
+CREATE POLICY memberships_member_insert ON memberships
+  FOR INSERT TO syntholo_member_api
+  WITH CHECK (
+    account_id = NULLIF(current_setting('app.account_id', true), '')::uuid
+  );
+--> statement-breakpoint
+CREATE POLICY memberships_member_update ON memberships
+  FOR UPDATE TO syntholo_member_api
   USING (
     account_id = NULLIF(current_setting('app.account_id', true), '')::uuid
   )
@@ -163,15 +280,6 @@ CREATE POLICY memberships_migrator_admin ON memberships
   FOR ALL TO syntholo_migrator
   USING (true)
   WITH CHECK (true);
---> statement-breakpoint
-CREATE POLICY audit_events_member_scope ON audit_events
-  FOR ALL TO syntholo_member_api
-  USING (
-    account_id = NULLIF(current_setting('app.account_id', true), '')::uuid
-  )
-  WITH CHECK (
-    account_id = NULLIF(current_setting('app.account_id', true), '')::uuid
-  );
 --> statement-breakpoint
 CREATE POLICY audit_events_staff_read ON audit_events
   FOR SELECT TO syntholo_staff_api
@@ -189,15 +297,6 @@ CREATE POLICY audit_events_migrator_admin ON audit_events
   FOR ALL TO syntholo_migrator
   USING (true)
   WITH CHECK (true);
---> statement-breakpoint
-CREATE POLICY outbox_events_member_scope ON outbox_events
-  FOR ALL TO syntholo_member_api
-  USING (
-    account_id = NULLIF(current_setting('app.account_id', true), '')::uuid
-  )
-  WITH CHECK (
-    account_id = NULLIF(current_setting('app.account_id', true), '')::uuid
-  );
 --> statement-breakpoint
 CREATE POLICY outbox_events_staff_read ON outbox_events
   FOR SELECT TO syntholo_staff_api
@@ -220,15 +319,6 @@ CREATE POLICY outbox_events_migrator_admin ON outbox_events
   FOR ALL TO syntholo_migrator
   USING (true)
   WITH CHECK (true);
---> statement-breakpoint
-CREATE POLICY jobs_member_scope ON jobs
-  FOR ALL TO syntholo_member_api
-  USING (
-    account_id = NULLIF(current_setting('app.account_id', true), '')::uuid
-  )
-  WITH CHECK (
-    account_id = NULLIF(current_setting('app.account_id', true), '')::uuid
-  );
 --> statement-breakpoint
 CREATE POLICY jobs_staff_read ON jobs
   FOR SELECT TO syntholo_staff_api

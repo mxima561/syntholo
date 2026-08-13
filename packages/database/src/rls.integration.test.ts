@@ -1,9 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq, sql } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 import { createDatabase, type Database } from "./client.js";
@@ -47,36 +47,93 @@ const customerTables = [
   "outbox_events",
 ] as const;
 
-function runtimeDatabaseUrl(baseUrl: string, role: string): string {
+const foundationTables = [
+  "accounts",
+  "audit_events",
+  "jobs",
+  "member_identities",
+  "memberships",
+  "outbox_events",
+  "provider_event_receipts",
+  "staff_identities",
+] as const;
+
+type RuntimeLogin = Readonly<{
+  capability: "syntholo_member_api" | "syntholo_staff_api" | "syntholo_worker";
+  database: Database;
+  password: string;
+  roleName: string;
+  url: string;
+}>;
+
+function loginDatabaseUrl(
+  baseUrl: string,
+  roleName: string,
+  password: string,
+  database = new URL(baseUrl).pathname.slice(1),
+): string {
   const url = new URL(baseUrl);
-  url.searchParams.set("options", `-c role=${role}`);
+  url.username = roleName;
+  url.password = password;
+  url.pathname = `/${database}`;
+  url.search = "";
   return url.toString();
 }
 
-function createSingleConnectionRoleDatabase(
+async function formatSql(
+  pool: Pool,
+  template: string,
+  values: string[],
+): Promise<string> {
+  const placeholders = values.map((_, index) => `$${index + 1}::text`).join(", ");
+  const result = await pool.query<{ statement: string }>(
+    `select format($fmt$${template}$fmt$, ${placeholders}) as statement`,
+    values,
+  );
+  const statement = result.rows[0]?.statement;
+  if (statement === undefined) {
+    throw new Error("TEST_SQL_FORMAT_FAILED");
+  }
+  return statement;
+}
+
+async function createRuntimeLogin(
+  owner: Database,
   baseUrl: string,
-  role: string,
-): Database {
-  const pool = new Pool({
-    application_name: `syntholo-${role}-integration`,
-    connectionString: runtimeDatabaseUrl(baseUrl, role),
-    max: 1,
+  kind: "member" | "staff" | "worker",
+  capability: RuntimeLogin["capability"],
+): Promise<RuntimeLogin> {
+  const roleName = `syntholo_test_${kind}_${process.pid}`;
+  const password = randomUUID();
+  const createRole = await formatSql(
+    owner.pool,
+    "create role %I login password %L nosuperuser nocreatedb nocreaterole noreplication nobypassrls",
+    [roleName, password],
+  );
+  const grantCapability = await formatSql(
+    owner.pool,
+    `grant ${capability} to %I with inherit true, set false, admin false`,
+    [roleName],
+  );
+  await owner.pool.query(createRole);
+  await owner.pool.query(grantCapability);
+  const url = loginDatabaseUrl(baseUrl, roleName, password);
+  const database = createDatabase({
+    applicationName: `syntholo-${kind}-login-integration`,
+    url,
   });
-  return Object.assign(drizzle(pool, {
-    schema: {
-      accounts,
-      auditEvents,
-      jobs,
-      memberIdentities,
-      memberships,
-      outboxEvents,
-      providerEventReceipts,
-      staffIdentities,
-    },
-  }), {
-    close: () => pool.end(),
-    pool,
-  });
+  return { capability, database, password, roleName, url };
+}
+
+async function dropRuntimeLogin(owner: Database, login: RuntimeLogin): Promise<void> {
+  const revoke = await formatSql(
+    owner.pool,
+    `revoke ${login.capability} from %I`,
+    [login.roleName],
+  );
+  const drop = await formatSql(owner.pool, "drop role if exists %I", [login.roleName]);
+  await owner.pool.query(revoke);
+  await owner.pool.query(drop);
 }
 
 async function seedFoundationRows(database: Database): Promise<void> {
@@ -135,7 +192,10 @@ async function currentScope(database: Database): Promise<string | null> {
   return result.rows[0]?.account_id ?? null;
 }
 
-function databaseName(kind: "fresh" | "upgrade"): string {
+function databaseName(kind: string): string {
+  if (!/^[a-z0-9_]+$/u.test(kind)) {
+    throw new Error("INVALID_TEST_DATABASE_KIND");
+  }
   return `syntholo_rls_${kind}_${process.pid}`;
 }
 
@@ -161,8 +221,330 @@ async function dropDatabase(pool: Pool, name: string): Promise<void> {
   await pool.query(`drop database if exists ${quoteDatabaseName(name)}`);
 }
 
+function errorChain(error: unknown): string {
+  const messages: string[] = [];
+  let current = error;
+  while (current instanceof Error) {
+    messages.push(current.message);
+    current = current.cause;
+  }
+  return messages.join("\n");
+}
+
+async function expectProvisioningFailure(run: Promise<unknown>): Promise<void> {
+  let error: unknown;
+  try {
+    await run;
+  } catch (caught) {
+    error = caught;
+  }
+  expect(errorChain(error)).toContain(
+    "SYNTHOLO_CAPABILITY_ROLE_PROVISIONING_REQUIRED",
+  );
+}
+
+describe.sequential("capability role provisioning migration", () => {
+  const actorName = `syntholo_test_migrator_${process.pid}`;
+  const actorPassword = randomUUID();
+  const privilegedCollisionRole = `syntholo_test_bypass_${process.pid}`;
+  const databaseNames = {
+    first: databaseName("provision_first"),
+    second: databaseName("provision_second"),
+    loginCollision: databaseName("collision_login"),
+    membershipCollision: databaseName("collision_membership"),
+    settingCollision: databaseName("collision_setting"),
+  } as const;
+  let baseUrl: string;
+  let maintenance: Pool;
+  const preservedCapabilityRoles = new Map<string, string>();
+
+  beforeAll(async () => {
+    baseUrl = process.env.TEST_DATABASE_URL ?? "";
+    if (baseUrl === "") {
+      throw new Error("TEST_DATABASE_URL_REQUIRED");
+    }
+    maintenance = new Pool({
+      application_name: "syntholo-role-provisioning-maintenance",
+      connectionString: databaseUrl(baseUrl, "postgres"),
+      max: 1,
+      options: "-c row_security=on -c app.account_id=",
+    });
+    for (const capability of capabilityRoles) {
+      const exists = await maintenance.query<{ exists: boolean }>(
+        "select exists(select 1 from pg_roles where rolname = $1) as exists",
+        [capability],
+      );
+      if (exists.rows[0]?.exists) {
+        const preserved = `${capability}_preserved_${process.pid}`;
+        const rename = await formatSql(
+          maintenance,
+          "alter role %I rename to %I",
+          [capability, preserved],
+        );
+        await maintenance.query(rename);
+        preservedCapabilityRoles.set(capability, preserved);
+      }
+    }
+    const createActor = await formatSql(
+      maintenance,
+      "create role %I login password %L createrole nosuperuser nocreatedb noreplication nobypassrls",
+      [actorName, actorPassword],
+    );
+    await maintenance.query(createActor);
+    for (const name of Object.values(databaseNames)) {
+      await dropDatabase(maintenance, name);
+      const createDatabaseStatement = await formatSql(
+        maintenance,
+        "create database %I owner %I",
+        [name, actorName],
+      );
+      await maintenance.query(createDatabaseStatement);
+    }
+  });
+
+  afterAll(async () => {
+    for (const capability of capabilityRoles) {
+      const revoke = await formatSql(
+        maintenance,
+        `revoke ${capability} from %I`,
+        [actorName],
+      );
+      await maintenance.query(revoke).catch(() => undefined);
+    }
+    const resetLogin = await formatSql(
+      maintenance,
+      "alter role %I nologin password null",
+      ["syntholo_member_api"],
+    );
+    await maintenance.query(resetLogin).catch(() => undefined);
+    const resetSetting = await formatSql(
+      maintenance,
+      "alter role %I in database %I reset all",
+      ["syntholo_staff_api", databaseNames.settingCollision],
+    );
+    await maintenance.query(resetSetting).catch(() => undefined);
+    const revokePrivileged = await formatSql(
+      maintenance,
+      "revoke %I from %I",
+      [privilegedCollisionRole, "syntholo_worker"],
+    );
+    await maintenance.query(revokePrivileged).catch(() => undefined);
+    for (const name of Object.values(databaseNames)) {
+      await dropDatabase(maintenance, name).catch(() => undefined);
+    }
+    const dropPrivileged = await formatSql(
+      maintenance,
+      "drop role if exists %I",
+      [privilegedCollisionRole],
+    );
+    await maintenance.query(dropPrivileged).catch(() => undefined);
+    const dropActor = await formatSql(
+      maintenance,
+      "drop role if exists %I",
+      [actorName],
+    );
+    await maintenance.query(dropActor).catch(() => undefined);
+    for (const capability of [...capabilityRoles].reverse()) {
+      const dropCapability = await formatSql(
+        maintenance,
+        "drop role if exists %I",
+        [capability],
+      );
+      await maintenance.query(dropCapability).catch(() => undefined);
+      const preserved = preservedCapabilityRoles.get(capability);
+      if (preserved !== undefined) {
+        const restore = await formatSql(
+          maintenance,
+          "alter role %I rename to %I",
+          [preserved, capability],
+        );
+        await maintenance.query(restore);
+      }
+    }
+    await maintenance.end();
+  });
+
+  it("applies fresh, reuses safe cluster roles in a second owned database, and reruns as a non-superuser CREATEROLE actor", async () => {
+    const actorState = await maintenance.query<{
+      rolbypassrls: boolean;
+      rolcanlogin: boolean;
+      rolcreatedb: boolean;
+      rolcreaterole: boolean;
+      rolreplication: boolean;
+      rolsuper: boolean;
+    }>(
+      `select rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
+              rolreplication, rolbypassrls
+       from pg_roles where rolname = $1`,
+      [actorName],
+    );
+    expect(actorState.rows[0]).toEqual({
+      rolbypassrls: false,
+      rolcanlogin: true,
+      rolcreatedb: false,
+      rolcreaterole: true,
+      rolreplication: false,
+      rolsuper: false,
+    });
+
+    const first = createDatabase({
+      applicationName: "syntholo-nonsuper-migration-first",
+      url: loginDatabaseUrl(
+        baseUrl,
+        actorName,
+        actorPassword,
+        databaseNames.first,
+      ),
+    });
+    const second = createDatabase({
+      applicationName: "syntholo-nonsuper-migration-second",
+      url: loginDatabaseUrl(
+        baseUrl,
+        actorName,
+        actorPassword,
+        databaseNames.second,
+      ),
+    });
+    try {
+      await migrateDatabase(first);
+      const seedDormantPassword = await formatSql(
+        maintenance,
+        "alter role %I password %L",
+        ["syntholo_member_api", randomUUID()],
+      );
+      await maintenance.query(seedDormantPassword);
+      await migrateDatabase(second);
+      await migrateDatabase(second);
+      const journals = await Promise.all([first, second].map((database) =>
+        database.pool.query<{ count: string }>(
+          "select count(*)::text as count from drizzle.__drizzle_migrations",
+        )
+      ));
+      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["2", "2"]);
+      const passwords = await maintenance.query<{
+        rolname: string;
+        rolpasswordisnull: boolean;
+      }>(
+        `select rolname, rolpassword is null as rolpasswordisnull
+         from pg_authid
+         where rolname = any($1::text[])
+         order by rolname`,
+        [capabilityRoles],
+      );
+      expect(passwords.rows).toEqual(capabilityRoles.map((rolname) => ({
+        rolname,
+        rolpasswordisnull: true,
+      })));
+    } finally {
+      await Promise.allSettled([first.close(), second.close()]);
+    }
+  }, 30_000);
+
+  it("fails closed on an existing LOGIN/password capability collision", async () => {
+    const makeUnsafe = await formatSql(
+      maintenance,
+      "alter role %I login password %L",
+      ["syntholo_member_api", randomUUID()],
+    );
+    const restore = await formatSql(
+      maintenance,
+      "alter role %I nologin password null",
+      ["syntholo_member_api"],
+    );
+    const database = createDatabase({
+      applicationName: "syntholo-login-collision-migration",
+      url: loginDatabaseUrl(
+        baseUrl,
+        actorName,
+        actorPassword,
+        databaseNames.loginCollision,
+      ),
+    });
+    try {
+      await maintenance.query(makeUnsafe);
+      await expectProvisioningFailure(migrateDatabase(database));
+    } finally {
+      await database.close();
+      await maintenance.query(restore);
+    }
+  }, 20_000);
+
+  it("fails closed on outbound privileged membership", async () => {
+    const createPrivileged = await formatSql(
+      maintenance,
+      "create role %I nologin bypassrls",
+      [privilegedCollisionRole],
+    );
+    const grantPrivileged = await formatSql(
+      maintenance,
+      "grant %I to %I",
+      [privilegedCollisionRole, "syntholo_worker"],
+    );
+    const revokePrivileged = await formatSql(
+      maintenance,
+      "revoke %I from %I",
+      [privilegedCollisionRole, "syntholo_worker"],
+    );
+    const dropPrivileged = await formatSql(
+      maintenance,
+      "drop role if exists %I",
+      [privilegedCollisionRole],
+    );
+    const database = createDatabase({
+      applicationName: "syntholo-membership-collision-migration",
+      url: loginDatabaseUrl(
+        baseUrl,
+        actorName,
+        actorPassword,
+        databaseNames.membershipCollision,
+      ),
+    });
+    try {
+      await maintenance.query(createPrivileged);
+      await maintenance.query(grantPrivileged);
+      await expectProvisioningFailure(migrateDatabase(database));
+    } finally {
+      await database.close();
+      await maintenance.query(revokePrivileged).catch(() => undefined);
+      await maintenance.query(dropPrivileged).catch(() => undefined);
+    }
+  }, 20_000);
+
+  it("fails closed on a database-specific capability role setting", async () => {
+    const setConfig = await formatSql(
+      maintenance,
+      "alter role %I in database %I set application_name = 'unsafe-capability-default'",
+      ["syntholo_staff_api", databaseNames.settingCollision],
+    );
+    const resetConfig = await formatSql(
+      maintenance,
+      "alter role %I in database %I reset all",
+      ["syntholo_staff_api", databaseNames.settingCollision],
+    );
+    const database = createDatabase({
+      applicationName: "syntholo-setting-collision-migration",
+      url: loginDatabaseUrl(
+        baseUrl,
+        actorName,
+        actorPassword,
+        databaseNames.settingCollision,
+      ),
+    });
+    try {
+      await maintenance.query(setConfig);
+      await expectProvisioningFailure(migrateDatabase(database));
+    } finally {
+      await database.close();
+      await maintenance.query(resetConfig);
+    }
+  }, 20_000);
+});
+
 describe("PostgreSQL account role boundary", () => {
   let harness: TestDatabaseHarness;
+  let memberLogin: RuntimeLogin;
+  let staffLogin: RuntimeLogin;
+  let workerLogin: RuntimeLogin;
   let memberDb: Database;
   let staffDb: Database;
   let workerDb: Database;
@@ -173,18 +555,38 @@ describe("PostgreSQL account role boundary", () => {
     if (baseUrl === undefined) {
       throw new Error("TEST_DATABASE_URL_REQUIRED");
     }
-    memberDb = createSingleConnectionRoleDatabase(
-      baseUrl,
-      "syntholo_member_api",
-    );
-    staffDb = createSingleConnectionRoleDatabase(
-      baseUrl,
-      "syntholo_staff_api",
-    );
-    workerDb = createSingleConnectionRoleDatabase(
-      baseUrl,
-      "syntholo_worker",
-    );
+    const originalPgOptions = process.env.PGOPTIONS;
+    process.env.PGOPTIONS =
+      "-c row_security=off -c app.account_id=20000000-0000-4000-8000-000000000002";
+    try {
+      memberLogin = await createRuntimeLogin(
+        harness.database,
+        baseUrl,
+        "member",
+        "syntholo_member_api",
+      );
+      staffLogin = await createRuntimeLogin(
+        harness.database,
+        baseUrl,
+        "staff",
+        "syntholo_staff_api",
+      );
+      workerLogin = await createRuntimeLogin(
+        harness.database,
+        baseUrl,
+        "worker",
+        "syntholo_worker",
+      );
+    } finally {
+      if (originalPgOptions === undefined) {
+        delete process.env.PGOPTIONS;
+      } else {
+        process.env.PGOPTIONS = originalPgOptions;
+      }
+    }
+    memberDb = memberLogin.database;
+    staffDb = staffLogin.database;
+    workerDb = workerLogin.database;
   });
 
   beforeEach(async () => {
@@ -196,29 +598,78 @@ describe("PostgreSQL account role boundary", () => {
       memberDb?.close(),
       staffDb?.close(),
       workerDb?.close(),
-      harness?.close(),
     ]);
+    if (harness !== undefined) {
+      for (const login of [memberLogin, staffLogin, workerLogin]) {
+        if (login !== undefined) {
+          await dropRuntimeLogin(harness.database, login);
+        }
+      }
+      await harness.close();
+    }
   });
 
-  it("creates exactly the four no-login, non-superuser, non-bypass capability roles", async () => {
+  it("creates exactly four inert capability roles with no password, settings, or outbound membership", async () => {
     const result = await harness.database.pool.query<{
       rolbypassrls: boolean;
       rolcanlogin: boolean;
+      rolconfig: string[] | null;
+      rolcreatedb: boolean;
+      rolcreaterole: boolean;
       rolname: string;
+      rolreplication: boolean;
       rolsuper: boolean;
     }>(
-      `select rolname, rolcanlogin, rolsuper, rolbypassrls
+      `select rolname, rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
+              rolreplication, rolbypassrls, rolconfig
        from pg_roles
-       where rolname like 'syntholo\\_%' escape '\\'
+       where rolname = any($1::text[])
        order by rolname`,
+      [capabilityRoles],
     );
 
     expect(result.rows).toEqual(capabilityRoles.map((rolname) => ({
       rolbypassrls: false,
       rolcanlogin: false,
+      rolconfig: null,
+      rolcreatedb: false,
+      rolcreaterole: false,
       rolname,
+      rolreplication: false,
       rolsuper: false,
     })));
+    const passwords = await harness.database.pool.query<{
+      rolname: string;
+      rolpasswordisnull: boolean;
+    }>(
+      `select rolname, rolpassword is null as rolpasswordisnull
+       from pg_authid
+       where rolname = any($1::text[])
+       order by rolname`,
+      [capabilityRoles],
+    );
+    expect(passwords.rows).toEqual(capabilityRoles.map((rolname) => ({
+      rolname,
+      rolpasswordisnull: true,
+    })));
+    const settings = await harness.database.pool.query(
+      `select setrole, setdatabase, setconfig
+       from pg_db_role_setting
+       where setrole = any(
+         select oid from pg_roles where rolname = any($1::text[])
+       )`,
+      [capabilityRoles],
+    );
+    expect(settings.rows).toEqual([]);
+    const outboundMemberships = await harness.database.pool.query(
+      `select member_role.rolname as member_role, parent_role.rolname as parent_role
+       from pg_auth_members membership
+       join pg_roles member_role on member_role.oid = membership.member
+       join pg_roles parent_role on parent_role.oid = membership.roleid
+       where member_role.rolname = any($1::text[])`,
+      [capabilityRoles],
+    );
+    expect(outboundMemberships.rows).toEqual([]);
   });
 
   it("enables and forces RLS with member and staff policies on all customer tables", async () => {
@@ -256,12 +707,6 @@ describe("PostgreSQL account role boundary", () => {
     const universalPolicies = customerTables.flatMap((tablename) => [
       {
         cmd: "ALL",
-        policyname: `${tablename}_member_scope`,
-        roles: ["syntholo_member_api"],
-        tablename,
-      },
-      {
-        cmd: "ALL",
         policyname: `${tablename}_migrator_admin`,
         roles: ["syntholo_migrator"],
         tablename,
@@ -273,6 +718,16 @@ describe("PostgreSQL account role boundary", () => {
         tablename,
       },
     ]);
+    const memberPolicies = [
+      "accounts",
+      "member_identities",
+      "memberships",
+    ].flatMap((tablename) => ["INSERT", "SELECT", "UPDATE"].map((cmd) => ({
+      cmd,
+      policyname: `${tablename}_member_${cmd.toLowerCase()}`,
+      roles: ["syntholo_member_api"],
+      tablename,
+    })));
     const workerPolicies = ([
       ["audit_events", "INSERT"],
       ["audit_events", "SELECT"],
@@ -289,32 +744,99 @@ describe("PostgreSQL account role boundary", () => {
       tablename,
     }));
 
-    expect(policies.rows).toEqual([...universalPolicies, ...workerPolicies].sort(
+    expect(policies.rows).toEqual([
+      ...universalPolicies,
+      ...memberPolicies,
+      ...workerPolicies,
+    ].sort(
       (left, right) =>
         `${left.tablename}:${left.policyname}`.localeCompare(
           `${right.tablename}:${right.policyname}`,
-        ),
+      ),
     ));
+    expect(policies.rows.some(({ cmd, roles }) =>
+      cmd === "DELETE" && roles.includes("syntholo_member_api")
+    )).toBe(false);
+    expect(policies.rows.some(({ roles, tablename }) =>
+      roles.includes("syntholo_member_api")
+      && ["audit_events", "outbox_events", "jobs"].includes(tablename)
+    )).toBe(false);
   });
 
-  it("runs member queries as the non-bypass capability rather than the owner", async () => {
-    const identity = await memberDb.pool.query<{
-      current_user: string;
-      rolbypassrls: boolean;
-      rolsuper: boolean;
-      session_user: string;
-    }>(
-      `select current_user, session_user, rolsuper, rolbypassrls
-       from pg_roles
-       where rolname = current_user`,
-    );
-
-    expect(identity.rows[0]).toMatchObject({
-      current_user: "syntholo_member_api",
-      rolbypassrls: false,
-      rolsuper: false,
-    });
-    expect(identity.rows[0]?.session_user).not.toBe("syntholo_member_api");
+  it("runs through actual safe login roles with exactly one inherited runtime capability", async () => {
+    for (const login of [memberLogin, staffLogin, workerLogin]) {
+      const identity = await login.database.pool.query<{
+        current_user: string;
+        rolbypassrls: boolean;
+        rolcanlogin: boolean;
+        rolconfig: string[] | null;
+        rolcreatedb: boolean;
+        rolcreaterole: boolean;
+        rolreplication: boolean;
+        rolsuper: boolean;
+        session_user: string;
+      }>(
+        `select current_user, session_user, rolcanlogin, rolsuper, rolcreatedb,
+                rolcreaterole, rolreplication, rolbypassrls, rolconfig
+         from pg_roles
+         where rolname = current_user`,
+      );
+      expect(identity.rows[0]).toEqual({
+        current_user: login.roleName,
+        rolbypassrls: false,
+        rolcanlogin: true,
+        rolconfig: null,
+        rolcreatedb: false,
+        rolcreaterole: false,
+        rolreplication: false,
+        rolsuper: false,
+        session_user: login.roleName,
+      });
+      const memberships = await login.database.pool.query<{
+        admin_option: boolean;
+        inherit_option: boolean;
+        rolname: string;
+        set_option: boolean;
+      }>(
+        `select parent.rolname, membership.admin_option,
+                membership.inherit_option, membership.set_option
+         from pg_auth_members membership
+         join pg_roles member on member.oid = membership.member
+         join pg_roles parent on parent.oid = membership.roleid
+         where member.rolname = current_user
+         order by parent.rolname`,
+      );
+      expect(memberships.rows).toEqual([{
+        admin_option: false,
+        inherit_option: true,
+        rolname: login.capability,
+        set_option: false,
+      }]);
+      const reachable = await login.database.pool.query<{ rolname: string }>(
+        `with recursive reachable(roleid) as (
+           select membership.roleid
+           from pg_auth_members membership
+           join pg_roles member on member.oid = membership.member
+           where member.rolname = current_user
+           union
+           select membership.roleid
+           from pg_auth_members membership
+           join reachable on reachable.roleid = membership.member
+         )
+         select role.rolname
+         from reachable join pg_roles role on role.oid = reachable.roleid
+         order by role.rolname`,
+      );
+      expect(reachable.rows).toEqual([{ rolname: login.capability }]);
+      const settings = await login.database.pool.query(
+        `select setdatabase, setconfig
+         from pg_db_role_setting
+         where setrole = (
+           select oid from pg_roles where rolname = current_user
+         )`,
+      );
+      expect(settings.rows).toEqual([]);
+    }
   });
 
   it("shows a member only its account, identities, and memberships", async () => {
@@ -363,6 +885,17 @@ describe("PostgreSQL account role boundary", () => {
   it("fails closed with no scope and cannot insert or update", async () => {
     await seedFoundationRows(harness.database);
 
+    const startupState = await memberDb.pool.query<{
+      account_id: string;
+      row_security: string;
+    }>(
+      `select current_setting('app.account_id', true) as account_id,
+              current_setting('row_security') as row_security`,
+    );
+    expect(startupState.rows[0]).toEqual({
+      account_id: "",
+      row_security: "on",
+    });
     expect(await memberDb.select({ id: accounts.id }).from(accounts)).toEqual([]);
     await expect(memberDb.insert(accounts).values({
       id: "30000000-0000-4000-8000-000000000003",
@@ -407,6 +940,7 @@ describe("PostgreSQL account role boundary", () => {
     expect(second).toEqual([{ id: accountB }]);
     expect(await currentScope(memberDb)).toBeNull();
     expect(await memberDb.select({ id: accounts.id }).from(accounts)).toEqual([]);
+    expect(memberDb.pool.totalCount).toBe(1);
   });
 
   it("rejects a non-canonical scope before opening a database connection", async () => {
@@ -416,7 +950,7 @@ describe("PostgreSQL account role boundary", () => {
     }
     const unopened = createDatabase({
       applicationName: "syntholo-invalid-scope-integration",
-      url: runtimeDatabaseUrl(baseUrl, "syntholo_member_api"),
+      url: memberLogin.url,
     });
 
     try {
@@ -592,6 +1126,111 @@ describe("PostgreSQL account role boundary", () => {
     ].sort((left, right) =>
       `${left.grantee}:${left.table_name}:${left.privilege_type}`.localeCompare(
         `${right.grantee}:${right.table_name}:${right.privilege_type}`,
+      )
+    ));
+  });
+
+  it("revokes PUBLIC paths and grants the intended migrator administration ACLs", async () => {
+    const publicAcl = await harness.database.pool.query<{
+      public_function_execute: boolean;
+      public_schema_create: boolean;
+      public_sequence_grants: string;
+      public_table_grants: string;
+    }>(
+      `select
+         exists (
+           select 1
+           from pg_namespace namespace
+           cross join lateral aclexplode(
+             coalesce(namespace.nspacl, acldefault('n', namespace.nspowner))
+           ) acl
+           where namespace.nspname = 'public'
+             and acl.grantee = 0
+             and acl.privilege_type = 'CREATE'
+         ) as public_schema_create,
+         (
+           select count(*)::text
+           from pg_class relation
+           cross join lateral aclexplode(
+             coalesce(relation.relacl, '{}'::aclitem[])
+           ) acl
+           where relation.relnamespace = 'public'::regnamespace
+             and relation.relkind in ('r', 'p')
+             and acl.grantee = 0
+         ) as public_table_grants,
+         (
+           select count(*)::text
+           from pg_class relation
+           cross join lateral aclexplode(
+             coalesce(relation.relacl, '{}'::aclitem[])
+           ) acl
+           where relation.relnamespace = 'public'::regnamespace
+             and relation.relkind = 'S'
+             and acl.grantee = 0
+         ) as public_sequence_grants,
+         exists (
+           select 1
+           from pg_proc procedure
+           cross join lateral aclexplode(
+             coalesce(procedure.proacl, acldefault('f', procedure.proowner))
+           ) acl
+           where procedure.oid = 'prevent_account_id_update()'::regprocedure
+             and acl.grantee = 0
+             and acl.privilege_type = 'EXECUTE'
+         ) as public_function_execute`,
+    );
+    expect(publicAcl.rows[0]).toEqual({
+      public_function_execute: false,
+      public_schema_create: false,
+      public_sequence_grants: "0",
+      public_table_grants: "0",
+    });
+
+    const migratorAcl = await harness.database.pool.query<{
+      function_execute: boolean;
+      schema_create: boolean;
+      schema_usage: boolean;
+    }>(
+      `select
+         has_schema_privilege('syntholo_migrator', 'public', 'USAGE')
+           as schema_usage,
+         has_schema_privilege('syntholo_migrator', 'public', 'CREATE')
+           as schema_create,
+         has_function_privilege(
+           'syntholo_migrator',
+           'prevent_account_id_update()',
+           'EXECUTE'
+         ) as function_execute`,
+    );
+    expect(migratorAcl.rows[0]).toEqual({
+      function_execute: true,
+      schema_create: true,
+      schema_usage: true,
+    });
+
+    const migratorTableGrants = await harness.database.pool.query<{
+      privilege_type: string;
+      table_name: string;
+    }>(
+      `select table_name, privilege_type
+       from information_schema.role_table_grants
+       where table_schema = 'public'
+         and grantee = 'syntholo_migrator'
+       order by table_name, privilege_type`,
+    );
+    expect(migratorTableGrants.rows).toEqual(foundationTables.flatMap(
+      (table_name) => [
+        "DELETE",
+        "INSERT",
+        "REFERENCES",
+        "SELECT",
+        "TRIGGER",
+        "TRUNCATE",
+        "UPDATE",
+      ].map((privilege_type) => ({ privilege_type, table_name })),
+    ).sort((left, right) =>
+      `${left.table_name}:${left.privilege_type}`.localeCompare(
+        `${right.table_name}:${right.privilege_type}`,
       )
     ));
   });

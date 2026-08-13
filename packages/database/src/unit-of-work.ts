@@ -34,6 +34,11 @@ export function createUnitOfWork(database: Database): UnitOfWork {
   return new PostgresUnitOfWork(database);
 }
 
+/**
+ * Runs trusted package/server code inside an account-scoped transaction.
+ * Never pass an untrusted SQL, plugin, or user-supplied callback: the callback
+ * receives the transaction and could deliberately overwrite PostgreSQL GUCs.
+ */
 export async function withAccountScope<T>(
   database: Database,
   accountId: string,
