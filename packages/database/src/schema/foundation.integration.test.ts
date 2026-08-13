@@ -1,13 +1,45 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
+import { Pool } from "pg";
 import { createDatabase } from "../client.js";
 import {
   createTestDatabaseHarness,
+  createTestMigrationEnvironment,
   type TestDatabaseHarness,
 } from "../../../testing/src/database.js";
 
 const execFileAsync = promisify(execFile);
+
+function disposableDatabaseName(kind: "target" | "trap"): string {
+  return `syntholo_migration_${kind}_${process.pid}`;
+}
+
+function databaseUrl(baseUrl: string, databaseName: string): string {
+  const url = new URL(baseUrl);
+  url.pathname = `/${databaseName}`;
+  return url.toString();
+}
+
+function quotedDatabaseName(databaseName: string): string {
+  if (!/^[a-z0-9_]+$/u.test(databaseName)) {
+    throw new Error("INVALID_TEST_DATABASE_NAME");
+  }
+  return `"${databaseName}"`;
+}
+
+async function dropTestDatabase(
+  maintenancePool: Pool,
+  databaseName: string,
+): Promise<void> {
+  await maintenancePool.query(
+    "select pg_terminate_backend(pid) from pg_stat_activity where datname = $1 and pid <> pg_backend_pid()",
+    [databaseName],
+  );
+  await maintenancePool.query(
+    `drop database if exists ${quotedDatabaseName(databaseName)}`,
+  );
+}
 
 describe("foundation migration", () => {
   let harness: TestDatabaseHarness;
@@ -24,19 +56,112 @@ describe("foundation migration", () => {
     await harness?.close();
   });
 
-  it("applies the foundation migration through the workspace script", async () => {
-    const first = await execFileAsync("npm", ["run", "db:migrate"], {
-      cwd: process.cwd(),
-      env: process.env,
-    });
-    const rerun = await execFileAsync("npm", ["run", "db:migrate"], {
-      cwd: process.cwd(),
-      env: process.env,
-    });
+  it("migrates a fresh test database once despite conflicting production variables", async () => {
+    const baseUrl = process.env.TEST_DATABASE_URL;
+    if (baseUrl === undefined) {
+      throw new Error("TEST_DATABASE_URL_REQUIRED");
+    }
 
-    expect(first.stderr).toBe("");
-    expect(rerun.stderr).toBe("");
-  });
+    const maintenanceUrl = databaseUrl(baseUrl, "postgres");
+    const targetName = disposableDatabaseName("target");
+    const trapName = disposableDatabaseName("trap");
+    const targetUrl = databaseUrl(baseUrl, targetName);
+    const trapUrl = databaseUrl(baseUrl, trapName);
+    const maintenancePool = new Pool({
+      application_name: "syntholo-migration-test-maintenance",
+      connectionString: maintenanceUrl,
+      max: 1,
+    });
+    let targetPool: Pool | undefined;
+    let trapPool: Pool | undefined;
+
+    try {
+      await dropTestDatabase(maintenancePool, targetName);
+      await dropTestDatabase(maintenancePool, trapName);
+      await maintenancePool.query(
+        `create database ${quotedDatabaseName(targetName)}`,
+      );
+      await maintenancePool.query(
+        `create database ${quotedDatabaseName(trapName)}`,
+      );
+
+      const childEnvironment = createTestMigrationEnvironment({
+        ...process.env,
+        DATABASE_MIGRATION_TARGET: "production",
+        DATABASE_URL: trapUrl,
+        DATABASE_DIRECT_URL: trapUrl,
+        DATABASE_POOLED_URL: trapUrl,
+        TEST_DATABASE_URL: targetUrl,
+      });
+      const first = await execFileAsync("npm", ["run", "db:migrate"], {
+        cwd: process.cwd(),
+        env: childEnvironment,
+      });
+
+      targetPool = new Pool({ connectionString: targetUrl, max: 1 });
+      trapPool = new Pool({ connectionString: trapUrl, max: 1 });
+      const migratedTables = await targetPool.query<{ count: string }>(
+        `select count(*)::text as count
+         from information_schema.tables
+         where table_schema = 'public'
+           and table_name = any($1::text[])`,
+        [[
+          "accounts",
+          "audit_events",
+          "jobs",
+          "member_identities",
+          "memberships",
+          "outbox_events",
+          "provider_event_receipts",
+          "staff_identities",
+        ]],
+      );
+      const firstJournal = await targetPool.query<{
+        hash: string;
+        created_at: string;
+      }>(
+        "select hash, created_at::text from drizzle.__drizzle_migrations order by id",
+      );
+      const trapState = await trapPool.query<{
+        accounts: string | null;
+        journal: string | null;
+      }>(
+        `select
+          to_regclass('public.accounts')::text as accounts,
+          to_regclass('drizzle.__drizzle_migrations')::text as journal`,
+      );
+
+      expect(first.stderr).toBe("");
+      expect(migratedTables.rows[0]?.count).toBe("8");
+      expect(firstJournal.rows).toHaveLength(1);
+      expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
+
+      const rerun = await execFileAsync("npm", ["run", "db:migrate"], {
+        cwd: process.cwd(),
+        env: childEnvironment,
+      });
+      const rerunJournal = await targetPool.query<{
+        hash: string;
+        created_at: string;
+      }>(
+        "select hash, created_at::text from drizzle.__drizzle_migrations order by id",
+      );
+
+      expect(rerun.stderr).toBe("");
+      expect(rerunJournal.rows).toEqual(firstJournal.rows);
+    } finally {
+      await Promise.allSettled([targetPool?.end(), trapPool?.end()]);
+      try {
+        await dropTestDatabase(maintenancePool, targetName);
+      } finally {
+        try {
+          await dropTestDatabase(maintenancePool, trapName);
+        } finally {
+          await maintenancePool.end();
+        }
+      }
+    }
+  }, 20_000);
 
   it("creates all eight foundation tables", async () => {
     const result = await harness.database.pool.query<{ table_name: string }>(
@@ -138,5 +263,41 @@ describe("foundation migration", () => {
         [secondAccountId, identityId],
       ),
     ).rejects.toMatchObject({ code: "23514" });
+  });
+
+  it("stores staff permissions as a PostgreSQL string array", async () => {
+    const result = await harness.database.pool.query<{ permissions: string[] }>(
+      `insert into staff_identities
+        (provider, provider_user_id, role, permissions)
+       values ($1, $2, $3, $4::text[])
+       returning permissions`,
+      [
+        "workos",
+        "staff_string_permissions",
+        "admin",
+        ["content:publish", "support:assign"],
+      ],
+    );
+
+    expect(result.rows[0]?.permissions).toEqual([
+      "content:publish",
+      "support:assign",
+    ]);
+  });
+
+  it("rejects a JSON permission array containing non-strings", async () => {
+    await expect(
+      harness.database.pool.query(
+        `insert into staff_identities
+          (provider, provider_user_id, role, permissions)
+         values ($1, $2, $3, $4::jsonb)`,
+        [
+          "workos",
+          "staff_invalid_permissions",
+          "admin",
+          JSON.stringify(["content:publish", 1, null, {}]),
+        ],
+      ),
+    ).rejects.toMatchObject({ code: "42804" });
   });
 });

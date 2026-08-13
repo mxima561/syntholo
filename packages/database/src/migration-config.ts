@@ -5,16 +5,25 @@ export type MigrationEnvironment = Readonly<
 export function selectMigrationDatabaseUrl(
   environment: MigrationEnvironment,
 ): string {
-  if (environment.DATABASE_MIGRATION_TARGET === "production") {
-    const productionUrl = environment.DATABASE_URL;
-    if (productionUrl === undefined || productionUrl.trim() === "") {
-      throw new Error("DATABASE_URL_REQUIRED");
+  const configuredTarget = environment.DATABASE_MIGRATION_TARGET?.trim();
+  const target = configuredTarget === undefined || configuredTarget === ""
+    ? "test"
+    : configuredTarget;
+
+  if (target === "production") {
+    const directUrl = environment.DATABASE_DIRECT_URL?.trim();
+    if (directUrl === undefined || directUrl === "") {
+      throw new Error("DATABASE_DIRECT_URL_REQUIRED");
     }
-    return productionUrl;
+    return directUrl;
   }
 
-  const testUrl = environment.TEST_DATABASE_URL;
-  if (testUrl === undefined || testUrl.trim() === "") {
+  if (target !== "test") {
+    throw new Error("DATABASE_MIGRATION_TARGET_INVALID");
+  }
+
+  const testUrl = environment.TEST_DATABASE_URL?.trim();
+  if (testUrl === undefined || testUrl === "") {
     throw new Error("TEST_DATABASE_URL_REQUIRED");
   }
   return testUrl;

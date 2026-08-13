@@ -19,6 +19,18 @@ export function requireTestDatabaseUrl(
   return url;
 }
 
+export function createTestMigrationEnvironment(
+  environment: TestDatabaseEnvironment,
+): Record<string, string | undefined> {
+  const sanitized = { ...environment };
+  delete sanitized.DATABASE_URL;
+  delete sanitized.DATABASE_DIRECT_URL;
+  delete sanitized.DATABASE_POOLED_URL;
+  sanitized.DATABASE_MIGRATION_TARGET = "test";
+  sanitized.TEST_DATABASE_URL = requireTestDatabaseUrl(environment).trim();
+  return sanitized;
+}
+
 let factorySequence = 0;
 
 function nextUuid(): string {

@@ -3,7 +3,6 @@ import {
   check,
   foreignKey,
   index,
-  jsonb,
   pgTable,
   text,
   timestamp,
@@ -113,10 +112,10 @@ export const staffIdentities = pgTable(
     displayName: text("display_name"),
     role: text("role").notNull(),
     status: text("status").notNull().default("active"),
-    permissions: jsonb("permissions")
-      .$type<string[]>()
+    permissions: text("permissions")
+      .array()
       .notNull()
-      .default(sql`'[]'::jsonb`),
+      .default(sql`ARRAY[]::text[]`),
     createdAt: timestampWithTimezone("created_at").notNull().defaultNow(),
     updatedAt: timestampWithTimezone("updated_at").notNull().defaultNow(),
   },
@@ -132,10 +131,6 @@ export const staffIdentities = pgTable(
     check(
       "staff_identities_status_check",
       sql`${table.status} in ('active', 'suspended', 'disabled')`,
-    ),
-    check(
-      "staff_identities_permissions_array_check",
-      sql`jsonb_typeof(${table.permissions}) = 'array'`,
     ),
   ],
 );

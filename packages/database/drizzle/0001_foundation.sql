@@ -56,7 +56,7 @@ CREATE TABLE "staff_identities" (
   "display_name" text,
   "role" text NOT NULL,
   "status" text DEFAULT 'active' NOT NULL,
-  "permissions" jsonb DEFAULT '[]'::jsonb NOT NULL,
+  "permissions" text[] DEFAULT ARRAY[]::text[] NOT NULL,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
   CONSTRAINT "staff_identities_provider_user_unique"
@@ -64,9 +64,7 @@ CREATE TABLE "staff_identities" (
   CONSTRAINT "staff_identities_role_check"
     CHECK ("role" IN ('coach', 'admin')),
   CONSTRAINT "staff_identities_status_check"
-    CHECK ("status" IN ('active', 'suspended', 'disabled')),
-  CONSTRAINT "staff_identities_permissions_array_check"
-    CHECK (jsonb_typeof("permissions") = 'array')
+    CHECK ("status" IN ('active', 'suspended', 'disabled'))
 );
 --> statement-breakpoint
 CREATE TABLE "audit_events" (
@@ -171,14 +169,14 @@ CREATE INDEX "memberships_account_status_idx"
   ON "memberships" ("account_id", "status");
 --> statement-breakpoint
 CREATE INDEX "audit_events_account_occurred_idx"
-  ON "audit_events" ("account_id", "occurred_at" DESC);
+  ON "audit_events" ("account_id", "occurred_at" DESC NULLS LAST);
 --> statement-breakpoint
 CREATE INDEX "outbox_events_claim_idx"
   ON "outbox_events" ("available_at", "created_at", "id")
   WHERE "status" = 'pending';
 --> statement-breakpoint
 CREATE INDEX "jobs_claim_idx"
-  ON "jobs" ("priority" DESC, "run_at", "id")
+  ON "jobs" ("priority" DESC NULLS LAST, "run_at", "id")
   WHERE "status" = 'queued';
 --> statement-breakpoint
 CREATE INDEX "provider_event_receipts_status_received_idx"

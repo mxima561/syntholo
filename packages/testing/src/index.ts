@@ -1,6 +1,7 @@
 export { day, hour, minute } from "./clock.js";
 export {
   createTestDatabaseHarness,
+  createTestMigrationEnvironment,
   databaseFactories,
   requireTestDatabaseUrl,
   resetTestDatabase,

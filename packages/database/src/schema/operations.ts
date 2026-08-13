@@ -49,7 +49,7 @@ export const auditEvents = pgTable(
     ),
     index("audit_events_account_occurred_idx").on(
       table.accountId,
-      table.occurredAt.desc(),
+      table.occurredAt.desc().nullsLast(),
     ),
   ],
 );
@@ -127,7 +127,7 @@ export const jobs = pgTable(
       sql`jsonb_typeof(${table.payload}) = 'object'`,
     ),
     index("jobs_claim_idx")
-      .on(table.priority.desc(), table.runAt, table.id)
+      .on(table.priority.desc().nullsLast(), table.runAt, table.id)
       .where(sql`${table.status} = 'queued'`),
   ],
 );
