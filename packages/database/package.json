@@ -7,8 +7,19 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "db:migrate": "tsx src/migrate.ts",
     "lint": "eslint --config ../../eslint.config.mjs src",
     "test": "vitest run --passWithNoTests",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.21.0",
+    "drizzle-kit": "^0.31.10",
+    "tsx": "^4.23.12"
   }
 }

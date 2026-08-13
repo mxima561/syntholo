@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./clock": "./src/clock.ts",
+    "./database": "./src/database.ts",
     "./factories/actors": "./src/factories/actors.ts",
     "./fixtures": "./src/fixtures.ts"
   },
@@ -15,6 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@syntholo/database": "^0.1.0",
     "@syntholo/domain": "^0.1.0"
   }
 }
