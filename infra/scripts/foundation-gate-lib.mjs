@@ -918,6 +918,104 @@ function staticallySafeArrayElement(element) {
     || element.kind === ts.SyntaxKind.NullKeyword;
 }
 
+function staticPropertyPath(expression) {
+  if (ts.isParenthesizedExpression(expression)) {
+    return staticPropertyPath(expression.expression);
+  }
+  if (ts.isIdentifier(expression)) return [expression.text];
+  if (ts.isPropertyAccessExpression(expression)) {
+    const parent = staticPropertyPath(expression.expression);
+    return parent === undefined ? undefined : [...parent, expression.name.text];
+  }
+  if (
+    ts.isElementAccessExpression(expression)
+    && expression.argumentExpression !== undefined
+    && (
+      ts.isStringLiteral(expression.argumentExpression)
+      || ts.isNoSubstitutionTemplateLiteral(expression.argumentExpression)
+    )
+  ) {
+    const parent = staticPropertyPath(expression.expression);
+    return parent === undefined
+      ? undefined
+      : [...parent, expression.argumentExpression.text];
+  }
+  return undefined;
+}
+
+function invalidateArrayIntrinsic(path, trusted) {
+  if (path?.[0] !== "Array") return;
+  if (path.length === 1) {
+    trusted.clear();
+    return;
+  }
+  if (path[1] === "from") {
+    trusted.delete("from");
+    return;
+  }
+  if (path[1] !== "prototype") return;
+  if (path.length === 2) {
+    trusted.delete("forEach");
+    trusted.delete("map");
+    return;
+  }
+  if (["forEach", "map"].includes(path[2])) trusted.delete(path[2]);
+}
+
+function trustedArrayIntrinsics(source) {
+  const trusted = new Set(["forEach", "from", "map"]);
+  const visit = (node) => {
+    if (
+      ts.isBinaryExpression(node)
+      && ts.isAssignmentOperator(node.operatorToken.kind)
+    ) {
+      invalidateArrayIntrinsic(staticPropertyPath(node.left), trusted);
+    } else if (
+      (ts.isPrefixUnaryExpression(node) || ts.isPostfixUnaryExpression(node))
+      && [ts.SyntaxKind.MinusMinusToken, ts.SyntaxKind.PlusPlusToken]
+        .includes(node.operator)
+    ) {
+      invalidateArrayIntrinsic(staticPropertyPath(node.operand), trusted);
+    } else if (ts.isDeleteExpression(node)) {
+      invalidateArrayIntrinsic(staticPropertyPath(node.expression), trusted);
+    } else if (ts.isCallExpression(node)) {
+      const callee = staticPropertyPath(node.expression)?.join(".");
+      if ([
+        "Object.assign",
+        "Object.defineProperties",
+        "Object.defineProperty",
+        "Reflect.defineProperty",
+        "Reflect.set",
+      ].includes(callee)) {
+        const target = staticPropertyPath(node.arguments[0]);
+        const property = node.arguments[1];
+        const propertyName = property !== undefined
+          && (ts.isStringLiteral(property) || ts.isNoSubstitutionTemplateLiteral(property))
+          ? property.text
+          : undefined;
+        invalidateArrayIntrinsic(
+          propertyName === undefined || callee === "Object.assign"
+            ? target
+            : [...(target ?? []), propertyName],
+          trusted,
+        );
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return trusted;
+}
+
+function arrayIntrinsicTrusted(scope, name) {
+  for (let current = scope; current !== undefined; current = current.parent) {
+    if (current.arrayIntrinsics !== undefined) {
+      return current.arrayIntrinsics.has(name);
+    }
+  }
+  return false;
+}
+
 function expressionProvenance(expression, scope) {
   if (ts.isIdentifier(expression)) return resolveBinding(scope, expression.text);
   if (ts.isParenthesizedExpression(expression)) {
@@ -941,6 +1039,7 @@ function expressionProvenance(expression, scope) {
     && expression.expression.expression.text === "Array"
     && resolveBinding(scope, "Array") === undefined
     && expression.expression.name.text === "from"
+    && arrayIntrinsicTrusted(scope, "from")
     && expression.arguments.length === 1
     && ts.isObjectLiteralExpression(expression.arguments[0])
     && expression.arguments[0].properties.length === 1
@@ -1045,7 +1144,11 @@ function moduleScope(source) {
       addRuntimeDeclaration(statement, bindings, undefined);
     }
   }
-  return { bindings, parent: undefined };
+  return {
+    arrayIntrinsics: trustedArrayIntrinsics(source),
+    bindings,
+    parent: undefined,
+  };
 }
 
 function nestedScope(parent, statements = [], names = []) {
@@ -1184,6 +1287,22 @@ function expectSubjectCall(call, scope) {
     : undefined;
 }
 
+function expectMatcherNegated(call, scope) {
+  if (!ts.isPropertyAccessExpression(call.expression)) return false;
+  let subject = call.expression.expression;
+  let negated = false;
+  while (
+    ts.isPropertyAccessExpression(subject)
+    && ["not", "rejects", "resolves"].includes(subject.name.text)
+  ) {
+    if (subject.name.text === "not") negated = !negated;
+    subject = subject.expression;
+  }
+  return ts.isCallExpression(subject)
+    && expectInvocation(subject.expression, scope)
+    && negated;
+}
+
 function nodeAssertMethod(call, scope) {
   if (ts.isIdentifier(call.expression)) {
     const provenance = resolveBinding(scope, call.expression.text);
@@ -1229,12 +1348,19 @@ function assertionCallInfo(call, scope) {
   return { assertion: fastCheckMethod(call, scope, "assert") };
 }
 
-function trustedCallbackArguments(call, scope) {
+function trustedCallbackArguments(call, scope, context) {
   const callbacks = [];
   const matcherName = expectMatcherName(call, scope);
   if (["toThrow", "toThrowError"].includes(matcherName)) {
     const callback = expectSubjectCall(call, scope)?.arguments[0];
-    if (callback !== undefined && ts.isFunctionLike(callback)) callbacks.push(callback);
+    if (callback !== undefined && ts.isFunctionLike(callback)) {
+      callbacks.push({
+        callback,
+        context: {
+          expectedThrow: !expectMatcherNegated(call, scope),
+        },
+      });
+    }
   }
   if (nodeAssertCall(call, scope)) {
     const method = nodeAssertMethod(call, scope);
@@ -1243,7 +1369,14 @@ function trustedCallbackArguments(call, scope) {
       ["doesNotReject", "doesNotThrow", "rejects", "throws"].includes(method)
       && callback !== undefined
       && ts.isFunctionLike(callback)
-    ) callbacks.push(callback);
+    ) {
+      callbacks.push({
+        callback,
+        context: {
+          expectedThrow: ["rejects", "throws"].includes(method),
+        },
+      });
+    }
   }
   if (fastCheckMethod(call, scope, "assert")) {
     for (const argument of call.arguments) {
@@ -1254,26 +1387,35 @@ function trustedCallbackArguments(call, scope) {
         )
       ) continue;
       const callback = argument.arguments.at(-1);
-      if (callback !== undefined && ts.isFunctionLike(callback)) callbacks.push(callback);
+      if (callback !== undefined && ts.isFunctionLike(callback)) {
+        callbacks.push({ callback, context });
+      }
     }
   }
   if (
+    !context.expectedThrow
+    &&
     ts.isPropertyAccessExpression(call.expression)
     && call.expression.name.text === "transaction"
     && expressionProvenance(call.expression.expression, scope) === "callback-owner:transaction"
   ) {
     for (const argument of call.arguments) {
-      if (ts.isFunctionLike(argument)) callbacks.push(argument);
+      if (ts.isFunctionLike(argument)) {
+        callbacks.push({ callback: argument, context });
+      }
     }
   }
   if (
     ts.isPropertyAccessExpression(call.expression)
     && ["forEach", "map"].includes(call.expression.name.text)
+    && arrayIntrinsicTrusted(scope, call.expression.name.text)
     && expressionProvenance(call.expression.expression, scope)
       === "callback-owner:nonempty-array"
   ) {
     const callback = call.arguments[0];
-    if (callback !== undefined && ts.isFunctionLike(callback)) callbacks.push(callback);
+    if (callback !== undefined && ts.isFunctionLike(callback)) {
+      callbacks.push({ callback, context });
+    }
   }
   return callbacks;
 }
@@ -1291,29 +1433,48 @@ function testHandlerEvidence(handler, parentScope) {
       evidenceTokens.add(node.text);
     }
   };
-  const visit = (node, scope, state = "active", insideCall = false) => {
+  const unconditionallyTerminates = (statement) =>
+    ts.isReturnStatement(statement) || ts.isThrowStatement(statement);
+  const visitStatements = (statements, scope, state, insideCall, context) => {
+    for (const statement of statements) {
+      visit(statement, scope, state, insideCall, context);
+      if (unconditionallyTerminates(statement)) break;
+    }
+  };
+  const visit = (
+    node,
+    scope,
+    state = "active",
+    insideCall = false,
+    context = { expectedThrow: false },
+  ) => {
     if (state === "active" && insideCall) addToken(node);
     if (isShortCircuitExpression(node)) {
-      visit(node.left, scope, state, insideCall);
+      visit(node.left, scope, state, insideCall, context);
       visit(
         node.right,
         scope,
         state === "active" ? "conditional" : state,
         insideCall,
+        context,
       );
       return;
     }
     if (isConditionalRegistrationContainer(node)) {
       ts.forEachChild(node, (child) =>
-        visit(child, scope, state === "active" ? "conditional" : state, insideCall)
+        visit(
+          child,
+          scope,
+          state === "active" ? "conditional" : state,
+          insideCall,
+          context,
+        )
       );
       return;
     }
     if (ts.isBlock(node)) {
       const blockScope = nestedScope(scope, node.statements);
-      for (const statement of node.statements) {
-        visit(statement, blockScope, state, insideCall);
-      }
+      visitStatements(node.statements, blockScope, state, insideCall, context);
       return;
     }
     if (ts.isClassLike(node)) {
@@ -1321,15 +1482,19 @@ function testHandlerEvidence(handler, parentScope) {
       for (const member of node.members) {
         if (ts.isClassStaticBlockDeclaration(member)) {
           const staticScope = staticBlockScope(member, bodyScope);
-          for (const statement of member.body.statements) {
-            visit(statement, staticScope, state, insideCall);
-          }
+          visitStatements(
+            member.body.statements,
+            staticScope,
+            state,
+            insideCall,
+            context,
+          );
         } else if (
           ts.isPropertyDeclaration(member)
           && isStaticClassMember(member)
           && member.initializer !== undefined
         ) {
-          visit(member.initializer, bodyScope, state, insideCall);
+          visit(member.initializer, bodyScope, state, insideCall, context);
         }
       }
       return;
@@ -1340,25 +1505,33 @@ function testHandlerEvidence(handler, parentScope) {
     if (ts.isCallExpression(node)) {
       const assertion = assertionCallInfo(node, scope);
       if (state === "active" && assertion.assertion) hasAssertion = true;
-      visit(node.expression, scope, state, true);
+      visit(node.expression, scope, state, true, context);
       for (const argument of node.arguments) {
-        visit(argument, scope, state, true);
+        visit(argument, scope, state, true, context);
       }
-      for (const callback of trustedCallbackArguments(node, scope)) {
+      for (const { callback, context: callbackContext } of trustedCallbackArguments(
+        node,
+        scope,
+        context,
+      )) {
         if (callback.body === undefined) continue;
         const callbackScope = functionScope(callback, scope);
-        visit(callback.body, callbackScope, state, true);
+        visit(callback.body, callbackScope, state, true, callbackContext);
       }
       return;
     }
     ts.forEachChild(node, (child) =>
-      visit(child, scope, state, insideCall)
+      visit(child, scope, state, insideCall, context)
     );
   };
   if (ts.isBlock(handler.body)) {
-    for (const statement of handler.body.statements) {
-      visit(statement, rootScope);
-    }
+    visitStatements(
+      handler.body.statements,
+      rootScope,
+      "active",
+      false,
+      { expectedThrow: false },
+    );
   } else {
     visit(handler.body, rootScope);
   }

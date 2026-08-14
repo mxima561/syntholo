@@ -619,3 +619,54 @@ report is committed, and its result is returned with the commit handoff. No
 push was performed.
 
 DONE
+
+## Acceptance fix round 9 — 2026-08-14
+
+The three remaining callback-execution findings against commit
+`f57b92ffcb91760983b3eb68ae30f228b02aa103` were reproduced with direct RED
+fixtures before the validator changed.
+
+- Native array callback evidence now depends on both a statically non-empty
+  direct receiver and an immutable known intrinsic. Assigning, updating,
+  deleting, or redefining `Array.from`, `Array.prototype.forEach`, or
+  `Array.prototype.map` anywhere in the candidate module disables the affected
+  proof. Direct dense `[1]` and exact positive-length `Array.from` controls
+  remain accepted.
+- Transaction callback evidence is no longer inherited through an invocation
+  that the enclosing assertion expects to throw. A real
+  `@syntholo/database` wrapper constructed with explicitly invalid inputs can
+  throw before `.transaction` reaches its callback, so that callback cannot
+  certify required syntax. The direct real-factory transaction control remains
+  accepted.
+- Executable callback traversal now stops after a direct unconditional
+  `throw` or `return`. A named `node:assert/strict` `throws` callback therefore
+  cannot certify a required call placed after the statement that already
+  satisfies the assertion.
+
+The focused RED ran 94 policy tests with exactly five expected failures:
+rebound `Array.from`, rebound `Array.prototype.forEach`, rebound
+`Array.prototype.map`, the throwing unit-of-work factory wrapper, and the
+unreachable statement after `throw`. The focused GREEN passed 94/94.
+
+### Acceptance-fix round 9 verification
+
+- `npm run typecheck` and `npm run lint` — PASS in all eight workspaces; direct
+  ESLint and Node syntax validation for the changed gate library also PASS.
+- `npm test` — PASS: 55 files and 741 tests across eight workspaces (API 133,
+  web 101, worker 48, contracts 15, database 109, domain 193, integrations 35,
+  testing 107).
+- Production-mode web/API/worker/cron and migration builds plus `node --check`
+  for all four Node artifacts and the changed gate library — PASS.
+- `CI=false npm run test:e2e` — PASS: JUnit records 80 total, 63 passed, 17
+  intentional project-specific skips, zero failures, and zero errors.
+- The production graph follows 6,978 resolved runtime edges and reports
+  `policyPass: true` with zero violations. Required-contract catalog validation
+  and working-tree `git diff --check` — PASS.
+
+Docker, `psql`, `pg_isready`, and `TEST_DATABASE_URL` remain unavailable on
+this host. No local image or real-PostgreSQL PASS is claimed. Fresh deployed
+proxy/worker evidence remains externally blocked. The exact clean committed-SHA
+foundation gate is rerun after this report is committed, and its result is
+returned with the commit handoff. No push was performed.
+
+DONE

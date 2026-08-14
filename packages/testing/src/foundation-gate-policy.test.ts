@@ -640,12 +640,17 @@ describe("gate report trust boundary", () => {
     ["an assertion hidden behind a fractional Array.from length", "import { it, expect } from 'vitest'; it('required contract', () => { Array.from({ length: 0.5 }).map(() => expect(runContract()).toBe(true)) })"],
     ["an assertion hidden behind an overridden Array.from length", "import { it, expect } from 'vitest'; it('required contract', () => { Array.from({ length: 1, ...{ length: 0 } }).forEach(() => expect(runContract()).toBe(true)) })"],
     ["an assertion hidden behind a non-length Array.from property", "import { it, expect } from 'vitest'; it('required contract', () => { Array.from({ size: 1 }).forEach(() => expect(runContract()).toBe(true)) })"],
+    ["an assertion hidden behind a rebound Array.from intrinsic", "import { it, expect } from 'vitest'; Array.from = () => []; it('required contract', () => { Array.from({ length: 1 }).forEach(() => expect(runContract()).toBe(true)) })"],
+    ["an assertion hidden behind a rebound Array.prototype.forEach intrinsic", "import { it, expect } from 'vitest'; Array.prototype.forEach = () => {}; it('required contract', () => { [1].forEach(() => expect(runContract()).toBe(true)) })"],
+    ["an assertion hidden behind a rebound Array.prototype.map intrinsic", "import { it, expect } from 'vitest'; Array.prototype.map = () => []; it('required contract', () => { [1].map(() => expect(runContract()).toBe(true)) })"],
     ["an assertion hidden behind a mutated const-array length", "import { it, expect } from 'vitest'; it('required contract', () => { const values = [1]; values.length = 0; values.forEach(() => expect(runContract()).toBe(true)) })"],
     ["an arbitrary nested callback inside a trusted callback", "import { it, expect } from 'vitest'; it('required contract', () => { expect(() => execute(() => expect(runContract()).toBe(true))).not.toThrow() })"],
     ["a callback receiver whose non-empty array provenance is mutable", "import { it, expect } from 'vitest'; it('required contract', () => { let values = [1]; values = []; values.forEach(() => expect(runContract()).toBe(true)) })"],
     ["a callback receiver whose transaction provenance is mutable", "import { createUnitOfWork } from '@syntholo/database'; import { it, expect } from 'vitest'; let unitOfWork = () => createUnitOfWork(database, metadata); unitOfWork = () => ({ transaction(_cb) {} }); it('required contract', () => { unitOfWork().transaction(() => expect(runContract()).toBe(true)) })"],
     ["a transaction wrapper whose factory import is shadowed by a parameter", "import { createUnitOfWork } from '@syntholo/database'; import { it, expect } from 'vitest'; const owner = (createUnitOfWork = () => ({ transaction(_cb: () => unknown) {} })) => createUnitOfWork(); it('required contract', () => { owner().transaction(() => expect(runContract()).toBe(true)) })"],
     ["a transaction wrapper sourced from an unverified relative index", "import { createUnitOfWork } from './index.js'; import { it, expect } from 'vitest'; const owner = () => createUnitOfWork(); it('required contract', () => { owner().transaction(() => expect(runContract()).toBe(true)) })"],
+    ["a transaction callback behind a factory invocation expected to throw", "import { createUnitOfWork } from '@syntholo/database'; import { it, expect } from 'vitest'; const owner = () => createUnitOfWork(undefined as never, undefined as never); it('required contract', () => { expect(() => owner().transaction(() => expect(runContract()).toBe(true))).toThrow() })"],
+    ["an unreachable contract call after an unconditional throw", "import { throws } from 'node:assert/strict'; import { it } from 'vitest'; it('required contract', () => { throws(() => { throw new Error('expected'); runContract(); }) })"],
   ])("does not accept %s as an executable required contract", (_case, source) => {
     expect(() => validateExecutableTestCases(
       source,
@@ -721,6 +726,11 @@ describe("gate report trust boundary", () => {
     )).not.toThrow();
     expect(() => validateExecutableTestCases(
       "import { expect, it } from 'vitest'; it('required contract', () => { [1].forEach(() => expect(runContract()).toBe(true)) })",
+      ["required contract"],
+      { "required contract": ["runContract"] },
+    )).not.toThrow();
+    expect(() => validateExecutableTestCases(
+      "import { expect, it } from 'vitest'; it('required contract', () => { Array.from({ length: 1 }).map(() => expect(runContract()).toBe(true)) })",
       ["required contract"],
       { "required contract": ["runContract"] },
     )).not.toThrow();
