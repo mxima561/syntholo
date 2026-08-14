@@ -23,6 +23,14 @@ validated upstream and forward exactly one named, canonical opaque cookie.
 
 ## Member flow
 
+Production member authentication is embedded at the canonical local routes
+`/sign-in` and `/sign-up`. Clerk is configured with explicit path routing and
+reciprocal local URLs so neither form sends the browser to a hosted Account
+Portal. The production instance uses DNS mode at
+`clerk.app.syntholo.com`; the required CNAME inventory is the exact set Clerk
+returns. `accounts.app.syntholo.com` is not a launch dependency and must not be
+created from an inferred target.
+
 `/v1/member/**` parses one raw `Authorization: Bearer` value and rejects cookie-
 only, malformed, duplicate, staff-cookie, and mixed credentials. Clerk
 `authenticateRequest` is restricted to `session_token`, the configured audience,
@@ -133,8 +141,8 @@ Removing an in-use key is a fail-closed logout, not a recovery mechanism.
 
 Production remains blocked until evidence records:
 
-- the exact canonical host, callback, Clerk sign-in/sign-up, and allowed redirect
-  URLs;
+- the exact canonical host, WorkOS callback, embedded Clerk sign-in/sign-up
+  paths, and allowed redirect URLs;
 - the Clerk production instance, publishable/secret keys, audience, and exact
   authorized party;
 - the WorkOS production issuer, client, organization, singleton roles,

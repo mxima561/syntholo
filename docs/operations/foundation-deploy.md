@@ -53,6 +53,15 @@ Deploy in this order:
 4. Run the one-shot cron and confirm a zero exit after completion.
 5. Deploy web and confirm `/api/health` reports the same SHA.
 
+The production canonical origin is `https://app.syntholo.com`. Vercel serves
+the web application and rewrites relative `/v1/**` requests to Railway; the
+browser never receives the Railway origin as its API base URL. WorkOS uses
+`https://app.syntholo.com/v1/staff/auth/callback`, and its application homepage
+and initiate-login URI use the same host. Clerk uses DNS mode at
+`clerk.app.syntholo.com`, while the embedded `/sign-in` and `/sign-up` routes
+link only to each other. No hosted Account Portal DNS record is part of the
+current launch contract.
+
 API liveness proves only process life. API readiness uses the additive
 `0007_runtime_contract` projection to prove database connectivity, the exact
 ordered journal hashes (including the immutable published `0001`–`0006`

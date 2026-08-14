@@ -15,9 +15,9 @@ export function PublicAuthProvider({
 }
 
 export function PublicSignIn() {
-  return <SignIn />;
+  return <SignIn path="/sign-in" routing="path" signUpUrl="/sign-up" />;
 }
 
 export function PublicSignUp() {
-  return <SignUp />;
+  return <SignUp path="/sign-up" routing="path" signInUrl="/sign-in" />;
 }

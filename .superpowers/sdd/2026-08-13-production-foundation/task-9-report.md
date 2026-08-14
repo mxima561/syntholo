@@ -670,3 +670,36 @@ foundation gate is rerun after this report is committed, and its result is
 returned with the commit handoff. No push was performed.
 
 DONE
+
+## Production domain cutover — 2026-08-14
+
+The accepted production release
+`0843b6e9835a0899b193edb2c4ba8b84d331a574` was cut over to the owned canonical
+origin `https://app.syntholo.com` before the embedded-auth follow-up release.
+
+- Vercel serves the canonical hostname with valid DNS/TLS and permanently
+  redirects the old `syntholo.vercel.app` alias while preserving path and query.
+  Production `WEB_ORIGIN` and `APP_URL` are canonical, and the web environment
+  contains no WorkOS API key, Clerk secret, database URL, or backend Clerk key.
+- Railway API uses the same canonical `WEB_ORIGIN`. Its readiness endpoint and
+  the Vercel web health endpoint both reported the exact accepted SHA. The
+  cutover API deployment was
+  `6a153e2f-08ac-4bcd-b965-66922a005a9d`; the corrected Vercel deployment was
+  `dpl_EAs9U8uomajTGyBbpHS2cF14LNey`.
+- Clerk is in DNS mode for `app.syntholo.com`, with exact Frontend API, DKIM,
+  secondary DKIM, and mail CNAMEs. The production JWKS at
+  `clerk.app.syntholo.com` returned one key. Clerk did not return a required
+  Account Portal CNAME, so launch does not infer or depend on one.
+- WorkOS has one production callback at
+  `https://app.syntholo.com/v1/staff/auth/callback`; its application homepage
+  and initiate-login URI use the same canonical host. A new non-revealable
+  production key is stored only in Railway API.
+- Browser verification exposed that Clerk's default cross-form link still
+  targeted the unprovisioned hosted Account Portal. A RED/GREEN follow-up fixes
+  the embedded components to use explicit path routing and reciprocal local
+  `/sign-in` and `/sign-up` URLs. That correction is published only under its
+  own reviewed Git SHA; the old accepted deployment is not mislabeled.
+
+No credential value is recorded in this report.
+
+DONE

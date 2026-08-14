@@ -1,6 +1,6 @@
 # Syntholo Production Domain Cutover
 
-**Status:** Approved design; pending implementation
+**Status:** Implemented; final reviewed-SHA deployment pending
 **Date:** 2026-08-14
 **Canonical web origin:** `https://app.syntholo.com`
 
@@ -23,15 +23,21 @@ boundaries, and same-origin `/v1` API topology.
 - Clerk uses DNS mode for the production primary domain. The Clerk secret
   remains only in Railway API. Vercel receives only the public Clerk key.
 - GoDaddy remains the authoritative DNS provider. `app.syntholo.com` points to
-  Vercel, while Clerk-provided CNAME records point its Frontend API and Account
-  Portal hostnames to Clerk.
+  Vercel, while the four Clerk-provided CNAME records point the Frontend API,
+  DKIM, and mail hostnames to Clerk. Clerk did not require or return an Account
+  Portal CNAME for this instance, so no `accounts.app.syntholo.com` record is
+  inferred.
+- Member authentication is embedded in the web application. Clerk path routing
+  and cross-form links are fixed to the local `/sign-in` and `/sign-up` routes;
+  launch does not depend on the hosted Clerk Account Portal.
 - The apex `syntholo.com` remains unchanged by this cutover.
 
 ## Cutover sequence
 
 1. Verify `app.syntholo.com` is attached to the Vercel project and has valid
    DNS and TLS.
-2. Provision the exact Clerk DNS records returned for `app.syntholo.com`.
+2. Provision only the exact Clerk DNS records returned for
+   `app.syntholo.com`.
 3. Run Clerk's DNS verification, then change the primary domain from the
    temporary Vercel hostname to `app.syntholo.com` and disable proxy mode.
 4. Update Vercel and Railway `WEB_ORIGIN` values and the WorkOS redirect URI.
@@ -58,8 +64,9 @@ boundaries, and same-origin `/v1` API topology.
 - Vercel aliases redirect to `https://app.syntholo.com` with path and query
   preserved.
 - Web and Railway readiness responses report the accepted release SHA.
-- Clerk production JWKS is reachable through its verified DNS hostname and the
-  member sign-in UI loads without proxy or DNS errors.
+- Clerk production JWKS is reachable through its verified DNS hostname, the
+  member sign-in UI loads without proxy or DNS errors, and sign-in/sign-up
+  navigation remains on the two embedded local routes.
 - WorkOS sign-in uses the exact `app.syntholo.com` callback and preserves the
   `Secure`, `HttpOnly`, host-only staff cookie contract.
 - Vercel contains no Clerk secret or other backend credential.
