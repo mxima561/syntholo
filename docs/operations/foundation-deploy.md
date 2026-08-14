@@ -71,12 +71,14 @@ reachability analysis, compensating control, named owner, approval, and expiry.
 There are no permanent or severity-wide exceptions.
 
 The engineering gate is `BLOCKED` until the four image contracts have valid
-SHA-bound CI evidence. Production launch can remain `BLOCKED` after engineering
-passes. Launch also requires fresh deployed same-origin proxy evidence for exact
+SHA-bound evidence whose environment is exactly `ci`. Production launch can
+remain `BLOCKED` after engineering passes. Launch also requires fresh deployed
+same-origin proxy evidence for exact
 status/body, multiple `Set-Cookie`, `Location`, staff `Cookie`, and member
 `Authorization` preservation, bound to the SHA, environment, canonical host,
 fixed upstream, timestamp, and artifact hash. That deployed evidence also
-contains the same release's worker `ready` record. Preview deployments receive
+contains the same release's fresh, independently timestamped worker `ready`
+record with `service: "worker"`. Preview deployments receive
 no production auth/session/API credentials and cannot target production
 upstreams. Requests to production aliases and provider deployment hosts receive
 a permanent redirect to the fixed `WEB_ORIGIN`; request headers never choose the

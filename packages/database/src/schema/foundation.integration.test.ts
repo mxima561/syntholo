@@ -179,7 +179,15 @@ describe("foundation migration", () => {
 
       expect(first.stderr).toBe("");
       expect(migratedTables.rows[0]?.count).toBe("27");
-      expect(firstJournal.rows).toHaveLength(6);
+      expect(firstJournal.rows).toEqual([
+        { created_at: "1786618800000", hash: "bf3b66561107047f8c317d81bb561e9a29dc6207a14469a3ce588ec1f8ddc60c" },
+        { created_at: "1786626000000", hash: "6508044b65dcce22b5d9a25b954a40768b813d84f943247e59f6c6391cec60a4" },
+        { created_at: "1786633200000", hash: "5b1e18eeeb392048ebcd7436622c60702694758b84edc209afb91ba861b8d9da" },
+        { created_at: "1786640400000", hash: "717c39300253771cbd09070c2b75297c0bfd788290c522877bbbf7293c4a7ea1" },
+        { created_at: "1786647600000", hash: "b61002f28e9970c63ea24a291ebcca8711bdd1f1a178b9ce09910243cc6683b5" },
+        { created_at: "1786654800000", hash: "6b465ae711125f441115f83dfbfe9bf63e92a74edd57190e357c10268adeafb5" },
+        { created_at: "1786662000000", hash: "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002" },
+      ]);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
       const rerun = await runDatabaseNpm(

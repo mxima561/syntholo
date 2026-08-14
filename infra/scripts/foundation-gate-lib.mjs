@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, stat } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
+import ts from "typescript";
 
 export const RELEASE_SHA_PATTERN = /^[0-9a-f]{40}$/u;
 const execFileAsync = promisify(execFile);
@@ -28,10 +29,16 @@ const launchOnlyChecks = new Set(["ancestry", "proxy"]);
 
 const forbiddenEnvironmentKey = /^(?:(?:DATABASE_(?:DIRECT_|POOLED_)?URL|TEST_DATABASE_URL|(?:MEMBER|STAFF|SYSTEM|WORKER)_DATABASE_URL|WORKOS_.+|STRIPE_(?:SECRET|WEBHOOK).+|MUX_(?:TOKEN|SIGNING).+|RESEND_(?:API|SECRET).+|BLOB_(?:READ_WRITE|WRITE).+|HIGHLEVEL_.+)|.*(?:SECRET(?:_KEY)?|API_KEY|PRIVATE_KEY|WRITE_TOKEN))$/u;
 const forbiddenUrl = /https?:\/\/(?:[^/]*\.)?(?:leadconnectorhq\.com|gohighlevel\.com)\/(?:api|v\d+|locations|contacts|oauth|sso|token)(?:[/?"'`]|$)/iu;
-const forbiddenServerPackages = new Set([
+const globallyForbiddenPackages = new Set([
+  "mongodb",
+]);
+const webForbiddenServerPackages = new Set([
+  "@clerk/backend",
+  "@clerk/nextjs",
   "@mux/mux-node",
   "@vercel/blob",
-  "mongodb",
+  "@workos-inc/authkit-nextjs",
+  "@workos-inc/node",
   "resend",
   "stripe",
 ]);
@@ -104,7 +111,16 @@ function packageNameFromSpecifier(specifier) {
 
 export function isForbiddenServerPackage(specifier) {
   const name = packageNameFromSpecifier(specifier);
-  return forbiddenServerPackages.has(name) || highLevelPackage.test(name);
+  return globallyForbiddenPackages.has(name)
+    || webForbiddenServerPackages.has(name)
+    || highLevelPackage.test(name);
+}
+
+function isForbiddenPackageForService(specifier, service) {
+  const name = packageNameFromSpecifier(specifier);
+  return globallyForbiddenPackages.has(name)
+    || highLevelPackage.test(name)
+    || (service === "web" && webForbiddenServerPackages.has(name));
 }
 
 async function loadPathAliases(repositoryRoot, files) {
@@ -117,6 +133,7 @@ async function loadPathAliases(repositoryRoot, files) {
         if (!Array.isArray(targets)) continue;
         for (const target of targets) {
           aliases.push({
+            directory: configDirectory,
             pattern,
             target: join(configDirectory, String(target)).split(sep).join("/"),
           });
@@ -129,91 +146,294 @@ async function loadPathAliases(repositoryRoot, files) {
   return aliases;
 }
 
-function resolveAlias(specifier, aliases, files) {
-  for (const alias of aliases) {
+function resolutionCandidates(base) {
+  const candidates = [base];
+  if (/\.[cm]?js$/u.test(base)) {
+    const withoutJavaScript = base.replace(/\.[cm]?js$/u, "");
+    candidates.push(...[".ts", ".tsx", ".mts", ".cts"].map((extension) => `${withoutJavaScript}${extension}`));
+  } else {
+    candidates.push(...[".ts", ".tsx", ".js", ".mjs", ".cjs", ".mts", ".cts"].map((extension) => `${base}${extension}`));
+  }
+  candidates.push(...["index.ts", "index.tsx", "index.js", "index.mjs", "index.cjs"].map((name) => `${base}/${name}`));
+  return [...new Set(candidates)];
+}
+
+function resolveAlias(specifier, importer, aliases, files) {
+  const applicable = aliases
+    .filter(({ directory }) => directory === "." || importer.startsWith(`${directory}/`))
+    .sort((left, right) => right.directory.length - left.directory.length);
+  for (const alias of applicable) {
     const wildcard = alias.pattern.indexOf("*");
     const prefix = wildcard < 0 ? alias.pattern : alias.pattern.slice(0, wildcard);
     const suffix = wildcard < 0 ? "" : alias.pattern.slice(wildcard + 1);
     if (!specifier.startsWith(prefix) || !specifier.endsWith(suffix)) continue;
     const capture = specifier.slice(prefix.length, specifier.length - suffix.length || undefined);
     const base = alias.target.replace("*", capture).replace(/^\.\//u, "");
-    const candidates = [base, ...[".ts", ".tsx", ".js", ".mjs", ".cjs"].map((extension) => `${base}${extension}`), ...["index.ts", "index.tsx", "index.js"].map((name) => `${base}/${name}`)];
-    const resolvedPath = candidates.find((candidate) => files.has(candidate));
+    const resolvedPath = resolutionCandidates(base).find((candidate) => files.has(candidate));
     if (resolvedPath !== undefined) return resolvedPath;
   }
   return undefined;
 }
 
+function exportTarget(manifest, specifier) {
+  const name = manifest.name;
+  if (typeof name !== "string") return undefined;
+  const subpath = specifier === name ? "." : `.${specifier.slice(name.length)}`;
+  const exported = typeof manifest.exports === "string"
+    ? (subpath === "." ? manifest.exports : undefined)
+    : manifest.exports?.[subpath];
+  if (typeof exported === "string") return exported;
+  if (exported !== null && typeof exported === "object") {
+    return exported.import ?? exported.default ?? exported.node;
+  }
+  return subpath === "." && typeof manifest.main === "string" ? manifest.main : undefined;
+}
+
+function resolveLocalImport(specifier, importer, aliases, files, workspaceManifests) {
+  if (specifier.startsWith(".")) {
+    return resolutionCandidates(join(dirname(importer), specifier).split(sep).join("/"))
+      .find((candidate) => files.has(candidate));
+  }
+  const aliased = resolveAlias(specifier, importer, aliases, files);
+  if (aliased !== undefined) return aliased;
+  const manifest = workspaceManifests.get(packageNameFromSpecifier(specifier));
+  if (manifest === undefined) return undefined;
+  const target = exportTarget(manifest.value, specifier);
+  if (typeof target !== "string") return undefined;
+  const base = join(manifest.directory, target).split(sep).join("/");
+  return resolutionCandidates(base).find((candidate) => files.has(candidate));
+}
+
+function productionEntries(files) {
+  const entries = [];
+  const fixed = [
+    ["apps/api/src/server.ts", "api"],
+    ["apps/worker/src/runner.ts", "worker"],
+    ["apps/worker/src/cron.ts", "cron"],
+    ["packages/database/src/migrate.ts", "migrate"],
+    ["apps/web/next.config.ts", "web"],
+    ["apps/web/src/proxy.ts", "web"],
+    ["apps/web/src/instrumentation.ts", "web"],
+    ["apps/web/src/middleware.ts", "web"],
+  ];
+  for (const [path, service] of fixed) {
+    if (files.has(path)) entries.push({ path, service });
+  }
+  for (const path of files) {
+    if (/^apps\/web\/src\/app\/(?:.+\/)?(?:default|error|global-error|layout|loading|not-found|page|route|template)\.[cm]?[jt]sx?$/u.test(path)) {
+      entries.push({ path, service: "web" });
+    }
+    const builtMatch = /^(apps\/(api|web|worker)|packages\/[^/]+)\/(?:dist|\.next\/(?:server|standalone|static))(?:\/|$)/u.exec(path);
+    if (builtMatch && sourceExtension.test(path)) {
+      const service = builtMatch[2] === "web"
+        ? "web"
+        : path.endsWith("cron.js")
+          ? "cron"
+          : builtMatch[2] === "worker"
+            ? "worker"
+            : builtMatch[2] === "api"
+              ? "api"
+              : "package";
+      entries.push({ path, service });
+    }
+  }
+  return entries;
+}
+
+function addUnique(items, keys, item) {
+  const key = JSON.stringify(item);
+  if (!keys.has(key)) {
+    keys.add(key);
+    items.push(item);
+  }
+}
+
 export async function inspectProductionDependencyGraph(repositoryRoot) {
   const files = await walk(repositoryRoot);
+  const normalizedFiles = new Set(files.map((file) => normalized(repositoryRoot, file)));
+  const fileByPath = new Map(files.map((file) => [normalized(repositoryRoot, file), file]));
   const packages = new Set();
   const imports = [];
+  const importKeys = new Set();
   const environmentKeys = new Set();
   const urls = new Set();
-  const builtArtifacts = [];
+  const builtArtifacts = new Set();
   const lockfilePackages = new Set();
   const resolvedImports = [];
+  const resolvedImportKeys = new Set();
+  const policyViolations = [];
+  const policyViolationKeys = new Set();
   const aliases = await loadPathAliases(repositoryRoot, files);
-  const normalizedFiles = new Set(files.map((file) => normalized(repositoryRoot, file)));
+  const workspaceManifests = new Map();
+  const manifestsByDirectory = new Map();
+  for (const [path, file] of fileByPath) {
+    if (!/^(?:apps|packages)\/[^/]+\/package\.json$/u.test(path)) continue;
+    const value = JSON.parse(await readFile(file, "utf8"));
+    const manifest = { directory: dirname(path), path, value };
+    manifestsByDirectory.set(manifest.directory, manifest);
+    if (typeof value.name === "string") workspaceManifests.set(value.name, manifest);
+  }
+  const lockPath = fileByPath.get("package-lock.json");
+  const lock = lockPath === undefined
+    ? { packages: {} }
+    : JSON.parse(await readFile(lockPath, "utf8"));
+  const lockDependencies = new Map();
+  const lockedPackages = new Set();
+  for (const [path, value] of Object.entries(lock.packages ?? {})) {
+    const name = packageNameFromLockPath(path) ?? value.name;
+    if (typeof name !== "string") continue;
+    lockedPackages.add(name);
+    const dependencies = new Set([
+      ...Object.keys(value.dependencies ?? {}),
+      ...Object.keys(value.optionalDependencies ?? {}),
+    ]);
+    const current = lockDependencies.get(name) ?? new Set();
+    for (const dependency of dependencies) current.add(dependency);
+    lockDependencies.set(name, current);
+  }
 
-  for (const file of files) {
-    const path = normalized(repositoryRoot, file);
-    if (path === "package-lock.json") {
-      const lock = JSON.parse(await readFile(file, "utf8"));
-      for (const lockPath of Object.keys(lock.packages ?? {})) {
-        const name = packageNameFromLockPath(lockPath);
-        if (name !== undefined && isForbiddenServerPackage(name)) {
+  const manifestServices = [
+    ["apps/api", "api"],
+    ["apps/web", "web"],
+    ["apps/worker", "worker"],
+    ["packages/database", "migrate"],
+  ];
+  for (const [directory, service] of manifestServices) {
+    const root = manifestsByDirectory.get(directory);
+    if (root === undefined) continue;
+    const queue = Object.keys(root.value.dependencies ?? {});
+    const seen = new Set();
+    while (queue.length > 0) {
+      const name = queue.shift();
+      if (seen.has(name)) continue;
+      seen.add(name);
+      if (isForbiddenPackageForService(name, service)) {
+        packages.add(name);
+        addUnique(policyViolations, policyViolationKeys, {
+          kind: "package", path: root.path, service, value: name,
+        });
+        if (lockedPackages.has(name)) {
           lockfilePackages.add(name);
+          addUnique(policyViolations, policyViolationKeys, {
+            kind: "lockfile", path: "package-lock.json", service, value: name,
+          });
         }
       }
-      continue;
-    }
-    if (path === "package.json" || /^(?:apps|packages)\/[^/]+\/package\.json$/u.test(path)) {
-      const manifest = JSON.parse(await readFile(file, "utf8"));
-      for (const name of Object.keys(manifest.dependencies ?? {})) packages.add(name);
-      continue;
-    }
-    const built = /^(?:apps|packages)\/[^/]+\/(?:dist|\.next\/(?:server|standalone|static))(?:\/|$)/u.test(path);
-    const productionWebPath = path.startsWith("apps/web/src/")
-      || (path.startsWith("apps/web/") && built);
-    if ((!sourceExtension.test(path) && !built) || (!built && excludedSource.test(path))) continue;
-    const contents = await readFile(file, "utf8").catch(() => "");
-    const fileImports = importsIn(contents);
-    for (const specifier of fileImports) {
-      if (isForbiddenServerPackage(specifier)) imports.push({ path, specifier });
-      const resolvedPath = resolveAlias(specifier, aliases, normalizedFiles);
-      if (resolvedPath !== undefined) resolvedImports.push({ path, resolvedPath, specifier });
-    }
-    for (const key of environmentKeysIn(contents)) {
-      if (productionWebPath && forbiddenEnvironmentKey.test(key)) {
-        environmentKeys.add(key);
-      }
-    }
-    for (const url of urlsIn(contents)) urls.add(url);
-    if (
-      built && (
-        fileImports.some((specifier) => isForbiddenServerPackage(specifier))
-        || environmentKeysIn(contents).some((key) => forbiddenEnvironmentKey.test(key))
-        || urlsIn(contents).length > 0
-      )
-    ) {
-      builtArtifacts.push(path);
+      const workspace = workspaceManifests.get(name);
+      const dependencies = workspace === undefined
+        ? lockDependencies.get(name)
+        : new Set([
+            ...Object.keys(workspace.value.dependencies ?? {}),
+            ...Object.keys(workspace.value.optionalDependencies ?? {}),
+          ]);
+      if (dependencies !== undefined) queue.push(...dependencies);
     }
   }
 
+  const queue = productionEntries(normalizedFiles);
+  const visited = new Set();
+  while (queue.length > 0) {
+    const { path, service } = queue.shift();
+    const visitKey = `${service}:${path}`;
+    if (visited.has(visitKey) || excludedSource.test(path)) continue;
+    visited.add(visitKey);
+    const file = fileByPath.get(path);
+    if (file === undefined) continue;
+    const contents = await readFile(file, "utf8").catch(() => "");
+    const built = /\/(?:dist|\.next\/(?:server|standalone|static))(?:\/|$)/u.test(path);
+    let builtViolation = false;
+    for (const specifier of importsIn(contents)) {
+      const resolvedPath = resolveLocalImport(
+        specifier,
+        path,
+        aliases,
+        normalizedFiles,
+        workspaceManifests,
+      );
+      if (resolvedPath !== undefined) {
+        addUnique(resolvedImports, resolvedImportKeys, {
+          path, resolvedPath, service, specifier,
+        });
+        queue.push({ path: resolvedPath, service });
+      } else if (isForbiddenPackageForService(specifier, service)) {
+        const violation = { path, service, specifier };
+        addUnique(imports, importKeys, violation);
+        addUnique(policyViolations, policyViolationKeys, {
+          kind: built ? "built" : "import",
+          path,
+          service,
+          value: packageNameFromSpecifier(specifier),
+        });
+        builtViolation ||= built;
+      }
+    }
+    if (built) {
+      const candidates = new Set([
+        ...globallyForbiddenPackages,
+        ...(service === "web" ? webForbiddenServerPackages : []),
+      ]);
+      for (const name of candidates) {
+        const marker = `node_modules/${name}`;
+        if (contents.includes(marker)) {
+          addUnique(policyViolations, policyViolationKeys, {
+            kind: "built", path, service, value: name,
+          });
+          builtViolation = true;
+        }
+      }
+      if (highLevelPackage.test(contents)) {
+        addUnique(policyViolations, policyViolationKeys, {
+          kind: "built", path, service, value: "highlevel",
+        });
+        builtViolation = true;
+      }
+    }
+    for (const key of environmentKeysIn(contents)) {
+      if (service === "web" && forbiddenEnvironmentKey.test(key)) {
+        environmentKeys.add(key);
+        addUnique(policyViolations, policyViolationKeys, {
+          kind: "environment", path, service, value: key,
+        });
+        builtViolation ||= built;
+      }
+    }
+    for (const url of urlsIn(contents)) {
+      urls.add(url);
+      addUnique(policyViolations, policyViolationKeys, {
+        kind: "url", path, service, value: url,
+      });
+      builtViolation ||= built;
+    }
+    if (builtViolation) builtArtifacts.add(path);
+  }
+
   return {
-    builtArtifacts: builtArtifacts.sort(),
+    builtArtifacts: [...builtArtifacts].sort(),
     environmentKeys: [...environmentKeys].sort(),
     imports: imports.sort((left, right) =>
-      left.path.localeCompare(right.path) || left.specifier.localeCompare(right.specifier)
+      left.service.localeCompare(right.service)
+        || left.path.localeCompare(right.path)
+        || left.specifier.localeCompare(right.specifier)
     ),
     lockfilePackages: [...lockfilePackages].sort(),
     packages: [...packages].sort(),
+    policyViolations: policyViolations.sort((left, right) =>
+      left.service.localeCompare(right.service)
+        || left.kind.localeCompare(right.kind)
+        || left.path.localeCompare(right.path)
+        || left.value.localeCompare(right.value)
+    ),
     resolvedImports: resolvedImports.sort((left, right) =>
-      left.path.localeCompare(right.path) || left.specifier.localeCompare(right.specifier)
+      left.service.localeCompare(right.service)
+        || left.path.localeCompare(right.path)
+        || left.specifier.localeCompare(right.specifier)
     ),
     urls: [...urls].sort(),
   };
+}
+
+export function productionDependencyPolicyPass(graph) {
+  return Array.isArray(graph?.policyViolations) && graph.policyViolations.length === 0;
 }
 
 export function evaluateProviderReleaseSha(environment, provider) {
@@ -381,9 +601,25 @@ export function validateFoundationReport(report) {
 export function validateExternalEvidence(evidence, options) {
   const createdAt = Date.parse(evidence?.createdAt ?? "");
   const age = options.now.getTime() - createdAt;
-  const servicesValid = options.type !== "images"
-    || JSON.stringify([...(evidence?.services ?? [])].sort())
-      === JSON.stringify(["api", "cron", "migrate", "worker"]);
+  const imagesValid = options.type !== "images" || (
+    evidence?.environment === "ci"
+    && JSON.stringify([...(evidence?.services ?? [])].sort())
+      === JSON.stringify(["api", "cron", "migrate", "worker"])
+  );
+  const workerReadyAt = Date.parse(evidence?.workerReady?.createdAt ?? "");
+  const workerReadyAge = options.now.getTime() - workerReadyAt;
+  const workerReadyValid = evidence?.workerReady !== null
+    && typeof evidence?.workerReady === "object"
+    && !Array.isArray(evidence.workerReady)
+    && JSON.stringify(Object.keys(evidence.workerReady).sort())
+      === JSON.stringify(["createdAt", "releaseSha", "service", "status"])
+    && evidence.workerReady.service === "worker"
+    && evidence.workerReady.status === "ready"
+    && evidence.workerReady.releaseSha === options.releaseSha
+    && Number.isFinite(workerReadyAt)
+    && workerReadyAge >= 0
+    && workerReadyAge <= 24 * 60 * 60 * 1_000
+    && workerReadyAt <= createdAt;
   const proxyValid = options.type !== "proxy" || (
     evidence?.environment === "production"
     && evidence?.host === options.host
@@ -394,8 +630,7 @@ export function validateExternalEvidence(evidence, options) {
     && evidence?.locationPreserved === true
     && evidence?.cookiePreserved === true
     && evidence?.authorizationPreserved === true
-    && evidence?.workerReady?.status === "ready"
-    && evidence?.workerReady?.releaseSha === options.releaseSha
+    && workerReadyValid
   );
   const valid = evidence?.version === 1
     && evidence?.type === options.type
@@ -405,40 +640,177 @@ export function validateExternalEvidence(evidence, options) {
     && Number.isFinite(createdAt)
     && age >= 0
     && age <= 24 * 60 * 60 * 1_000
-    && servicesValid
+    && imagesValid
     && proxyValid;
   return valid
     ? { status: "PASS" }
     : { reason: "EVIDENCE_INVALID", status: "FAILED" };
 }
 
-const requiredContracts = Object.freeze([
-  [".github/workflows/ci.yml", ["npm run gate:foundation", "cron-image.cdx.json", "worker-ready.json", "assert-secret-free-log.mjs", "if-no-files-found: error"]],
-  ["apps/api/Dockerfile.migrate", ["ARG RAILWAY_GIT_COMMIT_SHA", "CMD [\"/app/migrate.js\"]"]],
-  ["apps/api/src/auth/auth.integration.test.ts", ["separate member and staff authentication"]],
-  ["apps/api/src/auth/session-crypto.test.ts", ["round-trips one bounded token bundle"]],
-  ["apps/web/src/lib/api/client.test.ts", ["same-origin staff client"]],
-  ["apps/web/src/proxy.ts", ["canonicalRedirectTarget", "NextResponse.redirect(target, 308)"]],
-  ["apps/worker/Dockerfile.cron", ["ARG RAILWAY_GIT_COMMIT_SHA", "CMD [\"/app/cron.js\"]"]],
-  ["apps/worker/src/jobs.integration.test.ts", ["claims each due job exactly once across two workers"]],
-  ["infra/scripts/gate-foundation.mjs", ["FOUNDATION_CHECK_CATALOG", "test:coverage", "FOUNDATION_IMAGE_EVIDENCE_PATH"]],
-  ["packages/database/src/entitlements.integration.test.ts", ["serializes four teammate invitations"]],
-  ["packages/database/src/migrations.test.ts", ["rejects a %s published migration inventory"]],
-  ["packages/database/src/migrations.ts", ["PUBLISHED_MIGRATIONS", "assertPublishedMigrationInventory"]],
-  ["packages/database/src/readiness.ts", ["REQUIRED_RUNTIME_OBJECTS", "migration_hashes", "required_objects"]],
-  ["packages/database/src/rls.integration.test.ts", ["creates exactly four inert capability roles"]],
-  ["packages/domain/src/entitlements/evaluate.property.test.ts", ["permutation invariant"]],
-  ["packages/testing/src/foundation-gate-policy.test.ts", ["rejects a tracked or untracked worktree"]],
-]);
+const requiredCheckContracts = Object.freeze({
+  ancestry: [{ path: "packages/testing/src/foundation-gate-policy.test.ts", titles: ["requires the exact named check catalog and valid evidence metadata"], syntax: { "requires the exact named check catalog and valid evidence metadata": ["FOUNDATION_CHECK_CATALOG", "validateFoundationReport"] } }],
+  artifacts: [
+    { path: "apps/web/src/lib/config/build.test.ts", titles: ["returns the exact immutable release for Next build metadata"], syntax: { "returns the exact immutable release for Next build metadata": ["parseWebBuildIdentity", "RELEASE_SHA"] } },
+    { path: "apps/worker/src/runner.test.ts", titles: ["produces executable %s and fails startup closed"], syntax: { "produces executable %s and fails startup closed": ["access", "execFileAsync"] } },
+  ],
+  browser: [{ path: "apps/web/tests/e2e/proxy.spec.ts", titles: ["same-origin proxy preserves status, body, cookies, location, and auth headers"], syntax: { "same-origin proxy preserves status, body, cookies, location, and auth headers": ["fetch", "authorization", "set-cookie"] } }],
+  dependencyPolicy: [{ path: "packages/testing/src/foundation-gate-policy.test.ts", titles: ["fails web production reachability through static, dynamic, alias, lockfile, and built server-adapter edges"], syntax: { "fails web production reachability through static, dynamic, alias, lockfile, and built server-adapter edges": ["inspectProductionDependencyGraph", "productionDependencyPolicyPass", "policyViolations"] } }],
+  entitlements: [
+    { path: "packages/database/src/entitlements.integration.test.ts", titles: ["serializes four teammate invitations behind the occupied owner slot"], syntax: { "serializes four teammate invitations behind the occupied owner slot": ["reservePendingSeat", "waitForAdvisoryKeyWaiters", "SEAT_CAPACITY_REACHED"] } },
+    { path: "packages/domain/src/entitlements/evaluate.property.test.ts", titles: ["is permutation invariant across grants, holds, and seats including paid bundles"], syntax: { "is permutation invariant across grants, holds, and seats including paid bundles": ["property", "evaluateEntitlements", "permute"] } },
+  ],
+  identitySeparation: [
+    { path: "apps/api/src/auth/auth.integration.test.ts", titles: ["maps one Clerk bearer through the active database identity"], syntax: { "maps one Clerk bearer through the active database identity": ["inject", "authorization", "authenticateRequest"] } },
+    { path: "apps/api/src/auth/session-crypto.test.ts", titles: ["round-trips one bounded token bundle with versioned AAD"], syntax: { "round-trips one bounded token bundle with versioned AAD": ["createStaffSessionCrypto", "encryptTokenBundle", "decryptTokenBundle"] } },
+  ],
+  images: [{ path: "packages/testing/src/foundation-gate-policy.test.ts", titles: ["accepts an exact non-root SHA-bound runtime image"], syntax: { "accepts an exact non-root SHA-bound runtime image": ["validateImageMetadata", "org.opencontainers.image.revision"] } }],
+  jobs: [{ path: "apps/worker/src/jobs.integration.test.ts", titles: ["claims each due job exactly once across two workers"], syntax: { "claims each due job exactly once across two workers": ["claim", "claimGeneration"] } }],
+  migrations: [{ path: "packages/database/src/migrations.test.ts", titles: ["accepts only the exact ordered published journal and file hashes"], syntax: { "accepts only the exact ordered published journal and file hashes": ["assertPublishedMigrationInventory", "0007_runtime_contract"] } }],
+  proxy: [{ path: "packages/testing/src/foundation-gate-policy.test.ts", titles: ["requires deployed proxy semantics and SHA-bound worker readiness"], syntax: { "requires deployed proxy semantics and SHA-bound worker readiness": ["validateExternalEvidence", "workerReady", "service"] } }],
+  releaseSha: [{ path: "packages/testing/src/foundation-gate-policy.test.ts", titles: ["requires and matches the %s checkout SHA"], syntax: { "requires and matches the %s checkout SHA": ["evaluateProviderReleaseSha", "PROVIDER_COMMIT_SHA_MISMATCH"] } }],
+  repository: [{ path: "packages/testing/src/foundation-gate-policy.test.ts", titles: ["rejects a tracked or untracked worktree before certification"], syntax: { "rejects a tracked or untracked worktree before certification": ["inspectRepositoryIdentity", "REPOSITORY_DIRTY"] } }],
+  rls: [{ path: "packages/database/src/rls.integration.test.ts", titles: ["creates exactly four inert capability roles with no password, settings, or outbound membership"], syntax: { "creates exactly four inert capability roles with no password, settings, or outbound membership": ["rolbypassrls", "capabilityRoles"] } }],
+  workspaces: [{ path: "packages/testing/src/foundation-gate-policy.test.ts", titles: ["requires the exact named check catalog and valid evidence metadata"], syntax: { "requires the exact named check catalog and valid evidence metadata": ["FOUNDATION_CHECK_CATALOG", "validateFoundationReport"] } }],
+});
+
+function testCallKind(expression) {
+  if (ts.isIdentifier(expression)) {
+    if (["it", "test"].includes(expression.text)) return "active";
+    if (["xit", "xtest"].includes(expression.text)) return "skipped";
+    return undefined;
+  }
+  if (ts.isCallExpression(expression)) return testCallKind(expression.expression);
+  if (!ts.isPropertyAccessExpression(expression)) return undefined;
+  const parent = testCallKind(expression.expression);
+  if (parent === undefined) return undefined;
+  return ["skip", "todo"].includes(expression.name.text) ? "skipped" : parent;
+}
+
+function executableHandler(call) {
+  const handler = call.arguments.find((argument) =>
+    ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)
+  );
+  if (handler === undefined) return false;
+  return ts.isBlock(handler.body)
+    ? handler.body.statements.some((statement) => !ts.isEmptyStatement(statement))
+    : true;
+}
+
+export function validateExecutableTestCases(contents, requiredTitles, requiredSyntax = {}) {
+  const source = ts.createSourceFile(
+    "required-contract.test.ts",
+    contents,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS,
+  );
+  const activeTests = new Map();
+  const visit = (node) => {
+    if (ts.isCallExpression(node) && testCallKind(node.expression) === "active") {
+      const title = node.arguments[0];
+      if (
+        title !== undefined
+        && (ts.isStringLiteral(title) || ts.isNoSubstitutionTemplateLiteral(title))
+        && executableHandler(node)
+      ) {
+        const tokens = new Set();
+        const handler = node.arguments.find((argument) =>
+          ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)
+        );
+        const collect = (child) => {
+          if (ts.isIdentifier(child) || ts.isStringLiteral(child) || ts.isNoSubstitutionTemplateLiteral(child)) {
+            tokens.add(child.text);
+          }
+          ts.forEachChild(child, collect);
+        };
+        collect(handler.body);
+        activeTests.set(title.text, tokens);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  if (requiredTitles.some((title) => {
+    const tokens = activeTests.get(title);
+    return tokens === undefined
+      || (requiredSyntax[title] ?? []).some((token) => !tokens.has(token));
+  })) {
+    throw new Error("REQUIRED_CONTRACT_MISSING");
+  }
+}
+
+function activeYamlRunBlocks(contents) {
+  const lines = contents.split(/\r?\n/u);
+  const blocks = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const match = /^(\s*)run:\s*(?:(\||>-?)\s*|(.*))$/u.exec(line);
+    if (match === null) continue;
+    if (match[3]?.trim()) {
+      blocks.push(match[3].trim());
+      continue;
+    }
+    const indentation = match[1].length;
+    const block = [];
+    for (index += 1; index < lines.length; index += 1) {
+      const candidate = lines[index];
+      if (candidate.trim() === "") continue;
+      const candidateIndentation = /^\s*/u.exec(candidate)?.[0].length ?? 0;
+      if (candidateIndentation <= indentation) {
+        index -= 1;
+        break;
+      }
+      if (!candidate.trimStart().startsWith("#")) block.push(candidate.trim());
+    }
+    blocks.push(block.join("\n"));
+  }
+  return blocks;
+}
+
+export async function validateCiEvidenceConfig(repositoryRoot) {
+  try {
+    const contents = await readFile(join(repositoryRoot, ".github/workflows/ci.yml"), "utf8");
+    const blocks = activeYamlRunBlocks(contents);
+    const logValidation = blocks.find((block) =>
+      block.includes("node infra/scripts/assert-secret-free-log.mjs")
+    );
+    const imageEvidence = blocks.find((block) =>
+      block.includes("node infra/scripts/emit-image-evidence.mjs")
+    );
+    if (
+      logValidation === undefined
+      || imageEvidence === undefined
+      || !/>\s*migration-runtime\.log\s+2>&1/u.test(logValidation)
+      || !/>\s*cron-runtime\.log\s+2>&1/u.test(logValidation)
+      || !["api", "cron", "migrate", "worker"].every((service) =>
+        new RegExp(`(?:^|\\s)${service}=[^\\s\\\\]+`, "u").test(logValidation)
+      )
+      || ![
+        "api-valid-startup.log",
+        "cron-runtime.log",
+        "migration-runtime.log",
+        "worker-runtime.log",
+        "worker-graceful-drain.log",
+      ].every((path) => imageEvidence.split(/\s+/u).includes(path))
+    ) throw new Error("invalid");
+  } catch {
+    throw new Error("CI_EVIDENCE_CONFIG_INVALID");
+  }
+}
 
 export async function validateRequiredContracts(repositoryRoot) {
   try {
-    await Promise.all(requiredContracts.map(async ([path, identifiers]) => {
-      const contents = await readFile(join(repositoryRoot, path), "utf8");
-      if (identifiers.some((identifier) => !contents.includes(identifier))) {
-        throw new Error("identifier");
-      }
-    }));
+    const checkIds = Object.keys(requiredCheckContracts).sort();
+    if (JSON.stringify(checkIds) !== JSON.stringify([...FOUNDATION_CHECK_CATALOG].sort())) {
+      throw new Error("catalog");
+    }
+    await Promise.all([
+      validateCiEvidenceConfig(repositoryRoot),
+      ...Object.values(requiredCheckContracts).flat().map(async (contract) => {
+        const contents = await readFile(join(repositoryRoot, contract.path), "utf8");
+        validateExecutableTestCases(contents, contract.titles, contract.syntax);
+      }),
+    ]);
   } catch {
     throw new Error("REQUIRED_CONTRACT_MISSING");
   }

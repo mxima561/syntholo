@@ -10,7 +10,7 @@ import {
   foundationExitCode,
   inspectRepositoryIdentity,
   inspectProductionDependencyGraph,
-  isForbiddenServerPackage,
+  productionDependencyPolicyPass,
   runIndependentChecks,
   validateExternalEvidence,
   validateFoundationReport,
@@ -237,13 +237,7 @@ async function productionReport() {
   );
 
   const graph = await inspectProductionDependencyGraph(process.cwd());
-  const forbiddenPackages = graph.packages.filter(isForbiddenServerPackage);
-  const policyPass = forbiddenPackages.length === 0
-    && graph.imports.length === 0
-    && graph.environmentKeys.length === 0
-    && graph.urls.length === 0
-    && graph.lockfilePackages.length === 0
-    && graph.builtArtifacts.length === 0;
+  const policyPass = productionDependencyPolicyPass(graph);
   checks.dependencyPolicy = evidenceCheck(
     "inspect manifests, imports, environment keys, URLs, lockfile, and built artifacts",
     policyPass ? "PASS" : "FAILED",

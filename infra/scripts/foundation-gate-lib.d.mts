@@ -9,12 +9,19 @@ export type GateCheck = Readonly<{
 export type ProductionDependencyGraph = Readonly<{
   builtArtifacts: string[];
   environmentKeys: string[];
-  imports: Array<{ path: string; specifier: string }>;
+  imports: Array<{ path: string; service: string; specifier: string }>;
   lockfilePackages: string[];
   packages: string[];
+  policyViolations: Array<{
+    kind: "built" | "environment" | "import" | "lockfile" | "package" | "url";
+    path: string;
+    service: string;
+    value: string;
+  }>;
   resolvedImports: Array<{
     path: string;
     resolvedPath: string;
+    service: string;
     specifier: string;
   }>;
   urls: string[];
@@ -46,6 +53,7 @@ export function inspectRepositoryIdentity(
 }>>;
 export function inspectProductionDependencyGraph(repositoryRoot: string): Promise<ProductionDependencyGraph>;
 export function isForbiddenServerPackage(specifier: string): boolean;
+export function productionDependencyPolicyPass(graph: ProductionDependencyGraph): boolean;
 export function runIndependentChecks(definitions: ReadonlyArray<Readonly<{
   command: string;
   name: string;
@@ -63,6 +71,12 @@ export function validateExternalEvidence(
     upstreamOrigin?: string;
   }>,
 ): GateCheck;
+export function validateExecutableTestCases(
+  contents: string,
+  requiredTitles: readonly string[],
+  requiredSyntax?: Readonly<Record<string, readonly string[]>>,
+): void;
+export function validateCiEvidenceConfig(repositoryRoot: string): Promise<void>;
 export function validateFoundationReport<T>(report: T): T;
 export function validateImageMetadata(metadata: Readonly<{
   command: string[];

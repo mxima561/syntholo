@@ -451,6 +451,17 @@ export async function startWorker<TJob extends WorkerJob>(
   );
 }
 
+export async function establishWorkerReadiness(
+  check: () => Promise<void>,
+  signal: AbortSignal,
+  markReady: () => void,
+): Promise<boolean> {
+  await check();
+  if (signal.aborted) return false;
+  markReady();
+  return true;
+}
+
 function isMainModule(): boolean {
   const entrypoint = process.argv[1];
   return entrypoint !== undefined && import.meta.url === pathToFileURL(entrypoint).href;
@@ -479,9 +490,11 @@ async function main(): Promise<void> {
   });
   let supervisorOwnsClose = false;
   try {
-    await assertDatabaseCapability(database, "syntholo_worker");
-    await checkDatabaseReadiness(database, "syntholo_worker");
-    transition("ready");
+    const ready = await establishWorkerReadiness(async () => {
+      await assertDatabaseCapability(database, "syntholo_worker");
+      await checkDatabaseReadiness(database, "syntholo_worker");
+    }, controller.signal, () => transition("ready"));
+    if (!ready) return;
     const workerId = createWorkerId(hostname(), process.pid);
     const clock = { now: () => new Date() };
     const receipts = new HandlerReceiptRepository(database, { leaseMs: 60_000 });

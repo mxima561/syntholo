@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { parseWorkerConfig } from "./config.js";
 import {
   createDomainEventJobHandler,
+  establishWorkerReadiness,
   handlersForOutboxEvent,
   runOutboxPump,
   runWorker,
@@ -127,6 +128,26 @@ describe("worker configuration and startup", () => {
       }),
     ).rejects.toThrow("WORKER_CONFIG_INVALID");
     expect(createDependencies).not.toHaveBeenCalled();
+  });
+
+  it("does not transition from draining back to ready when shutdown arrives during readiness", async () => {
+    const controller = new AbortController();
+    let finishReadiness!: () => void;
+    const readiness = new Promise<void>((resolve) => {
+      finishReadiness = resolve;
+    });
+    const markReady = vi.fn();
+    const running = establishWorkerReadiness(
+      async () => readiness,
+      controller.signal,
+      markReady,
+    );
+
+    controller.abort();
+    finishReadiness();
+
+    await expect(running).resolves.toBe(false);
+    expect(markReady).not.toHaveBeenCalled();
   });
 });
 

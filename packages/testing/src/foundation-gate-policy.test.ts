@@ -11,8 +11,11 @@ import {
   foundationExitCode,
   inspectRepositoryIdentity,
   inspectProductionDependencyGraph,
+  productionDependencyPolicyPass,
   runIndependentChecks,
+  validateCiEvidenceConfig,
   validateExternalEvidence,
+  validateExecutableTestCases,
   validateFoundationReport,
   validateImageMetadata,
   validateRailwayServiceConfigs,
@@ -22,6 +25,10 @@ import {
 const temporaryRoots: string[] = [];
 const execFileAsync = promisify(execFile);
 const repositoryRoot = new URL("../../..", import.meta.url).pathname;
+const secretFreeLogScript = new URL(
+  "../../../infra/scripts/assert-secret-free-log.mjs",
+  import.meta.url,
+).pathname;
 const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 
 async function fixture(files: Readonly<Record<string, string>>): Promise<string> {
@@ -42,98 +49,160 @@ afterEach(async () => {
 });
 
 describe("production dependency policy", () => {
-  it("finds every forbidden server adapter plus static, dynamic, resolved alias, environment, URL, lockfile, and built edges", async () => {
+  it("fails web production reachability through static, dynamic, alias, lockfile, and built server-adapter edges", async () => {
     const root = await fixture({
-      "apps/web/.next/server/app.js": [
-        "require('resend')",
-        "fetch('https://services.leadconnectorhq.com/oauth/token')",
-      ].join("\n"),
+      "apps/web/.next/server/app.js": "require('@clerk/backend')",
       "apps/web/package.json": JSON.stringify({
         dependencies: {
-          "@gohighlevel/sdk": "1.0.0",
-          "@mux/mux-node": "1.0.0",
-          "@vercel/blob": "1.0.0",
-          mongodb: "1.0.0",
-          resend: "1.0.0",
-          stripe: "1.0.0",
+          "@syntholo/private": "0.1.0",
         },
       }),
-      "apps/web/src/highlevel.ts": "import client from '@gohighlevel/sdk'",
-      "apps/web/src/alias.ts": "import adapter from '@private/adapter'",
-      "apps/web/src/dynamic.ts": "const db = import('mongodb')",
-      "apps/web/src/env.ts": "process.env.HIGHLEVEL_API_KEY",
-      "apps/web/src/secret.ts": "process.env.CLERK_SECRET_KEY",
-      "apps/web/src/static.ts": "import { MongoClient } from 'mongodb'",
-      "packages/private/src/adapter.ts": "export { default } from 'stripe'",
+      "apps/web/src/app/page.ts": [
+        "import adapter from '@/adapter'",
+        "void adapter",
+        "void import('@private/dynamic')",
+      ].join("\n"),
+      "apps/web/src/adapter.ts": "export { default } from '@private/static'",
+      "packages/private/package.json": JSON.stringify({
+        name: "@syntholo/private",
+        dependencies: { resend: "1.0.0" },
+        exports: { ".": "./src/index.ts" },
+      }),
+      "packages/private/src/dynamic.ts": "export { default } from '@workos-inc/node'",
+      "packages/private/src/index.ts": "export { default } from './static.js'",
+      "packages/private/src/static.ts": "export { default } from 'stripe'",
       "package-lock.json": JSON.stringify({
         lockfileVersion: 3,
         packages: {
-          "node_modules/@vercel/blob": { version: "1.0.0" },
-          "node_modules/mongodb": { version: "1.0.0" },
+          "apps/web": { dependencies: { "@syntholo/private": "0.1.0" } },
+          "node_modules/@clerk/backend": { version: "1.0.0" },
+          "node_modules/@syntholo/private": { link: true, resolved: "packages/private" },
+          "node_modules/@workos-inc/node": { version: "1.0.0" },
           "node_modules/resend": { version: "1.0.0" },
+          "node_modules/stripe": { version: "1.0.0" },
+          "packages/private": {
+            dependencies: { resend: "1.0.0" },
+            name: "@syntholo/private",
+            version: "0.1.0",
+          },
         },
       }),
-      "package.json": JSON.stringify({ workspaces: ["apps/*"] }),
+      "package.json": JSON.stringify({ workspaces: ["apps/*", "packages/*"] }),
       "apps/web/tsconfig.json": JSON.stringify({
         compilerOptions: {
-          paths: { "@private/*": ["../../packages/private/src/*"] },
+          paths: {
+            "@/*": ["./src/*"],
+            "@private/*": ["../../packages/private/src/*"],
+          },
         },
       }),
     });
 
     const graph = await inspectProductionDependencyGraph(root);
 
-    expect(graph.packages).toContain("mongodb");
-    expect(graph.packages).toContain("@gohighlevel/sdk");
-    expect(graph.packages).toEqual(expect.arrayContaining([
-      "@mux/mux-node",
-      "@vercel/blob",
-      "resend",
-      "stripe",
+    expect(productionDependencyPolicyPass(graph)).toBe(false);
+    expect(graph.policyViolations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "built", service: "web", value: "@clerk/backend" }),
+      expect.objectContaining({ kind: "import", service: "web", value: "@workos-inc/node" }),
+      expect.objectContaining({ kind: "import", service: "web", value: "stripe" }),
+      expect.objectContaining({ kind: "lockfile", service: "web", value: "resend" }),
     ]));
-    expect(graph.imports.map(({ specifier }) => specifier)).toEqual(
-      expect.arrayContaining(["@gohighlevel/sdk", "mongodb", "resend", "stripe"]),
-    );
-    expect(graph.resolvedImports).toContainEqual({
-      path: "apps/web/src/alias.ts",
-      resolvedPath: "packages/private/src/adapter.ts",
-      specifier: "@private/adapter",
-    });
-    expect(graph.environmentKeys).toEqual(
-      expect.arrayContaining(["CLERK_SECRET_KEY", "HIGHLEVEL_API_KEY"]),
-    );
-    expect(graph.urls).toContain(
-      "https://services.leadconnectorhq.com/oauth/token",
-    );
-    expect(graph.builtArtifacts).toHaveLength(1);
-    expect(graph.lockfilePackages).toContain("mongodb");
+    expect(graph.resolvedImports).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        path: "apps/web/src/app/page.ts",
+        resolvedPath: "apps/web/src/adapter.ts",
+        service: "web",
+        specifier: "@/adapter",
+      }),
+      expect.objectContaining({
+        path: "apps/web/src/app/page.ts",
+        resolvedPath: "packages/private/src/dynamic.ts",
+        service: "web",
+        specifier: "@private/dynamic",
+      }),
+    ]));
   });
 
-  it("allows tests, docs, public browser SDKs, and approved external login links", async () => {
+  it("allows privileged adapters in the API closure while keeping public browser SDKs web-scoped", async () => {
     const root = await fixture({
-      "README.md": "Historical MongoDB migration notes and HIGHLEVEL_API_KEY fixture.",
+      "apps/api/package.json": JSON.stringify({
+        dependencies: { "@syntholo/integrations": "0.1.0" },
+      }),
+      "apps/api/src/server.ts": "import '@syntholo/integrations'",
+      "apps/web/.next/server/login.js": "export const login = 'https://gohighlevel.com/'",
       "apps/web/package.json": JSON.stringify({
         dependencies: {
+          "@clerk/react": "1.0.0",
           "@mux/mux-player-react": "3.10.2",
           "@stripe/stripe-js": "7.9.0",
-          "posthog-js": "1.268.7",
         },
       }),
+      "apps/web/src/app/page.ts": "import '@clerk/react'; import '@mux/mux-player-react'; import '@stripe/stripe-js'",
       "apps/web/src/external-link.ts": "export const login = 'https://app.gohighlevel.com/'",
       "apps/web/src/policy.test.ts": "const bad = process.env.HIGHLEVEL_API_KEY",
-      "package-lock.json": JSON.stringify({ lockfileVersion: 3, packages: {} }),
+      "packages/integrations/package.json": JSON.stringify({
+        name: "@syntholo/integrations",
+        dependencies: {
+          "@clerk/backend": "1.0.0",
+          "@mux/mux-node": "1.0.0",
+          "@vercel/blob": "1.0.0",
+          "@workos-inc/node": "1.0.0",
+          resend: "1.0.0",
+          stripe: "1.0.0",
+        },
+        exports: { ".": "./src/index.ts" },
+      }),
+      "packages/integrations/src/index.ts": [
+        "export * from '@clerk/backend'",
+        "export * from '@workos-inc/node'",
+        "export * from 'stripe'",
+        "export * from 'resend'",
+        "export * from '@mux/mux-node'",
+        "export * from '@vercel/blob'",
+      ].join("\n"),
+      "package-lock.json": JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "apps/api": { dependencies: { "@syntholo/integrations": "0.1.0" } },
+          "apps/web": { dependencies: { "@clerk/react": "1.0.0", "@mux/mux-player-react": "1.0.0", "@stripe/stripe-js": "1.0.0" } },
+          "node_modules/@syntholo/integrations": { link: true, resolved: "packages/integrations" },
+          "packages/integrations": {
+            dependencies: {
+              "@clerk/backend": "1.0.0", "@mux/mux-node": "1.0.0", "@vercel/blob": "1.0.0",
+              "@workos-inc/node": "1.0.0", resend: "1.0.0", stripe: "1.0.0",
+            },
+            name: "@syntholo/integrations",
+          },
+        },
+      }),
+      "package.json": JSON.stringify({ workspaces: ["apps/*", "packages/*"] }),
+    });
+
+    const graph = await inspectProductionDependencyGraph(root);
+    expect(productionDependencyPolicyPass(graph)).toBe(true);
+    expect(graph.policyViolations).toEqual([]);
+  });
+
+  it("forbids MongoDB and HighLevel in every production service", async () => {
+    const root = await fixture({
+      "apps/api/package.json": JSON.stringify({ dependencies: { mongodb: "1.0.0" } }),
+      "apps/api/src/server.ts": "import 'mongodb'; import '@gohighlevel/sdk'",
+      "package-lock.json": JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "apps/api": { dependencies: { mongodb: "1.0.0" } },
+          "node_modules/mongodb": { version: "1.0.0" },
+        },
+      }),
       "package.json": JSON.stringify({ workspaces: ["apps/*"] }),
     });
 
-    await expect(inspectProductionDependencyGraph(root)).resolves.toEqual({
-      builtArtifacts: [],
-      environmentKeys: [],
-      imports: [],
-      lockfilePackages: [],
-      packages: ["@mux/mux-player-react", "@stripe/stripe-js", "posthog-js"],
-      resolvedImports: [],
-      urls: [],
-    });
+    const graph = await inspectProductionDependencyGraph(root);
+    expect(productionDependencyPolicyPass(graph)).toBe(false);
+    expect(graph.policyViolations).toEqual(expect.arrayContaining([
+      expect.objectContaining({ service: "api", value: "mongodb" }),
+      expect.objectContaining({ service: "api", value: "@gohighlevel/sdk" }),
+    ]));
   });
 });
 
@@ -270,7 +339,7 @@ describe("gate report trust boundary", () => {
     expect(foundationExitCode({ engineeringGate: "FAILED" })).toBe(1);
   });
 
-  it("rejects stale or wrong-SHA deployed evidence and accepts exact image coverage", () => {
+  it("rejects stale, wrong-SHA, or non-CI image evidence and accepts exact image coverage", () => {
     const now = new Date("2026-08-14T12:00:00.000Z");
     const evidence = {
       artifactHash: "b".repeat(64),
@@ -288,6 +357,19 @@ describe("gate report trust boundary", () => {
       type: "images",
     })).toEqual({ status: "PASS" });
     expect(validateExternalEvidence({ ...evidence, releaseSha: "1".repeat(40) }, {
+      now,
+      releaseSha,
+      type: "images",
+    })).toEqual({ reason: "EVIDENCE_INVALID", status: "FAILED" });
+    expect(validateExternalEvidence({ ...evidence, environment: "production" }, {
+      now,
+      releaseSha,
+      type: "images",
+    })).toEqual({ reason: "EVIDENCE_INVALID", status: "FAILED" });
+    const missingEnvironment = Object.fromEntries(
+      Object.entries(evidence).filter(([key]) => key !== "environment"),
+    );
+    expect(validateExternalEvidence(missingEnvironment, {
       now,
       releaseSha,
       type: "images",
@@ -312,7 +394,12 @@ describe("gate report trust boundary", () => {
       type: "proxy",
       upstreamOrigin: "https://api.syntholo.com",
       version: 1,
-      workerReady: { releaseSha, status: "ready" },
+      workerReady: {
+        createdAt: "2026-08-14T11:59:00.000Z",
+        releaseSha,
+        service: "worker",
+        status: "ready",
+      },
     };
     const options = {
       host: "https://app.syntholo.com",
@@ -324,6 +411,14 @@ describe("gate report trust boundary", () => {
     expect(validateExternalEvidence(common, options)).toEqual({ status: "PASS" });
     expect(validateExternalEvidence({ ...common, workerReady: undefined }, options))
       .toEqual({ reason: "EVIDENCE_INVALID", status: "FAILED" });
+    expect(validateExternalEvidence({
+      ...common,
+      workerReady: { ...common.workerReady, service: "api" },
+    }, options)).toEqual({ reason: "EVIDENCE_INVALID", status: "FAILED" });
+    expect(validateExternalEvidence({
+      ...common,
+      workerReady: { ...common.workerReady, createdAt: "not-a-time" },
+    }, options)).toEqual({ reason: "EVIDENCE_INVALID", status: "FAILED" });
   });
 
   it("validates required test contracts by identifier and content", async () => {
@@ -332,6 +427,36 @@ describe("gate report trust boundary", () => {
       "apps/api/src/auth/auth.integration.test.ts": "describe('unrelated', () => {})",
     });
     await expect(validateRequiredContracts(root)).rejects.toThrow("REQUIRED_CONTRACT_MISSING");
+  });
+
+  it.each([
+    ["a comment", "// it('required contract', () => { expect(true).toBe(true) })"],
+    ["a skipped test", "it.skip('required contract', () => { expect(true).toBe(true) })"],
+    ["a todo test", "it.todo('required contract')"],
+    ["an empty test", "it('required contract', () => {})"],
+  ])("does not accept %s as an executable required contract", (_case, source) => {
+    expect(() => validateExecutableTestCases(source, ["required contract"]))
+      .toThrow("REQUIRED_CONTRACT_MISSING");
+  });
+
+  it("accepts an executable non-skipped required test", () => {
+    expect(() => validateExecutableTestCases(
+      "it('required contract', () => { expect(runContract()).toBe(true) })",
+      ["required contract"],
+    )).not.toThrow();
+  });
+
+  it("requires structured syntax from the executable test body", () => {
+    expect(() => validateExecutableTestCases(
+      "it('required contract', () => { expect(true).toBe(true) })",
+      ["required contract"],
+      { "required contract": ["runContract"] },
+    )).toThrow("REQUIRED_CONTRACT_MISSING");
+    expect(() => validateExecutableTestCases(
+      "it('required contract', () => { expect(runContract()).toBe(true) })",
+      ["required contract"],
+      { "required contract": ["runContract"] },
+    )).not.toThrow();
   });
 });
 
@@ -371,6 +496,62 @@ describe("independent check execution", () => {
 });
 
 describe("container metadata policy", () => {
+  it("binds all four runtime log classes into active CI validation and image evidence", async () => {
+    await expect(validateCiEvidenceConfig(repositoryRoot)).resolves.toBeUndefined();
+    const root = await fixture({
+      ".github/workflows/ci.yml": [
+        "jobs:",
+        "  images:",
+        "    steps:",
+        "      # node infra/scripts/assert-secret-free-log.mjs api=a cron=c migrate=m worker=w",
+        "      - run: echo missing-runtime-validation",
+      ].join("\n"),
+    });
+    await expect(validateCiEvidenceConfig(root))
+      .rejects.toThrow("CI_EVIDENCE_CONFIG_INVALID");
+  });
+
+  it("requires secret-free runtime logs from API, migration, worker, and cron", async () => {
+    const root = await fixture({
+      "api.log": "api ready\n",
+      "cron.log": "cron complete\n",
+      "migrate.log": "migration complete\n",
+      "worker.log": "worker ready\n",
+    });
+    await expect(execFileAsync(process.execPath, [
+      secretFreeLogScript,
+      `api=${join(root, "api.log")}`,
+      `worker=${join(root, "worker.log")}`,
+    ])).rejects.toMatchObject({
+      stderr: expect.stringContaining("SECRET_FREE_LOG_COVERAGE_INVALID"),
+    });
+    await expect(execFileAsync(process.execPath, [
+      secretFreeLogScript,
+      `api=${join(root, "api.log")}`,
+      `cron=${join(root, "cron.log")}`,
+      `migrate=${join(root, "migrate.log")}`,
+      `worker=${join(root, "worker.log")}`,
+    ])).resolves.toMatchObject({ stdout: "" });
+  });
+
+  it("rejects a secret exposed by migration or cron runtime logs", async () => {
+    const root = await fixture({
+      "api.log": "api ready\n",
+      "cron.log": "cron complete\n",
+      "migrate.log": "postgres://secret\n",
+      "worker.log": "worker ready\n",
+    });
+    await expect(execFileAsync(process.execPath, [
+      secretFreeLogScript,
+      `api=${join(root, "api.log")}`,
+      `cron=${join(root, "cron.log")}`,
+      `migrate=${join(root, "migrate.log")}`,
+      `worker=${join(root, "worker.log")}`,
+    ])).rejects.toMatchObject({
+      stderr: expect.stringContaining("STARTUP_LOG_SECRET_EXPOSURE"),
+    });
+  });
+
   it("accepts an exact non-root SHA-bound runtime image", () => {
     expect(validateImageMetadata({
       command: ["/app/server.js"],

@@ -177,7 +177,7 @@ jobs:
             -e "RELEASE_SHA=${GITHUB_SHA}" \
             -e DATABASE_MIGRATION_TARGET=production \
             -e DATABASE_DIRECT_URL=postgres://syntholo:syntholo@127.0.0.1:5432/syntholo_test \
-            "syntholo-migrate:${GITHUB_SHA}"
+            "syntholo-migrate:${GITHUB_SHA}" > migration-runtime.log 2>&1
           docker run --rm --network host -e PGPASSWORD=syntholo postgres:16.14-alpine \
             psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U syntholo -d syntholo_test \
             -c "create role member_runtime login password 'member_runtime'; create role staff_runtime login password 'staff_runtime'; create role worker_runtime login password 'worker_runtime'; grant syntholo_member_api to member_runtime with inherit true, set false, admin false; grant syntholo_staff_api to staff_runtime with inherit true, set false, admin false; grant syntholo_worker to worker_runtime with inherit true, set false, admin false;"
@@ -221,8 +221,13 @@ jobs:
             -e "RELEASE_SHA=${GITHUB_SHA}" \
             -e DATABASE_URL=postgres://worker_runtime:worker_runtime@127.0.0.1:5432/syntholo_test \
             -e WORKER_CONCURRENCY=1 -e WORKER_IDLE_DELAY_MS=100 \
-            "syntholo-cron:${GITHUB_SHA}"
-          node infra/scripts/assert-secret-free-log.mjs api-valid-startup.log worker-runtime.log worker-graceful-drain.log
+            "syntholo-cron:${GITHUB_SHA}" > cron-runtime.log 2>&1
+          node infra/scripts/assert-secret-free-log.mjs \
+            api=api-valid-startup.log \
+            cron=cron-runtime.log \
+            migrate=migration-runtime.log \
+            worker=worker-runtime.log \
+            worker=worker-graceful-drain.log
       - name: Generate production dependency SBOM
         timeout-minutes: 3
         run: npm sbom --omit=dev --sbom-format cyclonedx > npm-production.cdx.json
@@ -290,7 +295,7 @@ jobs:
           api-image-inspection.json cron-image-inspection.json migration-image-inspection.json worker-image-inspection.json
           api-image.cdx.json cron-image.cdx.json migration-image.cdx.json worker-image.cdx.json
           api-vulnerabilities.txt cron-vulnerabilities.txt migration-vulnerabilities.txt worker-vulnerabilities.txt
-          api-ready.json worker-ready.json api-valid-startup.log worker-graceful-drain.log
+          api-ready.json worker-ready.json api-valid-startup.log cron-runtime.log migration-runtime.log worker-runtime.log worker-graceful-drain.log
       - name: Upload image, SBOM, scan, and fail-closed evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -310,4 +315,6 @@ jobs:
             image-evidence.json
             npm-production.cdx.json
             worker-ready.json
+            cron-runtime.log
+            migration-runtime.log
             worker-runtime.log

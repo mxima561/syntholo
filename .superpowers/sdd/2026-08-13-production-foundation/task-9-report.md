@@ -24,9 +24,10 @@ Task 8 commit `084d7e463d52960c5843a53d8f0096c55ed09b99`.
   migration, and Next artifacts. Runtime configuration must match the embedded
   identity, health payloads expose the same SHA, and OCI labels/CI evidence are
   bound to it.
-- Added additive migration `0006_runtime_readiness` and a narrow
-  `SECURITY DEFINER` projection for the exact six-entry journal, schema marker,
-  actual runtime login, and one expected capability. API readiness and the
+- Kept immutable migration `0006_runtime_readiness`, added additive
+  `0007_runtime_contract`, and exposed a narrow `SECURITY DEFINER` projection
+  for the exact seven-entry journal, schema marker, actual runtime login,
+  migration-owned objects, and one expected capability. API readiness and the
   one-shot advisory-locked cron use it without exposing database detail.
 - Removed MongoDB, HighLevel, server Stripe, Resend, Blob, and privileged Mux
   adapters plus the web Stripe write route. Strict web parsing rejects even
@@ -227,5 +228,68 @@ the commit handoff because a report cannot contain evidence for its own future
 Git object.
 
 No push was performed.
+
+DONE
+
+## Acceptance fix round 2 — 2026-08-14
+
+The remaining review findings against commit
+`54958d8ddc15e70018c568bc0680a74a296f87be` were reproduced with focused RED
+tests, then closed without weakening a production boundary:
+
+- Image evidence now requires the explicit `ci` environment in addition to
+  its SHA and exact API/migration/worker/cron service set. Missing or alternate
+  environments fail validation.
+- Required-contract validation now parses executable TypeScript tests and
+  binds every one of the 14 catalog check IDs to exact active test titles and
+  assertions. Comments, skipped/todo tests, empty bodies, and bodies without
+  the required behavior cannot satisfy the contract. The synthetic all-PASS
+  rejection remains covered.
+- Production dependency policy is enforced over reachable source and built
+  entries, TypeScript path aliases, dynamic imports, workspace exports, and
+  lockfile production closures. MongoDB and HighLevel remain globally denied.
+  Privileged Clerk/WorkOS server adapters and Stripe/Resend/Mux/Blob server
+  adapters are denied in the web boundary while remaining permitted for API
+  services where appropriate; public browser SDKs and ordinary external-link
+  copy remain permitted.
+- Secret-free runtime-log validation now requires exact API, cron, migration,
+  and worker coverage. CI captures migration and cron output and includes
+  those logs in image evidence. Deployed worker-ready evidence now has its own
+  valid fresh timestamp and must identify `service: "worker"`.
+- Migration tests now require the exact seven-row journal after `0007`, while
+  freezing the order and hashes of immutable `0001` through `0006` and the
+  additive `0007_runtime_contract` hash.
+- Worker readiness can no longer transition from draining back to ready if a
+  termination signal arrives while its asynchronous readiness check is in
+  flight. A regression holds the readiness promise open, signals shutdown,
+  and proves that the ready transition is never called.
+
+### Acceptance-fix round 2 verification
+
+- Focused foundation-policy/CLI — 36/36 PASS; worker runner/health — 40/40
+  PASS; database migration/readiness — 10/10 PASS.
+- `npm test` — PASS: 55 files and 673 tests across eight workspaces (API 131,
+  web 101, worker 44, contracts 15, database 109, domain 193, integrations 35,
+  testing 45).
+- `npm run typecheck`, `npm run lint`, and `npm run test:coverage` — PASS in all
+  eight workspaces. Coverage produced eight JUnit reports and V8 output.
+- Clean release builds for web/API/worker/cron/migration plus Node syntax
+  checks — PASS. Empty-environment startup of all four Node processes failed
+  closed with exact fixed stderr and no stdout.
+- `CI=false npm run test:e2e` — PASS: 63 passed, 17 intentional
+  project-specific skips, 80 total, one browser worker.
+- CI YAML/config validation and Railway topology validation — PASS. The final
+  production graph resolves 448 runtime imports and reports zero policy
+  violations. `git diff --check` — PASS.
+- `npm audit --audit-level=high` — exit 0 with the existing four moderate
+  development-only legacy-esbuild findings through `drizzle-kit`; the offered
+  force fix is a breaking downgrade and was not applied.
+
+Docker, `psql`, and `TEST_DATABASE_URL` remain unavailable on this host. No
+local image or real-PostgreSQL PASS is claimed. Fresh deployed proxy/worker
+evidence and target-branch ancestry also remain launch-blocked until their
+external evidence is available. The clean committed-SHA gate is rerun after
+this report is committed, and its exact state is returned in the commit
+handoff. No push was performed.
 
 DONE
