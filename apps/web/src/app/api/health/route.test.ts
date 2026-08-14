@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createWebHealthResponse } from "./route";
+import { createWebHealthResponse } from "./health";
 
 const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 
