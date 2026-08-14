@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { parseWebBuildIdentity } from "./build";
+import {
+  parseWebBuildIdentity,
+  resolveWebDeploymentId,
+} from "./build";
 
 const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 
@@ -41,5 +44,15 @@ describe("web build identity", () => {
       VERCEL: "1",
       VERCEL_GIT_COMMIT_SHA: releaseSha,
     })).toBe(releaseSha);
+  });
+
+  it("leaves Vercel's provider-managed deployment ID to Next.js", () => {
+    expect(resolveWebDeploymentId({
+      NEXT_DEPLOYMENT_ID: "provider-deployment-id",
+    }, releaseSha)).toBeUndefined();
+  });
+
+  it("uses the immutable release as the self-hosted deployment ID", () => {
+    expect(resolveWebDeploymentId({}, releaseSha)).toBe(releaseSha);
   });
 });

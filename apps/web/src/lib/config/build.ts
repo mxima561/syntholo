@@ -15,3 +15,10 @@ export function parseWebBuildIdentity(
   }
   return releaseSha;
 }
+
+export function resolveWebDeploymentId(
+  environment: Readonly<Record<string, string | undefined>>,
+  releaseSha: string,
+): string | undefined {
+  return environment.NEXT_DEPLOYMENT_ID ? undefined : releaseSha;
+}
