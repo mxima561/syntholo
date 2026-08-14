@@ -13,3 +13,11 @@ export function createWorkerHealth(
     status,
   });
 }
+
+export function emitWorkerHealth(
+  releaseSha: string,
+  status: WorkerHealthStatus,
+  write: (value: string) => unknown = (value) => process.stdout.write(value),
+): void {
+  write(`${JSON.stringify(createWorkerHealth(releaseSha, status))}\n`);
+}

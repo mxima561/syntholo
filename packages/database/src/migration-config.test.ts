@@ -54,4 +54,15 @@ describe("selectMigrationDatabaseUrl", () => {
       }),
     ).toBe("postgres://direct.example/syntholo");
   });
+
+  it.each([
+    "postgres://migrator:secret@pooler.example.test/syntholo",
+    "postgres://migrator:secret@ep-name-pooler.us-east-2.aws.neon.tech/syntholo",
+    "postgres://migrator:secret@direct.example.test/syntholo?pgbouncer=true",
+  ])("rejects a pooled production migration URL: %s", (url) => {
+    expect(() => selectMigrationDatabaseUrl({
+      DATABASE_DIRECT_URL: url,
+      DATABASE_MIGRATION_TARGET: "production",
+    })).toThrow("DATABASE_DIRECT_URL_POOLED");
+  });
 });

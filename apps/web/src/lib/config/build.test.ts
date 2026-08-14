@@ -20,4 +20,26 @@ describe("web build identity", () => {
       "WEB_RELEASE_IDENTITY_INVALID",
     );
   });
+
+  it.each([
+    { RELEASE_SHA: releaseSha, VERCEL: "1" },
+    { RELEASE_SHA: releaseSha, VERCEL_ENV: "production" },
+    {
+      RELEASE_SHA: releaseSha,
+      VERCEL: "1",
+      VERCEL_GIT_COMMIT_SHA: "1123456789abcdef0123456789abcdef01234567",
+    },
+  ])("fails a Vercel build without the exact provider checkout SHA", (environment) => {
+    expect(() => parseWebBuildIdentity(environment)).toThrow(
+      "WEB_RELEASE_IDENTITY_INVALID",
+    );
+  });
+
+  it("binds Vercel metadata to the immutable release", () => {
+    expect(parseWebBuildIdentity({
+      RELEASE_SHA: releaseSha,
+      VERCEL: "1",
+      VERCEL_GIT_COMMIT_SHA: releaseSha,
+    })).toBe(releaseSha);
+  });
 });

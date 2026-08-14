@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { FOUNDATION_CHECK_CATALOG } from "../../../infra/scripts/foundation-gate-lib.mjs";
 
 const execFileAsync = promisify(execFile);
 const repositoryRoot = fileURLToPath(new URL("../../..", import.meta.url));
@@ -27,12 +28,11 @@ async function runGate(
   try {
     const result = await execFileAsync(
       process.execPath,
-      [gateScript, "--test-fixture"],
+      [gateScript],
       {
         cwd: repositoryRoot,
         env: {
           PATH: process.env.PATH,
-          NODE_ENV: "test",
           ...environment,
         },
       },
@@ -59,6 +59,9 @@ describe("foundation gate report", () => {
       reason: "RELEASE_SHA_REQUIRED",
       status: "BLOCKED",
     });
+    expect(Object.keys(result.json.checks).sort()).toEqual(
+      [...FOUNDATION_CHECK_CATALOG].sort(),
+    );
   });
 
   it.each([
@@ -74,34 +77,15 @@ describe("foundation gate report", () => {
     expect(result.json.checks.releaseSha.status).toBe("BLOCKED");
   });
 
-  it("reports every executable foundation check and separates launch evidence", async () => {
-    const result = await runGate({
-      FOUNDATION_GATE_HEAD_SHA: releaseSha,
-      RELEASE_SHA: releaseSha,
-    });
-
-    expect(result.exitCode).toBe(0);
-    expect(Object.keys(result.json.checks)).toEqual(expect.arrayContaining([
-      "artifacts",
-      "ancestry",
-      "browser",
-      "dependencyPolicy",
-      "entitlements",
-      "identitySeparation",
-      "images",
-      "jobs",
-      "migrations",
-      "proxy",
-      "releaseSha",
-      "repository",
-      "rls",
-      "workspaces",
-    ]));
-    expect(result.json).toMatchObject({
-      engineeringGate: "PASS",
-      launchGate: "BLOCKED",
-      releaseSha,
-      version: 1,
-    });
+  it("does not expose a test-only all-PASS report path", async () => {
+    await expect(execFileAsync(process.execPath, [gateScript, "--test-fixture"], {
+      cwd: repositoryRoot,
+      env: {
+        PATH: process.env.PATH,
+        NODE_ENV: "test",
+        FOUNDATION_GATE_HEAD_SHA: releaseSha,
+        RELEASE_SHA: releaseSha,
+      },
+    })).rejects.toMatchObject({ code: 1 });
   });
 });

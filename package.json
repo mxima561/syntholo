@@ -20,6 +20,7 @@
     "lint": "npm run lint --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "test:coverage": "npm test --workspaces --if-present -- --coverage.enabled=true --coverage.reporter=json --coverage.reporter=text --reporter=junit --outputFile=test-results/unit-junit.xml",
     "test:integration": "npm run test:integration --workspaces --if-present",
     "build": "npm run build --workspaces --if-present",
     "build:migrate": "node infra/scripts/build-node-service.mjs migrate",
@@ -28,6 +29,7 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
+    "@vitest/coverage-v8": "4.1.10",
     "eslint": "9.39.5",
     "typescript": "^5.9.3",
     "typescript-eslint": "8.67.0",

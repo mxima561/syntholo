@@ -121,3 +121,111 @@ Implementation and tests are committed with this report in
 `ci: verify production foundation gate`. No push was performed.
 
 DONE
+
+## Acceptance fix round 1 — 2026-08-14
+
+The acceptance findings against commit
+`5e9c259b42193f3297c2470dc1f0d78bc8be21d5` were reproduced before the
+fixes. Focused RED runs initially produced 12 foundation-policy failures, 10
+database-contract failures, four web configuration/canonical-host failures,
+and one worker-health failure. The implementation now closes each reported
+trust-boundary gap:
+
+- Railway no longer depends on the unsupported `build.dockerfileTarget`
+  property. Migration and cron use dedicated default-runtime Dockerfiles, all
+  four checked-in configs use provider-supported keys, and their exact default
+  image commands are tested. Current Railway documentation/schema was checked
+  for `dockerfilePath`, exec-form Docker start-command overrides, build-time
+  `ARG` values, `RAILWAY_GIT_COMMIT_SHA`, and `cronSchedule`.
+- Release certification now compares `RELEASE_SHA` to `HEAD` and rejects any
+  tracked or untracked worktree change before building or certifying artifacts.
+  Both hostile cases execute against a real temporary Git repository in the
+  policy test. A dirty-tree invocation reports all 14 catalog checks and
+  attributes `REPOSITORY_DIRTY` without executing production work.
+- Railway and Vercel builds fail closed unless their provider-supplied checkout
+  SHA is present, valid, and exactly equals `RELEASE_SHA`. CI passes the exact
+  GitHub SHA to all four clean Docker builds; Railway Git-triggered builds use
+  the provider-injected build argument, and Vercel validates
+  `VERCEL_GIT_COMMIT_SHA` in `next.config.ts` evaluation.
+- Immutable published migrations `0001` through `0006` remain byte-for-byte
+  unchanged and now have a frozen ordered tag/index/time/SHA-256 inventory.
+  Additive `0007_runtime_contract` exposes the exact seven ordered journal
+  hashes plus all 27 migration-owned runtime tables. Rewritten, missing, and
+  reordered journal/file fixtures fail before Drizzle executes; readiness
+  fails on any hash, object, marker, or capability mismatch. Production
+  migration configuration rejects pooler hostnames and PgBouncer parameters.
+- The gate has an exact 14-check schema/catalog with validated status,
+  duration, command, artifact hash, environment, timestamp, release identity,
+  and derived state. Images are engineering evidence; deployed proxy and
+  ancestry are launch-only evidence. Missing local database infrastructure is
+  `BLOCKED`; missing CI database configuration is `FAILED`; malformed supplied
+  evidence is `FAILED`. Exit behavior is covered for PASS, BLOCKED, and FAILED.
+- The test-only synthetic all-PASS CLI path was removed. Required prior-task
+  contracts are validated by named content, and real CLI results can come only
+  from executable commands and SHA-bound artifacts.
+- Production scanning covers MongoDB, HighLevel packages/credentials/API,
+  OAuth/SSO/token URLs, Stripe server, Resend, Blob server, privileged Mux,
+  static/dynamic imports, nested TypeScript path aliases, manifests, lockfile
+  edges, and built Next/Node output while retaining approved public SDKs and
+  customer-facing external-link copy. The final graph resolves 65 real alias
+  edges and has zero forbidden runtime findings.
+- Next 16 Proxy now permanently redirects every production alias/provider host
+  to the fixed validated `WEB_ORIGIN`, preserving path/query. Exact canonical
+  requests and demo preview hosts do not redirect; the existing strict preview
+  parser still rejects production auth/upstream linkage.
+- CI now uploads JUnit and V8 coverage for all eight workspaces, includes all
+  four image SBOM/vulnerability scans (including cron), validates secret-free
+  startup/drain logs, polls for a SHA-bound worker-ready record, emits complete
+  SHA-bound image evidence, and makes the foundation job consume that evidence.
+  Deployed proxy evidence additionally requires the same SHA's worker-ready
+  record. Image evidence is downloaded under the runner temporary directory so
+  it cannot make the source checkout dirty.
+
+### Acceptance-fix verification
+
+- `npm run typecheck` — PASS in all eight workspaces.
+- `npm run lint` — PASS in all eight workspaces.
+- `npm test` — PASS: 55 files and 661 tests across eight workspaces (API 131,
+  web 101, worker 42, contracts 15, database 109, domain 193, integrations 35,
+  testing 35).
+- `npm run test:coverage` — PASS for all eight workspaces, with eight JUnit XML
+  files plus V8 JSON/text coverage output. The database unit-only coverage is
+  intentionally distinct from the real-PostgreSQL integration job and is not
+  represented as integration coverage.
+- `RELEASE_SHA=$(git rev-parse HEAD) APP_MODE=demo npm run build`, followed by
+  `RELEASE_SHA=$(git rev-parse HEAD) npm run build:migrate` and `node --check`
+  for API, worker, cron, and migration artifacts — PASS. Next reports the
+  canonical-host implementation as `Proxy (Middleware)`.
+- `CI=false npm run test:e2e` — PASS: 63 passed, 17 intentional
+  project-specific skips, 80 total, one browser worker.
+- Focused final checks: database migration/readiness 10/10; foundation policy
+  22/22; web build/canonical-host 10/10; worker health 6/6 — PASS.
+- Railway topology/content validation — PASS for API, migration, worker, and
+  cron. Unsupported `dockerfileTarget` is absent. CI YAML parse and
+  `git diff --check` — PASS.
+- Final production graph — PASS with zero forbidden packages, imports,
+  environment keys, URLs, lockfile packages, or built artifacts; 65 alias
+  edges were resolved.
+- `npm audit --audit-level=high` — exit 0 with the existing four moderate
+  development-only `drizzle-kit`/legacy esbuild-chain findings. The offered fix
+  is a breaking `drizzle-kit` downgrade and was not applied. Clean CI image
+  scans remain fail-closed at HIGH/CRITICAL.
+
+One verification run launched `npm test` concurrently with an artifact build;
+the build correctly replaced the worker fixture artifact while its unit test
+was reading it. Sequential verification removed the shared-output race: worker
+42/42 and the full 661-test run pass. All final verification commands above
+were run sequentially where they share `dist` or `.next` output.
+
+Docker, `psql`, and `TEST_DATABASE_URL` are unavailable on this host. No local
+image or real-PostgreSQL PASS is claimed. The clean-image/SBOM/scan/startup and
+real-PG migration/RLS/ACL/race evidence remains CI-blocked until the pinned
+jobs run. Fresh deployed canonical proxy plus worker-ready evidence and target
+branch ancestry remain launch-blocked. The clean committed-SHA gate is rerun
+immediately after this report is committed; its exact state is returned with
+the commit handoff because a report cannot contain evidence for its own future
+Git object.
+
+No push was performed.
+
+DONE

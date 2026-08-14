@@ -248,21 +248,61 @@ describe("foundation migration", () => {
     ]);
   });
 
-  it("exposes only the additive 0006 runtime readiness projection", async () => {
+  it("exposes the exact additive runtime contract projection", async () => {
     const result = await harness.database.pool.query<{
       capability: string;
       migration_count: number;
+      migration_hashes: string[];
+      required_objects: string[];
       runtime_role: string;
       schema_version: string;
     }>(
-      "select schema_version, migration_count, runtime_role, capability from public.syntholo_runtime_readiness()",
+      "select schema_version, migration_count, migration_hashes, required_objects, runtime_role, capability from public.syntholo_runtime_readiness()",
     );
 
     expect(result.rows).toEqual([{
       capability: "syntholo_migrator",
-      migration_count: 6,
+      migration_count: 7,
+      migration_hashes: [
+        "bf3b66561107047f8c317d81bb561e9a29dc6207a14469a3ce588ec1f8ddc60c",
+        "6508044b65dcce22b5d9a25b954a40768b813d84f943247e59f6c6391cec60a4",
+        "5b1e18eeeb392048ebcd7436622c60702694758b84edc209afb91ba861b8d9da",
+        "717c39300253771cbd09070c2b75297c0bfd788290c522877bbbf7293c4a7ea1",
+        "b61002f28e9970c63ea24a291ebcca8711bdd1f1a178b9ce09910243cc6683b5",
+        "6b465ae711125f441115f83dfbfe9bf63e92a74edd57190e357c10268adeafb5",
+        "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002",
+      ],
+      required_objects: [
+        "public.access_decision_audit",
+        "public.account_hold_sources",
+        "public.account_holds",
+        "public.accounts",
+        "public.administrative_grant_restorations",
+        "public.audit_events",
+        "public.business_os_setup_receipts",
+        "public.business_os_subscription_cancellations",
+        "public.club_subscription_cancellations",
+        "public.commerce_fulfillment_receipts",
+        "public.commerce_reconciliations",
+        "public.entitlement_commands",
+        "public.entitlement_grants",
+        "public.entitlement_sources",
+        "public.event_handler_receipts",
+        "public.job_attempts",
+        "public.jobs",
+        "public.member_identities",
+        "public.memberships",
+        "public.outbox_events",
+        "public.provider_event_receipts",
+        "public.seat_invitation_token_generations",
+        "public.seat_invitations",
+        "public.seat_reservations",
+        "public.staff_identities",
+        "public.staff_login_attempts",
+        "public.staff_sessions",
+      ],
       runtime_role: expect.any(String),
-      schema_version: "0006_runtime_readiness",
+      schema_version: "0007_runtime_contract",
     }]);
   });
 

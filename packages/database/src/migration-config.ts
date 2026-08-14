@@ -15,6 +15,18 @@ export function selectMigrationDatabaseUrl(
     if (directUrl === undefined || directUrl === "") {
       throw new Error("DATABASE_DIRECT_URL_REQUIRED");
     }
+    let parsed: URL;
+    try {
+      parsed = new URL(directUrl);
+    } catch {
+      throw new Error("DATABASE_DIRECT_URL_INVALID");
+    }
+    if (
+      /(?:^|[.-])pooler(?:[.-]|$)/iu.test(parsed.hostname)
+      || /^(?:1|true|yes)$/iu.test(parsed.searchParams.get("pgbouncer") ?? "")
+    ) {
+      throw new Error("DATABASE_DIRECT_URL_POOLED");
+    }
     return directUrl;
   }
 

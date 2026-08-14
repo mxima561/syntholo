@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import {
   assertDatabaseCapability,
+  checkDatabaseReadiness,
   createDatabase,
   HandlerReceiptRepository,
   JobRepository,
@@ -23,6 +24,7 @@ import {
   HandlerFailure,
   type JobHandler,
 } from "./handlers/index.js";
+import { emitWorkerHealth, type WorkerHealthStatus } from "./health.js";
 
 export type WorkerJob = Readonly<{
   id: string;
@@ -457,11 +459,20 @@ function isMainModule(): boolean {
 async function main(): Promise<void> {
   const controller = new AbortController();
   const fatalController = new AbortController();
-  const stop = () => controller.abort();
+  const config = parseWorkerConfig(process.env);
+  let healthStatus: WorkerHealthStatus = "starting";
+  const transition = (status: WorkerHealthStatus) => {
+    if (healthStatus === status) return;
+    healthStatus = status;
+    emitWorkerHealth(config.releaseSha, status);
+  };
+  const stop = () => {
+    transition("draining");
+    controller.abort();
+  };
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
-  const config = parseWorkerConfig(process.env);
   const database = createDatabase({
     applicationName: `syntholo-worker-${config.releaseSha}`,
     url: config.databaseUrl,
@@ -469,6 +480,8 @@ async function main(): Promise<void> {
   let supervisorOwnsClose = false;
   try {
     await assertDatabaseCapability(database, "syntholo_worker");
+    await checkDatabaseReadiness(database, "syntholo_worker");
+    transition("ready");
     const workerId = createWorkerId(hostname(), process.pid);
     const clock = { now: () => new Date() };
     const receipts = new HandlerReceiptRepository(database, { leaseMs: 60_000 });
@@ -505,6 +518,7 @@ async function main(): Promise<void> {
   } finally {
     controller.abort();
     if (!supervisorOwnsClose) await database.close();
+    if (healthStatus !== "starting") transition("stopped");
   }
 }
 

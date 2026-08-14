@@ -2,13 +2,54 @@ import { describe, expect, it, vi } from "vitest";
 import { checkDatabaseReadiness } from "./readiness";
 
 describe("database readiness projection", () => {
-  it("accepts only the exact journal, schema marker, and runtime capability", async () => {
+  const migrationHashes = [
+    "bf3b66561107047f8c317d81bb561e9a29dc6207a14469a3ce588ec1f8ddc60c",
+    "6508044b65dcce22b5d9a25b954a40768b813d84f943247e59f6c6391cec60a4",
+    "5b1e18eeeb392048ebcd7436622c60702694758b84edc209afb91ba861b8d9da",
+    "717c39300253771cbd09070c2b75297c0bfd788290c522877bbbf7293c4a7ea1",
+    "b61002f28e9970c63ea24a291ebcca8711bdd1f1a178b9ce09910243cc6683b5",
+    "6b465ae711125f441115f83dfbfe9bf63e92a74edd57190e357c10268adeafb5",
+    "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002",
+  ];
+  const requiredObjects = [
+    "public.access_decision_audit",
+    "public.account_hold_sources",
+    "public.account_holds",
+    "public.accounts",
+    "public.administrative_grant_restorations",
+    "public.audit_events",
+    "public.business_os_setup_receipts",
+    "public.business_os_subscription_cancellations",
+    "public.club_subscription_cancellations",
+    "public.commerce_fulfillment_receipts",
+    "public.commerce_reconciliations",
+    "public.entitlement_commands",
+    "public.entitlement_grants",
+    "public.entitlement_sources",
+    "public.event_handler_receipts",
+    "public.job_attempts",
+    "public.jobs",
+    "public.member_identities",
+    "public.memberships",
+    "public.outbox_events",
+    "public.provider_event_receipts",
+    "public.seat_invitation_token_generations",
+    "public.seat_invitations",
+    "public.seat_reservations",
+    "public.staff_identities",
+    "public.staff_login_attempts",
+    "public.staff_sessions",
+  ];
+
+  it("accepts only the exact journal hashes, required owned objects, schema marker, and runtime capability", async () => {
     const query = vi.fn(async () => ({
       rows: [{
         capability: "syntholo_member_api",
-        migration_count: 6,
+        migration_count: 7,
+        migration_hashes: migrationHashes,
+        required_objects: requiredObjects,
         runtime_role: "syntholo_member_runtime",
-        schema_version: "0006_runtime_readiness",
+        schema_version: "0007_runtime_contract",
       }],
     }));
 
@@ -20,14 +61,16 @@ describe("database readiness projection", () => {
       status: "ok",
     });
     expect(query).toHaveBeenCalledWith(
-      "select schema_version, migration_count, runtime_role, capability from public.syntholo_runtime_readiness()",
+      "select schema_version, migration_count, migration_hashes, required_objects, runtime_role, capability from public.syntholo_runtime_readiness()",
     );
   });
 
   it.each([
-    { capability: "syntholo_staff_api", migration_count: 6, runtime_role: "member", schema_version: "0006_runtime_readiness" },
-    { capability: "syntholo_member_api", migration_count: 5, runtime_role: "member", schema_version: "0006_runtime_readiness" },
-    { capability: "syntholo_member_api", migration_count: 6, runtime_role: "member", schema_version: "0005_entitlements" },
+    { capability: "syntholo_staff_api", migration_count: 7, migration_hashes: migrationHashes, required_objects: requiredObjects, runtime_role: "member", schema_version: "0007_runtime_contract" },
+    { capability: "syntholo_member_api", migration_count: 5, migration_hashes: migrationHashes.slice(0, 5), required_objects: requiredObjects, runtime_role: "member", schema_version: "0006_runtime_readiness" },
+    { capability: "syntholo_member_api", migration_count: 7, migration_hashes: migrationHashes, required_objects: requiredObjects, runtime_role: "member", schema_version: "0005_entitlements" },
+    { capability: "syntholo_member_api", migration_count: 7, migration_hashes: [...migrationHashes.slice(0, 2), "f".repeat(64), ...migrationHashes.slice(3)], required_objects: requiredObjects, runtime_role: "member", schema_version: "0007_runtime_contract" },
+    { capability: "syntholo_member_api", migration_count: 7, migration_hashes: migrationHashes, required_objects: requiredObjects.slice(0, -1), runtime_role: "member", schema_version: "0007_runtime_contract" },
   ])("fails a stale or wrong-capability projection closed", async (row) => {
     await expect(checkDatabaseReadiness(
       { pool: { query: async () => ({ rows: [row] }) } },

@@ -2,9 +2,9 @@
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "apps/worker/Dockerfile"
-dockerfileTarget = "cron-runtime"
+dockerfilePath = "apps/worker/Dockerfile.cron"
 
 [deploy]
 startCommand = "/usr/local/bin/node /app/cron.js"
 restartPolicyType = "NEVER"
+cronSchedule = "0 * * * *"

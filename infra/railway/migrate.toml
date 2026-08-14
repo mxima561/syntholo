@@ -2,8 +2,7 @@
 
 [build]
 builder = "DOCKERFILE"
-dockerfilePath = "apps/api/Dockerfile"
-dockerfileTarget = "migration-runtime"
+dockerfilePath = "apps/api/Dockerfile.migrate"
 
 [deploy]
 startCommand = "/usr/local/bin/node /app/migrate.js"

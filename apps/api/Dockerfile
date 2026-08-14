@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.7
 FROM node:22.22.2-bookworm-slim@sha256:9f6d5975c7dca860947d3915877f85607946403fc55349f39b4bc3688448bb6e AS build
 ARG RELEASE_SHA
+ARG RAILWAY_GIT_COMMIT_SHA
 WORKDIR /workspace
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY apps/api/package.json apps/api/package.json
@@ -15,8 +16,9 @@ RUN test "$(node --version)" = "v22.22.2" && test "$(npm --version)" = "10.9.7" 
 COPY apps/api apps/api
 COPY packages packages
 COPY infra/scripts/build-node-service.mjs infra/scripts/build-node-service.mjs
-RUN RELEASE_SHA="$RELEASE_SHA" npm run build -w @syntholo/api
-RUN RELEASE_SHA="$RELEASE_SHA" npm run build:migrate
+COPY infra/scripts/foundation-gate-lib.mjs infra/scripts/foundation-gate-lib.mjs
+RUN SYNTHOLO_BUILD_PROVIDER=railway RELEASE_SHA="$RELEASE_SHA" RAILWAY_GIT_COMMIT_SHA="$RAILWAY_GIT_COMMIT_SHA" npm run build -w @syntholo/api
+RUN SYNTHOLO_BUILD_PROVIDER=railway RELEASE_SHA="$RELEASE_SHA" RAILWAY_GIT_COMMIT_SHA="$RAILWAY_GIT_COMMIT_SHA" npm run build:migrate
 
 FROM node:22.22.2-bookworm-slim@sha256:9f6d5975c7dca860947d3915877f85607946403fc55349f39b4bc3688448bb6e AS migration-runtime
 ARG RELEASE_SHA

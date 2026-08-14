@@ -1,32 +1,24 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import {
+  FOUNDATION_CHECK_CATALOG,
+  evaluateFoundationGate,
   evaluateReleaseSha,
+  foundationExitCode,
+  inspectRepositoryIdentity,
   inspectProductionDependencyGraph,
+  isForbiddenServerPackage,
   runIndependentChecks,
+  validateExternalEvidence,
+  validateFoundationReport,
+  validateRailwayServiceConfigs,
+  validateRequiredContracts,
 } from "./foundation-gate-lib.mjs";
 
 const execFileAsync = promisify(execFile);
-const checkNames = [
-  "workspaces",
-  "migrations",
-  "rls",
-  "identitySeparation",
-  "jobs",
-  "entitlements",
-  "releaseSha",
-  "artifacts",
-  "browser",
-  "dependencyPolicy",
-  "images",
-  "proxy",
-  "repository",
-  "ancestry",
-];
-
 function evidenceCheck(command, status, reason, artifact = command) {
   return {
     artifactHash: createHash("sha256").update(artifact).digest("hex"),
@@ -34,47 +26,6 @@ function evidenceCheck(command, status, reason, artifact = command) {
     durationMs: 0,
     ...(reason === undefined ? {} : { reason }),
     status,
-  };
-}
-
-function fixtureReport() {
-  if (process.env.NODE_ENV !== "test") throw new Error("TEST_FIXTURE_FORBIDDEN");
-  const release = evaluateReleaseSha(
-    process.env.RELEASE_SHA,
-    process.env.FOUNDATION_GATE_HEAD_SHA ?? "",
-  );
-  const checks = Object.fromEntries(checkNames.map((name) => [
-    name,
-    evidenceCheck(`test fixture ${name}`, "PASS"),
-  ]));
-  checks.releaseSha = evidenceCheck(
-    "compare RELEASE_SHA to fixture HEAD",
-    release.status,
-    release.reason,
-  );
-  checks.images = evidenceCheck(
-    "collect Docker-capable CI evidence",
-    "BLOCKED",
-    "SEPARATE_CI_IMAGE_EVIDENCE_REQUIRED",
-  );
-  checks.proxy = evidenceCheck(
-    "collect canonical deployed proxy evidence",
-    "BLOCKED",
-    "DEPLOYED_PROXY_EVIDENCE_REQUIRED",
-  );
-  checks.ancestry = evidenceCheck(
-    "prove target-branch ancestry",
-    "BLOCKED",
-    "TARGET_ANCESTRY_EVIDENCE_REQUIRED",
-  );
-  const engineeringGate = release.status === "PASS" ? "PASS" : "BLOCKED";
-  return {
-    checks,
-    engineeringGate,
-    environment: "test",
-    launchGate: "BLOCKED",
-    releaseSha: release.status === "PASS" ? process.env.RELEASE_SHA : null,
-    version: 1,
   };
 }
 
@@ -93,25 +44,6 @@ async function command(
     maxBuffer: 16 * 1024 * 1024,
     signal,
   });
-}
-
-async function requiredContracts() {
-  const paths = [
-    "apps/api/src/auth/auth.integration.test.ts",
-    "apps/api/src/auth/session-crypto.test.ts",
-    "apps/web/src/lib/api/client.test.ts",
-    "apps/worker/src/jobs.integration.test.ts",
-    "packages/database/drizzle/0006_runtime_readiness.sql",
-    "packages/database/src/entitlements.integration.test.ts",
-    "packages/database/src/rls.integration.test.ts",
-    "packages/domain/src/entitlements/evaluate.property.test.ts",
-    "packages/testing/src/foundation-gate-policy.test.ts",
-  ];
-  await Promise.all(paths.map((path) => access(path)));
-}
-
-async function repositoryCheck(signal) {
-  await command("git", ["diff", "--check"], {}, [], signal);
 }
 
 async function ancestryCheck(headSha) {
@@ -171,6 +103,60 @@ async function expectArtifactStartupFailure(path, expectedStderr, signal) {
   }
 }
 
+function unavailableChecks(reason, releaseCheck, repositoryCheck) {
+  const checks = Object.fromEntries(FOUNDATION_CHECK_CATALOG.map((name) => [
+    name,
+    evidenceCheck(`unavailable ${name}`, "BLOCKED", reason),
+  ]));
+  checks.releaseSha = releaseCheck;
+  checks.repository = repositoryCheck;
+  return checks;
+}
+
+function reportFor(checks, releaseSha) {
+  const state = evaluateFoundationGate(checks);
+  return {
+    checks,
+    createdAt: new Date().toISOString(),
+    ...state,
+    environment: process.env.CI === "true" ? "ci" : "local",
+    releaseSha,
+    version: 1,
+  };
+}
+
+async function externalEvidenceCheck(path, type, releaseSha, host, upstreamOrigin) {
+  const commandName = type === "images"
+    ? "validate SHA-bound API/migration/worker/cron image evidence"
+    : "validate deployed canonical proxy evidence";
+  if (path === undefined || path.trim() === "") {
+    return evidenceCheck(
+      commandName,
+      "BLOCKED",
+      type === "images" ? "IMAGE_EVIDENCE_UNAVAILABLE" : "PROXY_EVIDENCE_UNAVAILABLE",
+    );
+  }
+  try {
+    const raw = await readFile(path, "utf8");
+    const evidence = JSON.parse(raw);
+    const result = validateExternalEvidence(evidence, {
+      host,
+      now: new Date(),
+      releaseSha,
+      type,
+      upstreamOrigin,
+    });
+    return evidenceCheck(
+      commandName,
+      result.status,
+      result.reason,
+      raw,
+    );
+  } catch {
+    return evidenceCheck(commandName, "FAILED", "EVIDENCE_INVALID");
+  }
+}
+
 async function productionReport() {
   const { stdout } = await execFileAsync("git", ["rev-parse", "HEAD"], {
     cwd: process.cwd(),
@@ -178,27 +164,49 @@ async function productionReport() {
   const headSha = stdout.trim();
   const release = evaluateReleaseSha(process.env.RELEASE_SHA, headSha);
   if (release.status !== "PASS") {
-    return {
-      checks: {
-        releaseSha: evidenceCheck(
-          "compare RELEASE_SHA to git rev-parse HEAD",
-          release.status,
-          release.reason,
-        ),
-      },
-      createdAt: new Date().toISOString(),
-      engineeringGate: "BLOCKED",
-      environment: process.env.CI === "true" ? "ci" : "local",
-      launchGate: "BLOCKED",
-      releaseSha: null,
-      version: 1,
-    };
+    const releaseCheck = evidenceCheck(
+      "compare RELEASE_SHA to git rev-parse HEAD",
+      release.status,
+      release.reason,
+    );
+    return reportFor(
+      unavailableChecks(
+        "RELEASE_IDENTITY_UNAVAILABLE",
+        releaseCheck,
+        evidenceCheck("git status --porcelain", "BLOCKED", "RELEASE_IDENTITY_UNAVAILABLE"),
+      ),
+      null,
+    );
+  }
+  const repositoryIdentity = await inspectRepositoryIdentity(process.cwd(), headSha);
+  const initialRepositoryCheck = evidenceCheck(
+    "git status --porcelain --untracked-files=all && git diff --check HEAD",
+    repositoryIdentity.status,
+    repositoryIdentity.reason,
+    `${headSha}:${repositoryIdentity.status}`,
+  );
+  if (repositoryIdentity.status !== "PASS") {
+    return reportFor(
+      unavailableChecks("CLEAN_SOURCE_REQUIRED", evidenceCheck(
+        "compare RELEASE_SHA to git rev-parse HEAD",
+        "PASS",
+        undefined,
+        `${process.env.RELEASE_SHA}:${headSha}`,
+      ), initialRepositoryCheck),
+      process.env.RELEASE_SHA,
+    );
   }
   const releaseEnvironment = { RELEASE_SHA: process.env.RELEASE_SHA };
   const definitions = [
     { name: "workspaces", command: "required contracts + lint + typecheck + unit", timeoutMs: 900_000,
-      run: async (signal) => requiredContracts().then(() => command("npm", ["run", "lint"], {}, [], signal)).then(() => command("npm", ["run", "typecheck"], {}, [], signal)).then(() => command("npm", ["test"], {}, [], signal)) },
-    { name: "migrations", command: "npm run db:schema:check && database migration integration", timeoutMs: 600_000,
+      run: async (signal) => validateRequiredContracts(process.cwd()).then(() => command("npm", ["run", "lint"], {}, [], signal)).then(() => command("npm", ["run", "typecheck"], {}, [], signal)).then(() => command("npm", ["run", "test:coverage"], {}, [], signal)) },
+    { name: "browser", command: "npm run test:e2e", timeoutMs: 900_000,
+      run: async (signal) => command("npm", ["run", "test:e2e"], { ...releaseEnvironment, APP_MODE: "demo" }, ["TEST_DATABASE_URL", "DATABASE_URL", "DATABASE_DIRECT_URL", "DATABASE_POOLED_URL"], signal) },
+    { name: "artifacts", command: "npm run build && node artifact syntax", timeoutMs: 900_000,
+      run: async (signal) => validateRailwayServiceConfigs(process.cwd()).then(() => command("npm", ["run", "build"], { ...releaseEnvironment, APP_MODE: "demo" }, ["TEST_DATABASE_URL", "DATABASE_URL", "DATABASE_DIRECT_URL", "DATABASE_POOLED_URL"], signal)).then(() => command("npm", ["run", "build:migrate"], releaseEnvironment, ["TEST_DATABASE_URL", "DATABASE_URL", "DATABASE_DIRECT_URL", "DATABASE_POOLED_URL"], signal)).then(() => command(process.execPath, ["--check", "apps/api/dist/server.js"], {}, [], signal)).then(() => command(process.execPath, ["--check", "apps/worker/dist/runner.js"], {}, [], signal)).then(() => command(process.execPath, ["--check", "apps/worker/dist/cron.js"], {}, [], signal)).then(() => command(process.execPath, ["--check", "dist/migrate.js"], {}, [], signal)).then(() => expectArtifactStartupFailure("apps/api/dist/server.js", "API_STARTUP_FAILED\n", signal)).then(() => expectArtifactStartupFailure("apps/worker/dist/runner.js", "WORKER_STARTUP_FAILED\n", signal)).then(() => expectArtifactStartupFailure("apps/worker/dist/cron.js", "WORKER_STARTUP_FAILED\n", signal)).then(() => expectArtifactStartupFailure("dist/migrate.js", "MIGRATION_STARTUP_FAILED\n", signal)) },
+  ];
+  const databaseDefinitions = [
+    { name: "migrations", command: "exact migration inventory + schema + database migration integration", timeoutMs: 600_000,
       run: async (signal) => command("npm", ["run", "db:schema:check"], {}, [], signal).then(() => command("npm", ["run", "test:integration", "-w", "@syntholo/database", "--", "src/schema/foundation.integration.test.ts"], {}, [], signal)) },
     { name: "rls", command: "database RLS integration", timeoutMs: 600_000,
       run: async (signal) => command("npm", ["run", "test:integration", "-w", "@syntholo/database", "--", "src/rls.integration.test.ts"], {}, [], signal) },
@@ -208,14 +216,19 @@ async function productionReport() {
       run: async (signal) => command("npm", ["test", "-w", "@syntholo/worker"], {}, [], signal).then(() => command("npm", ["run", "test:integration", "-w", "@syntholo/worker"], {}, [], signal)).then(() => command("npm", ["run", "test:integration", "-w", "@syntholo/api"], {}, [], signal)).then(() => command("npm", ["run", "test:integration", "-w", "@syntholo/database", "--", "src/unit-of-work.integration.test.ts"], {}, [], signal)) },
     { name: "entitlements", command: "entitlement unit/property/races", timeoutMs: 900_000,
       run: async (signal) => command("npm", ["test", "-w", "@syntholo/domain", "--", "src/entitlements"], {}, [], signal).then(() => command("npm", ["run", "test:integration", "-w", "@syntholo/database", "--", "src/entitlements.integration.test.ts"], {}, [], signal)) },
-    { name: "artifacts", command: "npm run build && node artifact syntax", timeoutMs: 900_000,
-      run: async (signal) => command("npm", ["run", "build"], { ...releaseEnvironment, APP_MODE: "demo" }, ["TEST_DATABASE_URL", "DATABASE_URL", "DATABASE_DIRECT_URL", "DATABASE_POOLED_URL"], signal).then(() => command("npm", ["run", "build:migrate"], releaseEnvironment, ["TEST_DATABASE_URL", "DATABASE_URL", "DATABASE_DIRECT_URL", "DATABASE_POOLED_URL"], signal)).then(() => command(process.execPath, ["--check", "apps/api/dist/server.js"], {}, [], signal)).then(() => command(process.execPath, ["--check", "apps/worker/dist/runner.js"], {}, [], signal)).then(() => command(process.execPath, ["--check", "apps/worker/dist/cron.js"], {}, [], signal)).then(() => command(process.execPath, ["--check", "dist/migrate.js"], {}, [], signal)).then(() => expectArtifactStartupFailure("apps/api/dist/server.js", "API_STARTUP_FAILED\n", signal)).then(() => expectArtifactStartupFailure("apps/worker/dist/runner.js", "WORKER_STARTUP_FAILED\n", signal)).then(() => expectArtifactStartupFailure("apps/worker/dist/cron.js", "WORKER_STARTUP_FAILED\n", signal)).then(() => expectArtifactStartupFailure("dist/migrate.js", "MIGRATION_STARTUP_FAILED\n", signal)) },
-    { name: "browser", command: "npm run test:e2e", timeoutMs: 900_000,
-      run: async (signal) => command("npm", ["run", "test:e2e"], { ...releaseEnvironment, APP_MODE: "demo" }, ["TEST_DATABASE_URL", "DATABASE_URL", "DATABASE_DIRECT_URL", "DATABASE_POOLED_URL"], signal) },
-    { name: "repository", command: "git diff --check", timeoutMs: 60_000,
-      run: repositoryCheck },
   ];
+  const databaseAvailable = process.env.TEST_DATABASE_URL?.trim() !== "" && process.env.TEST_DATABASE_URL !== undefined;
+  if (databaseAvailable) definitions.push(...databaseDefinitions);
   const checks = await runIndependentChecks(definitions);
+  if (!databaseAvailable) {
+    const status = process.env.CI === "true" ? "FAILED" : "BLOCKED";
+    const reason = process.env.CI === "true"
+      ? "TEST_DATABASE_CONFIGURATION_MISSING"
+      : "TEST_DATABASE_UNAVAILABLE";
+    for (const definition of databaseDefinitions) {
+      checks[definition.name] = evidenceCheck(definition.command, status, reason);
+    }
+  }
   checks.releaseSha = evidenceCheck(
     "compare RELEASE_SHA to git rev-parse HEAD",
     "PASS",
@@ -224,9 +237,7 @@ async function productionReport() {
   );
 
   const graph = await inspectProductionDependencyGraph(process.cwd());
-  const forbiddenPackages = graph.packages.filter((name) =>
-    /(?:^|[/@_-])(?:mongodb|gohighlevel|leadconnector|highlevel)(?:$|[/_-])/iu.test(name)
-  );
+  const forbiddenPackages = graph.packages.filter(isForbiddenServerPackage);
   const policyPass = forbiddenPackages.length === 0
     && graph.imports.length === 0
     && graph.environmentKeys.length === 0
@@ -239,41 +250,36 @@ async function productionReport() {
     policyPass ? undefined : "FORBIDDEN_PRODUCTION_DEPENDENCY",
     JSON.stringify(graph),
   );
-  checks.images = evidenceCheck(
-    "collect Docker-capable CI image, SBOM, and scan evidence",
-    "BLOCKED",
-    "SEPARATE_CI_IMAGE_EVIDENCE_REQUIRED",
+  checks.images = await externalEvidenceCheck(
+    process.env.FOUNDATION_IMAGE_EVIDENCE_PATH,
+    "images",
+    process.env.RELEASE_SHA,
   );
-  checks.proxy = evidenceCheck(
-    "collect canonical deployed proxy evidence",
-    "BLOCKED",
-    "DEPLOYED_PROXY_EVIDENCE_REQUIRED",
+  checks.proxy = await externalEvidenceCheck(
+    process.env.FOUNDATION_PROXY_EVIDENCE_PATH,
+    "proxy",
+    process.env.RELEASE_SHA,
+    process.env.WEB_ORIGIN,
+    process.env.API_UPSTREAM_ORIGIN,
   );
   checks.ancestry = await ancestryCheck(headSha);
-
-  const requiredChecks = Object.entries(checks).filter(([name]) =>
-    !["ancestry", "images", "proxy"].includes(name)
+  const finalRepositoryIdentity = await inspectRepositoryIdentity(process.cwd(), headSha);
+  checks.repository = evidenceCheck(
+    "git status --porcelain --untracked-files=all && git diff --check HEAD",
+    finalRepositoryIdentity.status,
+    finalRepositoryIdentity.reason,
+    `${headSha}:${finalRepositoryIdentity.status}`,
   );
-  const engineeringGate = requiredChecks.every(([, check]) => check.status === "PASS")
-    ? "PASS"
-    : "BLOCKED";
-  return {
-    checks,
-    createdAt: new Date().toISOString(),
-    engineeringGate,
-    environment: process.env.CI === "true" ? "ci" : "local",
-    launchGate: "BLOCKED",
-    releaseSha: process.env.RELEASE_SHA,
-    version: 1,
-  };
+  return validateFoundationReport(reportFor(checks, process.env.RELEASE_SHA));
 }
 
-const report = process.argv.includes("--test-fixture")
-  ? fixtureReport()
-  : await productionReport();
-const serialized = `${JSON.stringify(report)}\n`;
-if (!process.argv.includes("--test-fixture")) {
+if (process.argv.includes("--test-fixture")) {
+  process.stderr.write("TEST_FIXTURE_FORBIDDEN\n");
+  process.exitCode = 1;
+} else {
+  const report = await productionReport();
+  const serialized = `${JSON.stringify(report)}\n`;
   await writeFile("foundation-gate.json", serialized, "utf8");
+  process.stdout.write(serialized);
+  process.exitCode = foundationExitCode(report);
 }
-process.stdout.write(serialized);
-process.exitCode = report.engineeringGate === "PASS" ? 0 : 1;

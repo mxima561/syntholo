@@ -7,6 +7,9 @@ export function parseWebBuildIdentity(
     || !/^[0-9a-f]{40}$/u.test(releaseSha)
     || (environment.GITHUB_SHA !== undefined
       && environment.GITHUB_SHA !== releaseSha)
+    || ((environment.VERCEL === "1" || environment.VERCEL_ENV !== undefined)
+      && (!/^[0-9a-f]{40}$/u.test(environment.VERCEL_GIT_COMMIT_SHA ?? "")
+        || environment.VERCEL_GIT_COMMIT_SHA !== releaseSha))
   ) {
     throw new Error("WEB_RELEASE_IDENTITY_INVALID");
   }

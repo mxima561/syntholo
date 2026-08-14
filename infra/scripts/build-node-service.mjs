@@ -1,11 +1,25 @@
 #!/usr/bin/env node
 import { build } from "esbuild";
+import { evaluateProviderReleaseSha } from "./foundation-gate-lib.mjs";
 
 const releaseSha = process.env.RELEASE_SHA?.trim();
 if (releaseSha === undefined || !/^[0-9a-f]{40}$/u.test(releaseSha)) {
   throw new Error("RELEASE_SHA_INVALID");
 }
-if (process.env.GITHUB_SHA !== undefined && process.env.GITHUB_SHA !== releaseSha) {
+const configuredProvider = process.env.SYNTHOLO_BUILD_PROVIDER?.trim();
+const provider = configuredProvider === "railway"
+  ? "railway"
+  : process.env.GITHUB_SHA !== undefined
+    ? "github"
+    : undefined;
+if (
+  configuredProvider !== undefined
+  && configuredProvider !== ""
+  && configuredProvider !== "railway"
+) {
+  throw new Error("BUILD_PROVIDER_INVALID");
+}
+if (provider !== undefined && evaluateProviderReleaseSha(process.env, provider).status !== "PASS") {
   throw new Error("RELEASE_SHA_HEAD_MISMATCH");
 }
 
