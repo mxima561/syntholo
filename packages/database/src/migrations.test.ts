@@ -1,10 +1,12 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   assertPublishedMigrationInventory,
   PUBLISHED_MIGRATIONS,
+  resolveMigrationsFolder,
 } from "./migrations.js";
 
 const temporaryRoots: string[] = [];
@@ -24,6 +26,17 @@ afterEach(async () => {
 });
 
 describe("published migration inventory", () => {
+  it("resolves migrations copied beside the bundled release artifact", async () => {
+    const root = await mkdtemp(join(tmpdir(), "syntholo-migration-artifact-"));
+    temporaryRoots.push(root);
+    const bundledMigrations = join(root, "dist", "drizzle");
+    await mkdir(bundledMigrations, { recursive: true });
+
+    expect(resolveMigrationsFolder(
+      pathToFileURL(join(root, "dist", "migrate.js")).href,
+    )).toBe(bundledMigrations);
+  });
+
   it("accepts only the exact ordered published journal and file hashes", () => {
     expect(assertPublishedMigrationInventory(migrationsFolder)).toEqual(
       PUBLISHED_MIGRATIONS,

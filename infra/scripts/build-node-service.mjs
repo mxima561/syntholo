@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { build } from "esbuild";
+import { cp, rm } from "node:fs/promises";
 import { evaluateProviderReleaseSha } from "./foundation-gate-lib.mjs";
 
 const releaseSha = process.env.RELEASE_SHA?.trim();
@@ -56,3 +57,8 @@ await build({
   sourcemap: false,
   target: "node22.22.2",
 });
+
+if (service === "migrate") {
+  await rm("dist/drizzle", { force: true, recursive: true });
+  await cp("packages/database/drizzle", "dist/drizzle", { recursive: true });
+}

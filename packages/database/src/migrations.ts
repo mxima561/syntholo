@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readMigrationFiles } from "drizzle-orm/migrator";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import type { Database } from "./client.js";
@@ -52,8 +52,20 @@ export function assertPublishedMigrationInventory(
   }
 }
 
+export function resolveMigrationsFolder(moduleUrl: string): string {
+  const candidates = [
+    fileURLToPath(new URL("./drizzle", moduleUrl)),
+    fileURLToPath(new URL("../drizzle", moduleUrl)),
+  ];
+  const resolved = candidates.find((candidate) => existsSync(candidate));
+  if (resolved === undefined) {
+    throw new Error("PUBLISHED_MIGRATION_INVENTORY_INVALID");
+  }
+  return resolved;
+}
+
 export function migrateDatabase(database: Database): Promise<void> {
-  const migrationsFolder = fileURLToPath(new URL("../drizzle", import.meta.url));
+  const migrationsFolder = resolveMigrationsFolder(import.meta.url);
   assertPublishedMigrationInventory(migrationsFolder);
   return migrate(database, {
     migrationsFolder,

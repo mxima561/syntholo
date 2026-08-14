@@ -26,6 +26,7 @@ RUN groupadd --gid 10001 syntholo && useradd --uid 10001 --gid 10001 --no-create
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 WORKDIR /app
 COPY --from=build --chown=10001:10001 /workspace/dist/migrate.js /app/migrate.js
+COPY --from=build --chown=10001:10001 /workspace/dist/drizzle /app/drizzle
 USER 10001:10001
 ENTRYPOINT ["/usr/local/bin/node"]
 CMD ["/app/migrate.js"]
