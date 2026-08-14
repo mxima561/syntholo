@@ -1,19 +1,29 @@
 import { NextResponse } from "next/server";
-import { getRuntimeEnv } from "@/lib/config/env";
+
+const releaseShaPattern = /^[0-9a-f]{40}$/u;
+
+export function createWebHealthResponse(
+  environment: Readonly<Record<string, string | undefined>>,
+  artifactReleaseSha: string | undefined,
+) {
+  const validArtifact = artifactReleaseSha !== undefined
+    && releaseShaPattern.test(artifactReleaseSha);
+  const matchesRuntime = validArtifact
+    && environment.RELEASE_SHA === artifactReleaseSha;
+  return {
+    body: {
+      releaseSha: validArtifact ? artifactReleaseSha : "unavailable",
+      service: "web" as const,
+      status: matchesRuntime ? "ok" as const : "degraded" as const,
+    },
+    status: matchesRuntime ? 200 : 503,
+  };
+}
 
 export function GET() {
-  try {
-    const env = getRuntimeEnv();
-    return NextResponse.json({
-      ok: true,
-      mode: env.mode,
-      integrations: {
-        mongodb: Boolean(env.mongodb), stripe: Boolean(env.stripe), mux: Boolean(env.mux),
-        resend: Boolean(env.resend), posthog: Boolean(env.posthog), blob: Boolean(env.blobToken), highlevel: Boolean(env.highlevel),
-      },
-      checkedAt: new Date().toISOString(),
-    });
-  } catch (error) {
-    return NextResponse.json({ ok: false, error: error instanceof Error ? error.message : "Invalid runtime configuration." }, { status: 503 });
-  }
+  const response = createWebHealthResponse(
+    process.env,
+    process.env.NEXT_PUBLIC_RELEASE_SHA,
+  );
+  return NextResponse.json(response.body, { status: response.status });
 }

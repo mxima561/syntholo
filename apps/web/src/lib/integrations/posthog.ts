@@ -1,5 +1,5 @@
 import { getRuntimeEnv } from "@/lib/config/env";
-import type { AnalyticsAdapter } from "./contracts";
+import type { AnalyticsAdapter } from "@/lib/analytics/types";
 
 export class PostHogAnalyticsAdapter implements AnalyticsAdapter {
   async capture(input: { event: string; distinctId: string; properties?: Record<string, unknown> }) {

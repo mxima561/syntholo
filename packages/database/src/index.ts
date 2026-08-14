@@ -3,6 +3,7 @@ export type { Database, DatabaseCapability, DatabaseConfig } from "./client.js";
 export { selectMigrationDatabaseUrl } from "./migration-config.js";
 export type { MigrationEnvironment } from "./migration-config.js";
 export { migrateDatabase } from "./migrations.js";
+export { checkDatabaseReadiness } from "./readiness.js";
 export { AccountRepository } from "./repositories/accounts.js";
 export { AuditRepository } from "./repositories/audit.js";
 export type { AuditEventInput } from "./repositories/audit.js";

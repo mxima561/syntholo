@@ -14,24 +14,20 @@
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@clerk/nextjs": "7.7.4",
+    "@clerk/react": "6.14.1",
     "@mux/mux-player-react": "^3.10.2",
     "@stripe/stripe-js": "^7.9.0",
-    "@vercel/blob": "^2.3.0",
     "lucide-react": "^0.544.0",
-    "mongodb": "^6.20.0",
     "next": "16.3.0",
     "posthog-js": "^1.268.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "resend": "^6.1.0",
-    "stripe": "^18.5.0",
     "zod": "^4.1.11"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
     "@eslint/eslintrc": "^3.3.1",
-    "@playwright/test": "^1.55.1",
+    "@playwright/test": "1.62.1",
     "@tailwindcss/postcss": "^4.1.14",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",

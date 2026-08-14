@@ -10,7 +10,7 @@
     "db:migrate": "tsx src/migrate.ts",
     "db:schema:check": "drizzle-kit export --config drizzle.config.ts",
     "lint": "eslint --config ../../eslint.config.mjs src drizzle.config.ts vitest.config.ts vitest.integration.config.ts",
-    "test": "vitest run --passWithNoTests",
+    "test": "vitest run",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "typecheck": "tsc --noEmit"
   },

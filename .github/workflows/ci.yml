@@ -1,0 +1,281 @@
+name: foundation-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: foundation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: "true"
+
+jobs:
+  foundation:
+    name: foundation gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    services:
+      postgres:
+        image: postgres:16.14-alpine
+        env:
+          POSTGRES_DB: syntholo_test
+          POSTGRES_PASSWORD: syntholo
+          POSTGRES_USER: syntholo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U syntholo -d syntholo_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Check out full untrusted revision
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up exact Node runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.2
+          cache: npm
+      - name: Verify toolchain
+        timeout-minutes: 1
+        run: |
+          test "$(node --version)" = "v22.22.2"
+          test "$(npm --version)" = "10.9.7"
+          test "$(node -p 'require("./package-lock.json").packages["node_modules/@playwright/test"].version')" = "1.62.1"
+      - name: Install locked dependencies
+        timeout-minutes: 10
+        run: npm ci
+      - name: Install Chromium and system dependencies
+        timeout-minutes: 10
+        run: npx playwright install --with-deps chromium
+      - name: Bind evidence to checked-out revision
+        run: echo "RELEASE_SHA=${GITHUB_SHA}" >> "${GITHUB_ENV}"
+      - name: Run complete foundation engineering gate
+        timeout-minutes: 35
+        env:
+          FOUNDATION_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          TEST_DATABASE_URL: postgres://syntholo:syntholo@127.0.0.1:5432/syntholo_test
+        run: npm run gate:foundation
+      - name: Emit JUnit smoke report
+        if: always()
+        timeout-minutes: 3
+        run: >-
+          npm test -w @syntholo/testing -- gate-foundation.test.ts
+          --reporter=junit --outputFile=../../test-results/foundation-junit.xml
+      - name: Upload SHA-bound gate and test evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: foundation-${{ github.sha }}
+          if-no-files-found: ignore
+          retention-days: 14
+          path: |
+            foundation-gate.json
+            test-results
+            apps/web/test-results
+            apps/web/playwright-report
+
+  images:
+    name: clean runtime images
+    needs: foundation
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    services:
+      postgres:
+        image: postgres:16.14-alpine
+        env:
+          POSTGRES_DB: syntholo_test
+          POSTGRES_PASSWORD: syntholo
+          POSTGRES_USER: syntholo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U syntholo -d syntholo_test"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - name: Check out exact revision
+        uses: actions/checkout@08eba0b27e820071cde6df949e0beb9ba4906955 # v4.3.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up exact Node runtime
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.2
+          cache: npm
+      - name: Install lockfile for SBOM generation
+        timeout-minutes: 10
+        run: npm ci
+      - name: Build clean API, migration, and worker images
+        timeout-minutes: 18
+        run: |
+          docker build --no-cache --build-arg "RELEASE_SHA=${GITHUB_SHA}" --tag "syntholo-api:${GITHUB_SHA}" --file apps/api/Dockerfile .
+          docker build --no-cache --target migration-runtime --build-arg "RELEASE_SHA=${GITHUB_SHA}" --tag "syntholo-migrate:${GITHUB_SHA}" --file apps/api/Dockerfile .
+          docker build --no-cache --build-arg "RELEASE_SHA=${GITHUB_SHA}" --tag "syntholo-worker:${GITHUB_SHA}" --file apps/worker/Dockerfile .
+          docker build --no-cache --target cron-runtime --build-arg "RELEASE_SHA=${GITHUB_SHA}" --tag "syntholo-cron:${GITHUB_SHA}" --file apps/worker/Dockerfile .
+      - name: Inspect runtime users, commands, labels, files, and history
+        timeout-minutes: 4
+        run: |
+          node infra/scripts/inspect-image.mjs "syntholo-api:${GITHUB_SHA}" api "${GITHUB_SHA}" api-image-inspection.json
+          node infra/scripts/inspect-image.mjs "syntholo-cron:${GITHUB_SHA}" cron "${GITHUB_SHA}" cron-image-inspection.json
+          node infra/scripts/inspect-image.mjs "syntholo-migrate:${GITHUB_SHA}" migrate "${GITHUB_SHA}" migration-image-inspection.json
+          node infra/scripts/inspect-image.mjs "syntholo-worker:${GITHUB_SHA}" worker "${GITHUB_SHA}" worker-image-inspection.json
+      - name: Prove missing configuration fails closed with safe logs
+        timeout-minutes: 2
+        run: |
+          set +e
+          docker run --rm "syntholo-api:${GITHUB_SHA}" > api-missing-config.log 2>&1
+          api_status=$?
+          docker run --rm "syntholo-worker:${GITHUB_SHA}" > worker-missing-config.log 2>&1
+          worker_status=$?
+          docker run --rm "syntholo-cron:${GITHUB_SHA}" > cron-missing-config.log 2>&1
+          cron_status=$?
+          docker run --rm "syntholo-migrate:${GITHUB_SHA}" > migration-missing-config.log 2>&1
+          migration_status=$?
+          set -e
+          test "${api_status}" -ne 0
+          test "${worker_status}" -ne 0
+          test "${cron_status}" -ne 0
+          test "${migration_status}" -ne 0
+          test "$(cat api-missing-config.log)" = "API_STARTUP_FAILED"
+          test "$(cat worker-missing-config.log)" = "WORKER_STARTUP_FAILED"
+          test "$(cat cron-missing-config.log)" = "WORKER_STARTUP_FAILED"
+          test "$(cat migration-missing-config.log)" = "MIGRATION_STARTUP_FAILED"
+          set +e
+          docker run --rm -e RELEASE_SHA=ABC "syntholo-api:${GITHUB_SHA}" > api-malformed-config.log 2>&1
+          api_malformed_status=$?
+          docker run --rm -e RELEASE_SHA=ABC "syntholo-worker:${GITHUB_SHA}" > worker-malformed-config.log 2>&1
+          worker_malformed_status=$?
+          docker run --rm -e RELEASE_SHA=ABC "syntholo-cron:${GITHUB_SHA}" > cron-malformed-config.log 2>&1
+          cron_malformed_status=$?
+          docker run --rm -e RELEASE_SHA=ABC "syntholo-migrate:${GITHUB_SHA}" > migration-malformed-config.log 2>&1
+          migration_malformed_status=$?
+          set -e
+          test "${api_malformed_status}" -ne 0
+          test "${worker_malformed_status}" -ne 0
+          test "${cron_malformed_status}" -ne 0
+          test "${migration_malformed_status}" -ne 0
+          test "$(cat api-malformed-config.log)" = "API_STARTUP_FAILED"
+          test "$(cat worker-malformed-config.log)" = "WORKER_STARTUP_FAILED"
+          test "$(cat cron-malformed-config.log)" = "WORKER_STARTUP_FAILED"
+          test "$(cat migration-malformed-config.log)" = "MIGRATION_STARTUP_FAILED"
+      - name: Smoke-test migration, readiness, exact release, and graceful drain
+        timeout-minutes: 5
+        run: |
+          docker run --rm --network host \
+            -e "RELEASE_SHA=${GITHUB_SHA}" \
+            -e DATABASE_MIGRATION_TARGET=production \
+            -e DATABASE_DIRECT_URL=postgres://syntholo:syntholo@127.0.0.1:5432/syntholo_test \
+            "syntholo-migrate:${GITHUB_SHA}"
+          docker run --rm --network host -e PGPASSWORD=syntholo postgres:16.14-alpine \
+            psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -U syntholo -d syntholo_test \
+            -c "create role member_runtime login password 'member_runtime'; create role staff_runtime login password 'staff_runtime'; create role worker_runtime login password 'worker_runtime'; grant syntholo_member_api to member_runtime with inherit true, set false, admin false; grant syntholo_staff_api to staff_runtime with inherit true, set false, admin false; grant syntholo_worker to worker_runtime with inherit true, set false, admin false;"
+          docker run --detach --network host --name syntholo-api-smoke \
+            -e "RELEASE_SHA=${GITHUB_SHA}" -e NODE_ENV=production -e PORT=4400 \
+            -e MEMBER_DATABASE_URL=postgres://member_runtime:member_runtime@127.0.0.1:5432/syntholo_test \
+            -e STAFF_DATABASE_URL=postgres://staff_runtime:staff_runtime@127.0.0.1:5432/syntholo_test \
+            -e WEB_ORIGIN=https://app.syntholo.test -e CLERK_SECRET_KEY=sk_test \
+            -e CLERK_PUBLISHABLE_KEY=pk_test -e CLERK_AUDIENCE=syntholo-member-api \
+            -e WORKOS_API_KEY=sk_test -e WORKOS_CLIENT_ID=client_test \
+            -e WORKOS_ORGANIZATION_ID=org_test -e WORKOS_ISSUER=https://api.workos.test \
+            -e WORKOS_JWKS_URL=https://api.workos.test/sso/jwks/client_test \
+            -e STAFF_SESSION_ENCRYPTION_KEYS=1:BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU \
+            "syntholo-api:${GITHUB_SHA}"
+          for attempt in $(seq 1 30); do
+            curl --fail --silent http://127.0.0.1:4400/v1/health/ready > api-ready.json && break
+            sleep 1
+          done
+          node -e 'const value=require("./api-ready.json"); if(value.status!=="ok"||value.releaseSha!==process.env.GITHUB_SHA)process.exit(1)'
+          docker stop --time 10 syntholo-api-smoke
+          test "$(docker inspect --format '{{.State.ExitCode}}' syntholo-api-smoke)" = "0"
+          docker logs syntholo-api-smoke > api-valid-startup.log 2>&1
+          docker rm syntholo-api-smoke
+          docker run --detach --network host --name syntholo-worker-smoke \
+            -e "RELEASE_SHA=${GITHUB_SHA}" \
+            -e DATABASE_URL=postgres://worker_runtime:worker_runtime@127.0.0.1:5432/syntholo_test \
+            -e WORKER_CONCURRENCY=1 -e WORKER_IDLE_DELAY_MS=100 \
+            "syntholo-worker:${GITHUB_SHA}"
+          sleep 3
+          test "$(docker inspect --format '{{.State.Running}}' syntholo-worker-smoke)" = "true"
+          docker stop --time 10 syntholo-worker-smoke
+          test "$(docker inspect --format '{{.State.ExitCode}}' syntholo-worker-smoke)" = "0"
+          docker logs syntholo-worker-smoke > worker-graceful-drain.log 2>&1
+          docker rm syntholo-worker-smoke
+          docker run --rm --network host \
+            -e "RELEASE_SHA=${GITHUB_SHA}" \
+            -e DATABASE_URL=postgres://worker_runtime:worker_runtime@127.0.0.1:5432/syntholo_test \
+            -e WORKER_CONCURRENCY=1 -e WORKER_IDLE_DELAY_MS=100 \
+            "syntholo-cron:${GITHUB_SHA}"
+      - name: Generate production dependency SBOM
+        timeout-minutes: 3
+        run: npm sbom --omit=dev --sbom-format cyclonedx > npm-production.cdx.json
+      - name: Generate API image SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: syntholo-api:${{ github.sha }}
+          format: cyclonedx
+          output: api-image.cdx.json
+      - name: Block API high and critical runtime vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: syntholo-api:${{ github.sha }}
+          format: table
+          output: api-vulnerabilities.txt
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+      - name: Generate migration image SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: syntholo-migrate:${{ github.sha }}
+          format: cyclonedx
+          output: migration-image.cdx.json
+      - name: Block migration high and critical runtime vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: syntholo-migrate:${{ github.sha }}
+          format: table
+          output: migration-vulnerabilities.txt
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+      - name: Generate worker image SBOM
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: syntholo-worker:${{ github.sha }}
+          format: cyclonedx
+          output: worker-image.cdx.json
+      - name: Block worker high and critical runtime vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: syntholo-worker:${{ github.sha }}
+          format: table
+          output: worker-vulnerabilities.txt
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+      - name: Upload image, SBOM, scan, and fail-closed evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: images-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            *-image-inspection.json
+            *-missing-config.log
+            *-malformed-config.log
+            *-image.cdx.json
+            *-vulnerabilities.txt
+            *-startup.log
+            *-drain.log
+            api-ready.json
+            npm-production.cdx.json

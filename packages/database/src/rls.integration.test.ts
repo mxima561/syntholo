@@ -465,7 +465,7 @@ describe.sequential("capability role provisioning migration", () => {
           "select count(*)::text as count from drizzle.__drizzle_migrations",
         )
       ));
-      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["5", "5"]);
+      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["6", "6"]);
       const passwords = await maintenance.query<{
         rolname: string;
         rolpasswordisnull: boolean;

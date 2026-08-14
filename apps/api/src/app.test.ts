@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { ApiErrorSchema, HealthResponseSchema } from "@syntholo/contracts";
 import Fastify, {
@@ -21,12 +21,13 @@ import { startApi } from "./server.js";
 const execFileAsync = promisify(execFile);
 const validCorrelationId = "2c714c69-0b75-46ef-8141-739a72ec9689";
 const secondCorrelationId = "b97478b2-1ef7-4aef-8b03-f89e1f80cae5";
+const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 
 function fakes(
   patch: Partial<ApiDependencies> = {},
 ): ApiDependencies {
   return {
-    releaseSha: "test",
+    releaseSha,
     logger: false,
     health: { dependencies: [] },
     auth: { kind: "test-only-disabled" },
@@ -600,7 +601,7 @@ describe("buildApp", () => {
     expect(response.statusCode).toBe(200);
     expect(HealthResponseSchema.parse(response.json())).toEqual({
       status: "ok",
-      releaseSha: "test",
+      releaseSha,
       service: "api",
       dependencies: [],
     });
@@ -631,7 +632,7 @@ describe("buildApp", () => {
     expect(response.statusCode).toBe(200);
     expect(HealthResponseSchema.parse(response.json())).toEqual({
       status: "ok",
-      releaseSha: "test",
+      releaseSha,
       service: "api",
       dependencies: [{ name: "postgres", status: "ok", latencyMs: 3 }],
     });
@@ -666,7 +667,7 @@ describe("buildApp", () => {
     expect(response.statusCode).toBe(503);
     expect(HealthResponseSchema.parse(response.json())).toEqual({
       status: "degraded",
-      releaseSha: "test",
+      releaseSha,
       service: "api",
       dependencies: [
         { name: "postgres", status: "degraded", latencyMs: 42 },
@@ -710,7 +711,7 @@ describe("buildApp", () => {
     expect(response.statusCode).toBe(503);
     expect(HealthResponseSchema.parse(response.json())).toEqual({
       status: "degraded",
-      releaseSha: "test",
+      releaseSha,
       service: "api",
       dependencies: [
         { name: "postgres", status: "degraded", latencyMs: 0 },
@@ -970,7 +971,7 @@ describe("API configuration and startup", () => {
 
   it("normalizes valid composition before both health contracts are served", async () => {
     const app = await buildApp({
-      releaseSha: "  release-composition  ",
+      releaseSha: `  ${releaseSha}  `,
       logger: false,
       health: {
         dependencies: [
@@ -995,14 +996,14 @@ describe("API configuration and startup", () => {
     expect(live.statusCode).toBe(200);
     expect(HealthResponseSchema.parse(live.json())).toEqual({
       status: "ok",
-      releaseSha: "release-composition",
+      releaseSha,
       service: "api",
       dependencies: [],
     });
     expect(ready.statusCode).toBe(200);
     expect(HealthResponseSchema.parse(ready.json())).toEqual({
       status: "ok",
-      releaseSha: "release-composition",
+      releaseSha,
       service: "api",
       dependencies: [{ name: "postgres", status: "ok", latencyMs: 5 }],
     });
@@ -1019,7 +1020,7 @@ describe("API configuration and startup", () => {
         PORT: "4400",
         MEMBER_DATABASE_URL: "postgres://member:password@example.test/db",
         STAFF_DATABASE_URL: "postgres://staff:password@example.test/db",
-        RELEASE_SHA: "  release-abc  ",
+        RELEASE_SHA: `  ${releaseSha}  `,
         WEB_ORIGIN: "https://app.syntholo.test",
         CLERK_SECRET_KEY: "sk_clerk_test",
         CLERK_PUBLISHABLE_KEY: "pk_clerk_test",
@@ -1037,7 +1038,7 @@ describe("API configuration and startup", () => {
       port: 4_400,
       memberDatabaseUrl: "postgres://member:password@example.test/db",
       staffDatabaseUrl: "postgres://staff:password@example.test/db",
-      releaseSha: "release-abc",
+      releaseSha,
       webOrigin: "https://app.syntholo.test",
       clerkSecretKey: "sk_clerk_test",
       clerkPublishableKey: "pk_clerk_test",
@@ -1049,6 +1050,32 @@ describe("API configuration and startup", () => {
       workosJwksUrl: "https://api.workos.test/sso/jwks/client_staff",
       sessionEncryptionKeys: `1:${encryptionKey}`,
     });
+  });
+
+  it("rejects malformed or artifact-mismatched immutable releases", () => {
+    const encryptionKey = Buffer.alloc(32, 5).toString("base64url");
+    const environment = {
+      NODE_ENV: "production",
+      MEMBER_DATABASE_URL: "postgres://member:password@example.test/db",
+      STAFF_DATABASE_URL: "postgres://staff:password@example.test/db",
+      WEB_ORIGIN: "https://app.syntholo.test",
+      CLERK_SECRET_KEY: "sk_clerk_test",
+      CLERK_PUBLISHABLE_KEY: "pk_clerk_test",
+      CLERK_AUDIENCE: "syntholo-member-api",
+      WORKOS_API_KEY: "sk_workos_test",
+      WORKOS_CLIENT_ID: "client_staff",
+      WORKOS_ORGANIZATION_ID: "org_staff",
+      WORKOS_ISSUER: "https://api.workos.test",
+      WORKOS_JWKS_URL: "https://api.workos.test/sso/jwks/client_staff",
+      STAFF_SESSION_ENCRYPTION_KEYS: `1:${encryptionKey}`,
+    };
+
+    expect(() => parseApiConfig({ ...environment, RELEASE_SHA: "ABC" }, releaseSha))
+      .toThrow("API_CONFIG_INVALID");
+    expect(() => parseApiConfig({
+      ...environment,
+      RELEASE_SHA: "1123456789abcdef0123456789abcdef01234567",
+    }, releaseSha)).toThrow("API_CONFIG_INVALID");
   });
 
   it.each([
@@ -1085,12 +1112,14 @@ describe("compiled API artifact", () => {
   beforeAll(async () => {
     await execFileAsync("npm", ["run", "build"], {
       cwd: new URL("..", import.meta.url),
+      env: { ...process.env, RELEASE_SHA: releaseSha },
     });
   });
 
   it("produces executable Node.js and fails production startup closed", async () => {
     const artifact = new URL("../dist/server.js", import.meta.url);
     await expect(access(artifact)).resolves.toBeUndefined();
+    await expect(readFile(artifact, "utf8")).resolves.toContain(releaseSha);
     await expect(
       execFileAsync(process.execPath, [artifact.pathname], {
         env: { NODE_ENV: "production", PATH: process.env.PATH },

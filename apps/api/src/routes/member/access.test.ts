@@ -56,7 +56,7 @@ function dependencies(
     access: { getEffectiveAccess },
   };
   return {
-    releaseSha: "test",
+    releaseSha: "1111111111111111111111111111111111111111",
     health: { dependencies: [] },
     auth: {
       kind: "enabled",

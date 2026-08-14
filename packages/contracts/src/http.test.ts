@@ -51,7 +51,7 @@ describe("HealthResponseSchema", () => {
     expect(
       HealthResponseSchema.parse({
         status: "degraded",
-        releaseSha: "abc123",
+        releaseSha: "1111111111111111111111111111111111111111",
         service: "api",
         dependencies: [
           {
@@ -64,7 +64,7 @@ describe("HealthResponseSchema", () => {
       }),
     ).toEqual({
       status: "degraded",
-      releaseSha: "abc123",
+      releaseSha: "1111111111111111111111111111111111111111",
       service: "api",
       dependencies: [
         { name: "postgres", status: "degraded", latencyMs: 42 },

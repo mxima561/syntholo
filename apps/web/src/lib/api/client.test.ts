@@ -139,4 +139,42 @@ describe("web API boundary", () => {
       parseWebApiConfig({ NODE_ENV: "production" }),
     ).toThrow("WEB_API_CONFIG_INVALID");
   });
+
+  it.each([
+    "DATABASE_URL",
+    "CLERK_SECRET_KEY",
+    "WORKOS_API_KEY",
+    "STRIPE_SECRET_KEY",
+    "HIGHLEVEL_API_KEY",
+    "POSTHOG_PERSONAL_API_KEY",
+    "OPENAI_API_KEY",
+    "NEXT_PUBLIC_OPENAI_API_KEY",
+  ])("rejects privileged key %s from the server-side web config", (key) => {
+    expect(() => parseWebApiConfig({ APP_MODE: "demo", [key]: "" }))
+      .toThrow("WEB_API_CONFIG_INVALID");
+  });
+
+  it("rejects preview-to-production upstream linkage", () => {
+    expect(() => parseWebApiConfig({
+      APP_MODE: "production",
+      API_UPSTREAM_ORIGIN: "https://api.syntholo.internal",
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_live_test",
+      VERCEL_ENV: "preview",
+      WEB_ORIGIN: "https://feature-123.vercel.app",
+    })).toThrow("WEB_API_CONFIG_INVALID");
+  });
+
+  it("rejects any preview API or authentication linkage even in demo mode", () => {
+    expect(() => parseWebApiConfig({
+      API_UPSTREAM_ORIGIN: "https://api.syntholo.internal",
+      APP_MODE: "demo",
+      VERCEL_ENV: "preview",
+      WEB_ORIGIN: "https://feature-123.vercel.app",
+    })).toThrow("WEB_API_CONFIG_INVALID");
+    expect(() => parseWebApiConfig({
+      APP_MODE: "demo",
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_live_test",
+      VERCEL_ENV: "preview",
+    })).toThrow("WEB_API_CONFIG_INVALID");
+  });
 });

@@ -1,5 +1,5 @@
-import { SignIn } from "@clerk/nextjs";
+import { PublicSignIn } from "@/components/public-auth";
 
 export default function SignInPage() {
-  return <SignIn />;
+  return <PublicSignIn />;
 }

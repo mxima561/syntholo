@@ -3,7 +3,12 @@ import { parseRuntimeEnv } from "./env";
 
 describe("parseRuntimeEnv", () => {
   it("allows demo mode without vendor credentials", () => {
-    expect(parseRuntimeEnv({ APP_MODE: "demo" })).toMatchObject({ mode: "demo", vendorsConfigured: false });
+    expect(parseRuntimeEnv({ APP_MODE: "demo" })).toEqual({
+      appUrl: "http://localhost:3000",
+      clerkPublishableKey: undefined,
+      mode: "demo",
+      posthog: undefined,
+    });
   });
 
   it("never silently defaults a production Node runtime to demo mode", () => {
@@ -12,11 +17,49 @@ describe("parseRuntimeEnv", () => {
     );
   });
 
-  it("rejects a partial Stripe configuration", () => {
-    expect(() => parseRuntimeEnv({ APP_MODE: "demo", STRIPE_SECRET_KEY: "sk_test_partial" })).toThrow(/stripe/i);
+  it.each([
+    "DATABASE_URL",
+    "DATABASE_DIRECT_URL",
+    "MEMBER_DATABASE_URL",
+    "CLERK_SECRET_KEY",
+    "WORKOS_API_KEY",
+    "STRIPE_SECRET_KEY",
+    "MUX_TOKEN_SECRET",
+    "RESEND_API_KEY",
+    "BLOB_READ_WRITE_TOKEN",
+    "HIGHLEVEL_API_KEY",
+    "POSTHOG_PERSONAL_API_KEY",
+    "OPENAI_API_KEY",
+    "NEXT_PUBLIC_OPENAI_API_KEY",
+  ])("rejects the privileged web environment key %s even when blank", (key) => {
+    expect(() => parseRuntimeEnv({ APP_MODE: "demo", [key]: "" })).toThrow(
+      "WEB_ENV_FORBIDDEN_KEY",
+    );
   });
 
-  it("requires every production integration", () => {
-    expect(() => parseRuntimeEnv({ APP_MODE: "production" })).toThrow(/production/i);
+  it("preserves only public PostHog configuration", () => {
+    expect(parseRuntimeEnv({
+      APP_MODE: "demo",
+      NEXT_PUBLIC_POSTHOG_HOST: "https://us.i.posthog.com",
+      NEXT_PUBLIC_POSTHOG_KEY: "ph_public",
+    }).posthog).toEqual({
+      host: "https://us.i.posthog.com",
+      key: "ph_public",
+    });
+  });
+
+  it("requires Clerk and an exact canonical URL in production", () => {
+    expect(() => parseRuntimeEnv({ APP_MODE: "production" })).toThrow(
+      "WEB_ENV_INVALID",
+    );
+    expect(parseRuntimeEnv({
+      APP_MODE: "production",
+      APP_URL: "https://app.syntholo.test",
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_live_test",
+    })).toMatchObject({
+      appUrl: "https://app.syntholo.test",
+      clerkPublishableKey: "pk_live_test",
+      mode: "production",
+    });
   });
 });

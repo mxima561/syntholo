@@ -294,7 +294,8 @@ export async function assertDatabaseCapability(
                     'syntholo_record_access_decision(uuid,uuid,text,boolean,text,uuid[],integer,text,timestamp with time zone)',
                     'syntholo_redeem_invitation(uuid,uuid,text,bytea,text,text,timestamp with time zone)',
                     'syntholo_refund_product(uuid,uuid,text,uuid,text,timestamp with time zone)',
-                    'syntholo_resolve_dispute(uuid,uuid,text,uuid,text,timestamp with time zone)'
+                    'syntholo_resolve_dispute(uuid,uuid,text,uuid,text,timestamp with time zone)',
+                    'syntholo_runtime_readiness()'
                   ))) as forbidden_system_routine_privileges
        from pg_roles r cross join expected_capability cap
        where r.rolname = session_user`,

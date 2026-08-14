@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { parseWorkerConfig } from "./config.js";
@@ -19,6 +19,7 @@ import type { ClaimedJob, HandlerReceiptClaim } from "@syntholo/database";
 
 const execFileAsync = promisify(execFile);
 const now = new Date("2026-08-13T12:00:00.000Z");
+const releaseSha = "0123456789abcdef0123456789abcdef01234567";
 
 function jobRepository(claim = vi.fn(async () => [] as readonly WorkerJob[])) {
   const complete: WorkerDependencies<WorkerJob>["jobs"]["complete"] =
@@ -42,7 +43,7 @@ function dependencies(
   return {
     config: {
       databaseUrl: "postgres://worker:password@example.test/db",
-      releaseSha: "test-release",
+      releaseSha,
       concurrency: 2,
       idleDelayMs: 1_000,
     },
@@ -70,16 +71,29 @@ describe("worker configuration and startup", () => {
     expect(
       parseWorkerConfig({
         DATABASE_URL: "  postgres://worker:password@example.test/db  ",
-        RELEASE_SHA: "  release-worker  ",
+        RELEASE_SHA: `  ${releaseSha}  `,
         WORKER_CONCURRENCY: "4",
         WORKER_IDLE_DELAY_MS: "750",
       }),
     ).toEqual({
       databaseUrl: "postgres://worker:password@example.test/db",
-      releaseSha: "release-worker",
+      releaseSha,
       concurrency: 4,
       idleDelayMs: 750,
     });
+  });
+
+  it("rejects malformed and artifact-mismatched release identity", () => {
+    const environment = {
+      DATABASE_URL: "postgres://worker:password@example.test/db",
+      WORKER_CONCURRENCY: "2",
+    };
+    expect(() => parseWorkerConfig({ ...environment, RELEASE_SHA: "ABC" }, releaseSha))
+      .toThrow("WORKER_CONFIG_INVALID");
+    expect(() => parseWorkerConfig({
+      ...environment,
+      RELEASE_SHA: "1123456789abcdef0123456789abcdef01234567",
+    }, releaseSha)).toThrow("WORKER_CONFIG_INVALID");
   });
 
   it.each([
@@ -169,7 +183,7 @@ describe("runWorker", () => {
     const deps = dependencies({
       config: {
         databaseUrl: "postgres://worker:password@example.test/db",
-        releaseSha: "test-release",
+        releaseSha,
         concurrency: 7,
         idleDelayMs: 1_000,
       },
@@ -199,7 +213,7 @@ describe("runWorker", () => {
       dependencies({
         config: {
           databaseUrl: "postgres://worker:password@example.test/db",
-          releaseSha: "test-release",
+          releaseSha,
           concurrency: 2,
           idleDelayMs: 2_500,
         },
@@ -221,7 +235,7 @@ describe("runWorker", () => {
       dependencies({
         config: {
           databaseUrl: "postgres://worker:password@example.test/db",
-          releaseSha: "test-release",
+          releaseSha,
           concurrency: 2,
           idleDelayMs: 60_000,
         },
@@ -651,6 +665,7 @@ describe("compiled worker artifacts", () => {
   beforeAll(async () => {
     await execFileAsync("npm", ["run", "build"], {
       cwd: new URL("..", import.meta.url),
+      env: { ...process.env, RELEASE_SHA: releaseSha },
     });
   });
 
@@ -659,6 +674,7 @@ describe("compiled worker artifacts", () => {
     async (filename) => {
       const artifact = new URL(`../dist/${filename}`, import.meta.url);
       await expect(access(artifact)).resolves.toBeUndefined();
+      await expect(readFile(artifact, "utf8")).resolves.toContain(releaseSha);
       await expect(
         execFileAsync(process.execPath, [artifact.pathname], {
           env: { PATH: process.env.PATH },

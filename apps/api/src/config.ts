@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { parseStaffSessionKeyRing } from "./auth/session-crypto.js";
+import { artifactReleaseSha } from "./release.js";
 
 export type RuntimeEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -32,7 +33,7 @@ const ApiEnvironmentSchema = z.object({
   DATABASE_URL: optionalNonemptyString,
   MEMBER_DATABASE_URL: optionalNonemptyString,
   STAFF_DATABASE_URL: optionalNonemptyString,
-  RELEASE_SHA: optionalNonemptyString,
+  RELEASE_SHA: z.string().trim().regex(/^[0-9a-f]{40}$/u).optional(),
   WEB_ORIGIN: optionalNonemptyString,
   CLERK_SECRET_KEY: optionalNonemptyString,
   CLERK_PUBLISHABLE_KEY: optionalNonemptyString,
@@ -64,7 +65,10 @@ export type ApiConfig = Readonly<{
   sessionEncryptionKeys: string;
 }>;
 
-export function parseApiConfig(environment: RuntimeEnvironment): ApiConfig {
+export function parseApiConfig(
+  environment: RuntimeEnvironment,
+  embeddedReleaseSha: string | undefined = artifactReleaseSha,
+): ApiConfig {
   try {
     const result = ApiEnvironmentSchema.parse(environment);
     const required = {
@@ -90,6 +94,13 @@ export function parseApiConfig(environment: RuntimeEnvironment): ApiConfig {
     };
     if (Object.values(required).some((value) => value === undefined)) {
       throw new Error("missing config");
+    }
+    if (
+      embeddedReleaseSha !== undefined
+      && (!/^[0-9a-f]{40}$/u.test(embeddedReleaseSha)
+        || required.releaseSha !== embeddedReleaseSha)
+    ) {
+      throw new Error("release mismatch");
     }
     if (required.memberDatabaseUrl === required.staffDatabaseUrl) {
       throw new Error("database capabilities must use distinct credentials");

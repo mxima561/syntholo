@@ -1,0 +1,10 @@
+"$schema" = "https://railway.com/railway.schema.json"
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/worker/Dockerfile"
+dockerfileTarget = "cron-runtime"
+
+[deploy]
+startCommand = "/usr/local/bin/node /app/cron.js"
+restartPolicyType = "NEVER"

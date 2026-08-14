@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import {
   assertDatabaseCapability,
+  checkDatabaseReadiness,
   createDatabase,
   MemberIdentityRepository,
   MemberEntitlementReadRepository,
@@ -61,19 +62,17 @@ async function productionDependencies(config: ApiConfig): Promise<{
           dependencies: [
             {
               name: "member-postgres",
-              check: async () => {
-                const started = Date.now();
-                await memberDatabase.pool.query("select 1");
-                return { status: "ok", latencyMs: Date.now() - started };
-              },
+              check: () => checkDatabaseReadiness(
+                memberDatabase,
+                "syntholo_member_api",
+              ),
             },
             {
               name: "staff-postgres",
-              check: async () => {
-                const started = Date.now();
-                await staffDatabase.pool.query("select 1");
-                return { status: "ok", latencyMs: Date.now() - started };
-              },
+              check: () => checkDatabaseReadiness(
+                staffDatabase,
+                "syntholo_staff_api",
+              ),
             },
           ],
         },

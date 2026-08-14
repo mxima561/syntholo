@@ -1,69 +1,72 @@
 import { z } from "zod";
 
-const rawSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).optional(),
+const allowedKeys = [
+  "APP_MODE",
+  "APP_URL",
+  "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+  "NEXT_PUBLIC_POSTHOG_HOST",
+  "NEXT_PUBLIC_POSTHOG_KEY",
+] as const;
+
+const forbiddenKey = /^(?:(?:DATABASE_(?:DIRECT_|POOLED_)?URL|TEST_DATABASE_URL|(?:MEMBER|STAFF|SYSTEM|WORKER)_DATABASE_URL|WORKOS_.+|STRIPE_(?:SECRET|WEBHOOK).+|MUX_(?:TOKEN|SIGNING).+|RESEND_(?:API|SECRET).+|BLOB_(?:READ_WRITE|WRITE).+|HIGHLEVEL_.+)|.*(?:SECRET(?:_KEY)?|API_KEY|PRIVATE_KEY|WRITE_TOKEN))$/u;
+
+const WebEnvironmentSchema = z.object({
   APP_MODE: z.enum(["demo", "production"]).default("demo"),
-  APP_URL: z.url().optional(),
-  MONGODB_URI: z.string().min(1).optional(),
-  MONGODB_DATABASE: z.string().min(1).optional(),
-  STRIPE_SECRET_KEY: z.string().startsWith("sk_").optional(),
-  STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_").optional(),
-  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().startsWith("pk_").optional(),
-  MUX_TOKEN_ID: z.string().min(1).optional(),
-  MUX_TOKEN_SECRET: z.string().min(1).optional(),
-  RESEND_API_KEY: z.string().startsWith("re_").optional(),
-  RESEND_FROM_EMAIL: z.email().optional(),
+  APP_URL: z.url().default("http://localhost:3000"),
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().startsWith("pk_").optional(),
   NEXT_PUBLIC_POSTHOG_KEY: z.string().min(1).optional(),
   NEXT_PUBLIC_POSTHOG_HOST: z.url().optional(),
-  BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
-  HIGHLEVEL_API_KEY: z.string().min(1).optional(),
-  HIGHLEVEL_LOCATION_ID: z.string().min(1).optional(),
-});
+}).strict();
 
-const groups = [
-  ["Stripe", ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"]],
-  ["MongoDB", ["MONGODB_URI", "MONGODB_DATABASE"]],
-  ["Mux", ["MUX_TOKEN_ID", "MUX_TOKEN_SECRET"]],
-  ["Resend", ["RESEND_API_KEY", "RESEND_FROM_EMAIL"]],
-  ["PostHog", ["NEXT_PUBLIC_POSTHOG_KEY", "NEXT_PUBLIC_POSTHOG_HOST"]],
-  ["HighLevel", ["HIGHLEVEL_API_KEY", "HIGHLEVEL_LOCATION_ID"]],
-] as const;
-
-const productionRequired = [
-  "MONGODB_URI", "MONGODB_DATABASE",
-  "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "MUX_TOKEN_ID", "MUX_TOKEN_SECRET", "RESEND_API_KEY",
-  "RESEND_FROM_EMAIL", "NEXT_PUBLIC_POSTHOG_KEY", "NEXT_PUBLIC_POSTHOG_HOST", "BLOB_READ_WRITE_TOKEN",
-] as const;
+function exactOrigin(value: string, secure: boolean): string {
+  const url = new URL(value);
+  if (
+    (secure ? url.protocol !== "https:" : !["http:", "https:"].includes(url.protocol))
+    || url.username !== ""
+    || url.password !== ""
+    || url.pathname !== "/"
+    || url.search !== ""
+    || url.hash !== ""
+  ) {
+    throw new Error("invalid origin");
+  }
+  return url.origin;
+}
 
 export function parseRuntimeEnv(input: Record<string, string | undefined>) {
+  for (const key of Object.keys(input)) {
+    if (forbiddenKey.test(key)) throw new Error("WEB_ENV_FORBIDDEN_KEY");
+  }
   if (input.NODE_ENV === "production" && input.APP_MODE === undefined) {
     throw new Error("Production mode must be configured explicitly.");
   }
-  const parsed = rawSchema.parse(input);
-  for (const [label, keys] of groups) {
-    const present = keys.filter((key) => Boolean(parsed[key]));
-    if (present.length > 0 && present.length < keys.length) {
-      throw new Error(`${label} configuration is partial. Configure ${keys.join(", ")} together.`);
+  try {
+    const selected = Object.fromEntries(
+      allowedKeys.flatMap((key) => input[key] === undefined ? [] : [[key, input[key]]]),
+    );
+    const parsed = WebEnvironmentSchema.parse(selected);
+    const production = parsed.APP_MODE === "production";
+    if (production && parsed.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY === undefined) {
+      throw new Error("clerk required");
     }
-  }
-  if (parsed.APP_MODE === "production") {
-    const missing = productionRequired.filter((key) => !parsed[key]);
-    if (missing.length > 0) throw new Error(`Production mode is missing required integrations: ${missing.join(", ")}.`);
-  }
+    const hasPosthogKey = parsed.NEXT_PUBLIC_POSTHOG_KEY !== undefined;
+    const hasPosthogHost = parsed.NEXT_PUBLIC_POSTHOG_HOST !== undefined;
+    if (hasPosthogKey !== hasPosthogHost) throw new Error("posthog partial");
 
-  const configuredCount = productionRequired.filter((key) => Boolean(parsed[key])).length;
-  return {
-    mode: parsed.APP_MODE,
-    appUrl: parsed.APP_URL ?? "http://localhost:3000",
-    vendorsConfigured: configuredCount === productionRequired.length,
-    mongodb: parsed.MONGODB_URI && parsed.MONGODB_DATABASE ? { uri: parsed.MONGODB_URI, database: parsed.MONGODB_DATABASE } : undefined,
-    stripe: parsed.STRIPE_SECRET_KEY && parsed.STRIPE_WEBHOOK_SECRET ? { secretKey: parsed.STRIPE_SECRET_KEY, webhookSecret: parsed.STRIPE_WEBHOOK_SECRET, publishableKey: parsed.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY } : undefined,
-    mux: parsed.MUX_TOKEN_ID && parsed.MUX_TOKEN_SECRET ? { tokenId: parsed.MUX_TOKEN_ID, tokenSecret: parsed.MUX_TOKEN_SECRET } : undefined,
-    resend: parsed.RESEND_API_KEY && parsed.RESEND_FROM_EMAIL ? { apiKey: parsed.RESEND_API_KEY, fromEmail: parsed.RESEND_FROM_EMAIL } : undefined,
-    posthog: parsed.NEXT_PUBLIC_POSTHOG_KEY && parsed.NEXT_PUBLIC_POSTHOG_HOST ? { key: parsed.NEXT_PUBLIC_POSTHOG_KEY, host: parsed.NEXT_PUBLIC_POSTHOG_HOST } : undefined,
-    blobToken: parsed.BLOB_READ_WRITE_TOKEN,
-    highlevel: parsed.HIGHLEVEL_API_KEY && parsed.HIGHLEVEL_LOCATION_ID ? { apiKey: parsed.HIGHLEVEL_API_KEY, locationId: parsed.HIGHLEVEL_LOCATION_ID } : undefined,
-  };
+    return Object.freeze({
+      appUrl: exactOrigin(parsed.APP_URL, production),
+      clerkPublishableKey: parsed.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
+      mode: parsed.APP_MODE,
+      posthog: hasPosthogKey && hasPosthogHost
+        ? Object.freeze({
+            host: parsed.NEXT_PUBLIC_POSTHOG_HOST as string,
+            key: parsed.NEXT_PUBLIC_POSTHOG_KEY as string,
+          })
+        : undefined,
+    });
+  } catch {
+    throw new Error("WEB_ENV_INVALID");
+  }
 }
 
 let cache: ReturnType<typeof parseRuntimeEnv> | undefined;

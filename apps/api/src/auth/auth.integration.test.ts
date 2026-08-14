@@ -329,7 +329,7 @@ function authFakes(options: {
 
 function appDependencies(auth: AuthRouteDependencies): ApiDependencies {
   return {
-    releaseSha: "test",
+    releaseSha: "1111111111111111111111111111111111111111",
     logger: false,
     health: { dependencies: [] },
     auth: { kind: "enabled", dependencies: auth },

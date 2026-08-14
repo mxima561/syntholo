@@ -411,8 +411,8 @@ describe.sequential("entitlement authority database", () => {
       `select hash,created_at::text created_at
        from drizzle.__drizzle_migrations order by id`,
     );
-    expect(journal.rowCount).toBe(5);
-    expect(journal.rows.slice(-2)).toEqual([
+    expect(journal.rowCount).toBe(6);
+    expect(journal.rows.slice(-3, -1)).toEqual([
       {
         created_at: "1786640400000",
         hash: "717c39300253771cbd09070c2b75297c0bfd788290c522877bbbf7293c4a7ea1",
@@ -705,7 +705,7 @@ describe.sequential("entitlement authority database", () => {
         from accounts where id='30000000-0000-4000-8000-000000000003'
       `);
       expect(upgraded.rows).toEqual([{
-        journal_count: 5,
+        journal_count: 6,
         owner_established_at: "2026-01-02T03:04:05.123Z",
       }]);
       const afterUpgrade = await upgrade.pool.query<{
@@ -713,7 +713,7 @@ describe.sequential("entitlement authority database", () => {
         hash: string;
       }>(`select hash,created_at::text created_at
           from drizzle.__drizzle_migrations order by id`);
-      expect(afterUpgrade.rows.slice(-2)).toEqual([
+      expect(afterUpgrade.rows.slice(-3, -1)).toEqual([
         {
           created_at: "1786640400000",
           hash: "717c39300253771cbd09070c2b75297c0bfd788290c522877bbbf7293c4a7ea1",

@@ -1,5 +1,5 @@
-import { SignUp } from "@clerk/nextjs";
+import { PublicSignUp } from "@/components/public-auth";
 
 export default function SignUpPage() {
-  return <SignUp />;
+  return <PublicSignUp />;
 }

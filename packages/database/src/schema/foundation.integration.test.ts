@@ -179,7 +179,7 @@ describe("foundation migration", () => {
 
       expect(first.stderr).toBe("");
       expect(migratedTables.rows[0]?.count).toBe("27");
-      expect(firstJournal.rows).toHaveLength(5);
+      expect(firstJournal.rows).toHaveLength(6);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
       const rerun = await runDatabaseNpm(
@@ -246,6 +246,24 @@ describe("foundation migration", () => {
       "staff_login_attempts",
       "staff_sessions",
     ]);
+  });
+
+  it("exposes only the additive 0006 runtime readiness projection", async () => {
+    const result = await harness.database.pool.query<{
+      capability: string;
+      migration_count: number;
+      runtime_role: string;
+      schema_version: string;
+    }>(
+      "select schema_version, migration_count, runtime_role, capability from public.syntholo_runtime_readiness()",
+    );
+
+    expect(result.rows).toEqual([{
+      capability: "syntholo_migrator",
+      migration_count: 6,
+      runtime_role: expect.any(String),
+      schema_version: "0006_runtime_readiness",
+    }]);
   });
 
   it("keeps the exact Task 7 constraint, recovery-index, and trigger inventory", async () => {

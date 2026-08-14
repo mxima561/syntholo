@@ -5,6 +5,7 @@
 node_modules/
 coverage/
 dist/
+foundation-gate.json
 playwright-report/
 test-results/
 work/

@@ -1,5 +1,11 @@
 import { pathToFileURL } from "node:url";
 import {
+  assertDatabaseCapability,
+  checkDatabaseReadiness,
+  createDatabase,
+  type Database,
+} from "@syntholo/database";
+import {
   parseWorkerConfig,
   type RuntimeEnvironment,
   type WorkerConfig,
@@ -17,15 +23,43 @@ export type StartCronOptions = Readonly<{
 
 export async function startCron(options: StartCronOptions): Promise<void> {
   const config = parseWorkerConfig(options.env ?? process.env);
-  if (options.signal.aborted) return;
+  if (options.signal.aborted) throw new Error("CRON_ABORTED");
   await options.lifecycle.run(config, options.signal);
 }
 
-function waitForAbort(signal: AbortSignal): Promise<void> {
-  if (signal.aborted) return Promise.resolve();
-  return new Promise((resolve) => {
-    signal.addEventListener("abort", () => resolve(), { once: true });
-  });
+type CronClient = Readonly<{
+  query(sql: string): Promise<Readonly<{ rows: Array<Record<string, unknown>> }>>;
+  release(): void;
+}>;
+
+type CronDatabase = Readonly<{
+  pool: Readonly<{ connect(): Promise<CronClient> }>;
+}>;
+
+export async function runFoundationCron(
+  database: CronDatabase,
+  checkReadiness: () => Promise<unknown>,
+  signal: AbortSignal,
+): Promise<void> {
+  if (signal.aborted) throw new Error("CRON_ABORTED");
+  const client = await database.pool.connect();
+  let acquired = false;
+  try {
+    const lock = await client.query(
+      "select pg_try_advisory_lock(7607539264896502273) as acquired",
+    );
+    acquired = lock.rows[0]?.acquired === true;
+    if (!acquired) throw new Error("CRON_ALREADY_RUNNING");
+    if (signal.aborted) throw new Error("CRON_ABORTED");
+    await checkReadiness();
+  } finally {
+    if (acquired) {
+      await client.query(
+        "select pg_advisory_unlock(7607539264896502273) as released",
+      ).catch(() => undefined);
+    }
+    client.release();
+  }
 }
 
 function isMainModule(): boolean {
@@ -39,10 +73,28 @@ async function main(): Promise<void> {
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
-  await startCron({
-    signal: controller.signal,
-    lifecycle: { run: async (_config, signal) => waitForAbort(signal) },
-  });
+  let database: Database | undefined;
+  try {
+    await startCron({
+      signal: controller.signal,
+      lifecycle: {
+        run: async (config, signal) => {
+          database = createDatabase({
+            applicationName: `syntholo-cron-${config.releaseSha}`,
+            url: config.databaseUrl,
+          });
+          await assertDatabaseCapability(database, "syntholo_worker");
+          await runFoundationCron(
+            database,
+            () => checkDatabaseReadiness(database as Database, "syntholo_worker"),
+            signal,
+          );
+        },
+      },
+    });
+  } finally {
+    await database?.close();
+  }
 }
 
 if (isMainModule()) {

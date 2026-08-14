@@ -22,7 +22,7 @@ export type ApiDependencies = Readonly<{
 
 const ApiDependenciesSchema = z
   .object({
-    releaseSha: z.string().trim().min(1),
+    releaseSha: z.string().trim().regex(/^[0-9a-f]{40}$/u),
     logger: z.boolean().optional(),
     health: z
       .object({

@@ -9,7 +9,7 @@
     "./errors": "./src/plugins/error-handler.ts"
   },
   "scripts": {
-    "build": "esbuild src/server.ts --bundle --platform=node --target=node22 --format=esm --outfile=dist/server.js --external:fastify --external:fastify-plugin --external:fastify-raw-body --external:zod --external:pg --external:drizzle-orm --external:drizzle-orm/* --external:@clerk/backend --external:@workos-inc/node --external:jose",
+    "build": "node ../../infra/scripts/build-node-service.mjs api",
     "dev": "tsx watch src/server.ts",
     "lint": "eslint --config ../../eslint.config.mjs src vitest.config.ts vitest.integration.config.ts",
     "start": "node dist/server.js",
@@ -36,6 +36,7 @@
     "vitest": "4.1.10"
   },
   "engines": {
-    "node": "22.x"
+    "node": "22.22.2",
+    "npm": "10.9.7"
   }
 }

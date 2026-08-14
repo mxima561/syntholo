@@ -36,6 +36,13 @@
       "when": 1786647600000,
       "tag": "0005_entitlements",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1786654800000,
+      "tag": "0006_runtime_readiness",
+      "breakpoints": true
     }
   ]
 }

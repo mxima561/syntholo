@@ -6,10 +6,11 @@
   "exports": {
     ".": "./src/runner.ts",
     "./config": "./src/config.ts",
-    "./cron": "./src/cron.ts"
+    "./cron": "./src/cron.ts",
+    "./health": "./src/health.ts"
   },
   "scripts": {
-    "build": "esbuild src/runner.ts src/cron.ts --bundle --platform=node --target=node22 --format=esm --outdir=dist --external:zod --external:pg --external:drizzle-orm --external:drizzle-orm/*",
+    "build": "node ../../infra/scripts/build-node-service.mjs worker",
     "dev": "tsx watch src/runner.ts",
     "dev:cron": "tsx watch src/cron.ts",
     "lint": "eslint --config ../../eslint.config.mjs src vitest.config.ts vitest.integration.config.ts",
@@ -32,6 +33,7 @@
     "vitest": "4.1.10"
   },
   "engines": {
-    "node": "22.x"
+    "node": "22.22.2",
+    "npm": "10.9.7"
   }
 }
