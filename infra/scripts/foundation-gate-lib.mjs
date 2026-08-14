@@ -895,16 +895,27 @@ function importProvenance(moduleName, importedName) {
     if (importedName === "default" || importedName === "strict" || importedName === "*") {
       return "assertion:node-namespace";
     }
-    if (nodeAssertMethods.has(importedName)) return "assertion:node-function";
+    if (nodeAssertMethods.has(importedName)) {
+      return `assertion:node-function:${importedName}`;
+    }
   }
   if (moduleName === "fast-check" && ["default", "*"].includes(importedName)) {
     return "assertion:fast-check";
   }
   if (
-    ["@syntholo/database", "./index.js"].includes(moduleName)
+    moduleName === "@syntholo/database"
     && ["createSystemUnitOfWork", "createUnitOfWork"].includes(importedName)
   ) return "callback-factory:transaction";
   return "shadow";
+}
+
+function staticallySafeArrayElement(element) {
+  return ts.isNumericLiteral(element)
+    || ts.isStringLiteral(element)
+    || ts.isNoSubstitutionTemplateLiteral(element)
+    || element.kind === ts.SyntaxKind.TrueKeyword
+    || element.kind === ts.SyntaxKind.FalseKeyword
+    || element.kind === ts.SyntaxKind.NullKeyword;
 }
 
 function expressionProvenance(expression, scope) {
@@ -912,7 +923,15 @@ function expressionProvenance(expression, scope) {
   if (ts.isParenthesizedExpression(expression)) {
     return expressionProvenance(expression.expression, scope);
   }
-  if (ts.isArrayLiteralExpression(expression) && expression.elements.length > 0) {
+  if (
+    ts.isArrayLiteralExpression(expression)
+    && expression.elements.length > 0
+    && expression.elements.every((element) =>
+      !ts.isOmittedExpression(element)
+      && !ts.isSpreadElement(element)
+      && staticallySafeArrayElement(element)
+    )
+  ) {
     return "callback-owner:nonempty-array";
   }
   if (!ts.isCallExpression(expression)) return undefined;
@@ -922,19 +941,19 @@ function expressionProvenance(expression, scope) {
     && expression.expression.expression.text === "Array"
     && resolveBinding(scope, "Array") === undefined
     && expression.expression.name.text === "from"
-    && expression.arguments[0] !== undefined
+    && expression.arguments.length === 1
     && ts.isObjectLiteralExpression(expression.arguments[0])
+    && expression.arguments[0].properties.length === 1
   ) {
-    const length = expression.arguments[0].properties.find((property) =>
-      ts.isPropertyAssignment(property)
-      && ts.isIdentifier(property.name)
-      && property.name.text === "length"
-    );
+    const [length] = expression.arguments[0].properties;
     if (
       length !== undefined
       && ts.isPropertyAssignment(length)
+      && ts.isIdentifier(length.name)
+      && length.name.text === "length"
       && ts.isNumericLiteral(length.initializer)
-      && Number(length.initializer.text) > 0
+      && Number.isSafeInteger(Number(length.initializer.text))
+      && Number(length.initializer.text) >= 1
     ) return "callback-owner:nonempty-array";
   }
   return expressionProvenance(expression.expression, scope) === "callback-factory:transaction"
@@ -954,11 +973,13 @@ function declarationProvenance(initializer, scope) {
   if (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) {
     const returned = returnedExpression(initializer);
     return returned !== undefined
-      && expressionProvenance(returned, scope) === "callback-owner:transaction"
+      && expressionProvenance(returned, functionScope(initializer, scope))
+        === "callback-owner:transaction"
       ? "callback-factory:transaction"
       : undefined;
   }
-  return expressionProvenance(initializer, scope);
+  const provenance = expressionProvenance(initializer, scope);
+  return provenance === "callback-owner:nonempty-array" ? undefined : provenance;
 }
 
 function addRuntimeDeclaration(statement, bindings, parent) {
@@ -1163,24 +1184,31 @@ function expectSubjectCall(call, scope) {
     : undefined;
 }
 
-function nodeAssertCall(call, scope) {
+function nodeAssertMethod(call, scope) {
   if (ts.isIdentifier(call.expression)) {
     const provenance = resolveBinding(scope, call.expression.text);
-    return provenance === "assertion:node-function"
-      || provenance === "assertion:node-namespace";
+    if (provenance === "assertion:node-namespace") return "ok";
+    const namedMethod = /^assertion:node-function:(.+)$/u.exec(provenance ?? "");
+    return namedMethod?.[1];
   }
-  if (!ts.isPropertyAccessExpression(call.expression)) return false;
+  if (!ts.isPropertyAccessExpression(call.expression)) return undefined;
   const receiver = call.expression.expression;
   if (
     ts.isIdentifier(receiver)
     && resolveBinding(scope, receiver.text) === "assertion:node-namespace"
     && nodeAssertMethods.has(call.expression.name.text)
-  ) return true;
+  ) return call.expression.name.text;
   return ts.isPropertyAccessExpression(receiver)
     && receiver.name.text === "strict"
     && ts.isIdentifier(receiver.expression)
     && resolveBinding(scope, receiver.expression.text) === "assertion:node-namespace"
-    && nodeAssertMethods.has(call.expression.name.text);
+    && nodeAssertMethods.has(call.expression.name.text)
+    ? call.expression.name.text
+    : undefined;
+}
+
+function nodeAssertCall(call, scope) {
+  return nodeAssertMethod(call, scope) !== undefined;
 }
 
 function fastCheckMethod(call, scope, method) {
@@ -1209,9 +1237,7 @@ function trustedCallbackArguments(call, scope) {
     if (callback !== undefined && ts.isFunctionLike(callback)) callbacks.push(callback);
   }
   if (nodeAssertCall(call, scope)) {
-    const method = ts.isPropertyAccessExpression(call.expression)
-      ? call.expression.name.text
-      : undefined;
+    const method = nodeAssertMethod(call, scope);
     const callback = call.arguments[0];
     if (
       ["doesNotReject", "doesNotThrow", "rejects", "throws"].includes(method)

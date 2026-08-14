@@ -6,6 +6,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool, type PoolClient } from "pg";
 import {
+  createSystemUnitOfWork,
+  createUnitOfWork,
+} from "@syntholo/database";
+import {
   type MemberActor,
   type StaffActor,
 } from "@syntholo/domain";
@@ -18,8 +22,6 @@ import {
 import {
   attestSystemDatabase,
   createDatabase,
-  createSystemUnitOfWork,
-  createUnitOfWork,
   databaseErrorCode,
   MemberEntitlementReadRepository,
   migrateDatabase,
@@ -1191,9 +1193,9 @@ describe.sequential("entitlement authority database", () => {
       [accountLockKey],
     );
     const commandIds = Array.from({ length: 4 }, () => randomUUID());
-    const pending = Promise.allSettled(commandIds.map((commandId, index) =>
+    const pending = Promise.allSettled([0, 1, 2, 3].map((index) =>
       ownerUnitOfWork().transaction((tx) => tx.entitlements.reservePendingSeat({
-        commandId,
+        commandId: commandIds[index]!,
         sourceRegistryId: sourceA,
         email: `teammate${index}@example.test`,
         tokenHash: Buffer.alloc(32, index + 1),

@@ -562,3 +562,60 @@ report is committed, and its result is returned with the commit handoff. No
 push was performed.
 
 DONE
+
+## Acceptance fix round 8 — 2026-08-14
+
+The final callback-provenance review findings against commit
+`94dff7a8bea502fad9b140d43810dbbadc149c48` were reproduced with direct RED
+fixtures before the validator changed.
+
+- Array callback evidence now requires a conservative, positive execution
+  proof. Only a direct dense literal containing side-effect-free literal
+  elements or a direct `Array.from({ length: N })` with one exact positive
+  safe-integer length property is trusted. Sparse arrays, spread arrays,
+  fractional or overridden lengths, side-effect-capable receivers, and array
+  objects propagated through mutable bindings cannot certify a contract.
+- Transaction wrapper provenance is now evaluated in the wrapper's own lexical
+  function scope, including parameters and defaults. A parameter that shadows
+  `createUnitOfWork` therefore invalidates the wrapper. Factory provenance is
+  accepted only from the real `@syntholo/database` package boundary; a raw
+  relative `./index.js` import is not trusted.
+- The real four-invitation contract now imports its unit-of-work factories from
+  `@syntholo/database` and uses an exact direct four-index receiver, retaining
+  independently proved array and transaction callback ownership without
+  weakening the validator.
+- Named Node assertion imports retain their exact method provenance. A positive
+  `throws` control proves that its callback is executable evidence, while the
+  existing direct Vitest, fast-check, unit-of-work, and `[1].forEach` controls
+  remain accepted.
+
+The initial focused RED ran 88 tests with exactly eight expected failures: the
+five reported zero-execution array forms, wrapper-parameter shadowing, the raw
+relative-index factory, and the missing positive named-`throws` support. A
+follow-up mutation fixture independently exposed a non-`length` `Array.from`
+property as one expected RED failure before that proof was corrected. The final
+foundation policy suite passed 89/89 and the combined policy/CLI slice passed
+93/93.
+
+### Acceptance-fix round 8 verification
+
+- `npm run typecheck` and `npm run lint` — PASS in all eight workspaces.
+- `npm test` — PASS: 55 files and 736 tests across eight workspaces (API 133,
+  web 101, worker 48, contracts 15, database 109, domain 193, integrations 35,
+  testing 102).
+- Production-mode web/API/worker/cron and migration builds plus `node --check`
+  for all four Node artifacts and the changed gate library — PASS.
+- `CI=false npm run test:e2e` — PASS: 63 passed, 17 intentional
+  project-specific skips, 80 total, one browser worker.
+- The production graph follows 6,978 resolved runtime edges and reports
+  `policyPass: true` with zero violations. Required-contract catalog validation
+  and working-tree `git diff --check` — PASS.
+
+Docker, `psql`, `pg_isready`, and `TEST_DATABASE_URL` remain unavailable on
+this host. No local image or real-PostgreSQL PASS is claimed. Fresh deployed
+proxy/worker evidence and target-branch ancestry also remain externally
+blocked. The exact clean committed-SHA foundation gate is rerun after this
+report is committed, and its result is returned with the commit handoff. No
+push was performed.
+
+DONE
