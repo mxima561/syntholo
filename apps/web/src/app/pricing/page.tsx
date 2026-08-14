@@ -28,7 +28,7 @@ export default function PricingPage() {
     <main className="pricing-page">
       <header className="site-header shell">
         <Link className="brand" href="/"><span className="brand-mark">S</span><span>Syntholo</span></Link>
-        <Button href="/learn" size="small" variant="quiet">Member sign in</Button>
+        <Button href={{ pathname: "/sign-in" }} size="small" variant="quiet">Member sign in</Button>
       </header>
       <section className="pricing-hero shell">
         <span className="micro-label">SIMPLE OPTIONS, CLEAR OUTCOMES</span>

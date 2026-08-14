@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { ArrowRight, Check, Clock3, LockKeyhole, Play } from "lucide-react";
+import { ProductionMemberAccess } from "@/components/production-member-access";
+import { isDemoMode } from "@/lib/config/mode";
 import { getMemberCourse } from "@/lib/demo/repository";
 
 export default function CourseMapPage() {
+  if (!isDemoMode()) return <ProductionMemberAccess />;
   const { course, progress, completedLessonIds } = getMemberCourse("member-maria");
   const activeLessonId = progress.find((item) => item.status === "in_progress")?.lessonId;
 

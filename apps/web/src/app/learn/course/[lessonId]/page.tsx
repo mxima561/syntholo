@@ -1,8 +1,11 @@
 import { notFound } from "next/navigation";
+import { ProductionMemberAccess } from "@/components/production-member-access";
 import { LessonWorkspace } from "@/features/course/lesson-workspace";
+import { isDemoMode } from "@/lib/config/mode";
 import { getLesson, getMemberCourse } from "@/lib/demo/repository";
 
 export default async function LessonPage({ params }: { params: Promise<{ lessonId: string }> }) {
+  if (!isDemoMode()) return <ProductionMemberAccess />;
   const { lessonId } = await params;
   const lesson = getLesson(lessonId);
   if (!lesson) notFound();

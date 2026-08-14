@@ -16,5 +16,9 @@ describe("HomePage", () => {
     }
     expect(screen.getByRole("link", { name: /see program options/i })).toHaveClass("button-dark");
     expect(screen.getAllByRole("link", { name: /take the free scorecard/i })[0]).toHaveClass("button-primary");
+    expect(screen.getByRole("link", { name: /member sign in/i })).toHaveAttribute(
+      "href",
+      "/sign-in",
+    );
   });
 });

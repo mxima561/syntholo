@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./entitlements": "./src/entitlements.ts",
     "./health": "./src/health.ts",
     "./http": "./src/http.ts"
   },

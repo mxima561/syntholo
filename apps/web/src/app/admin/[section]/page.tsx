@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { ArrowRight, Search } from "lucide-react";
+import { requireAdminAccess } from "@/lib/auth/staff-access";
 
 const sections = {
   customers: { eyebrow: "Customer operations", title: "Customers", description: "Manage business workspaces, seats, purchases, cohorts, and entitlements.", rows: [["Northstar Advisory", "3 seats", "Academy", "Active"], ["Ortega Studio", "3 seats", "Operator Club", "Active"], ["Brooks & Field", "2 seats", "Academy", "Active"]] },
@@ -11,6 +12,7 @@ const sections = {
 } as const;
 
 export default async function AdminSectionPage({ params }: { params: Promise<{ section: string }> }) {
+  await requireAdminAccess();
   const { section } = await params;
   const data = sections[section as keyof typeof sections];
   if (!data) notFound();
