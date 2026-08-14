@@ -2,6 +2,7 @@
 .env
 .env.local
 .next/
+.vercel/
 node_modules/
 coverage/
 dist/
