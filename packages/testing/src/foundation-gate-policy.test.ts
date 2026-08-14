@@ -204,6 +204,144 @@ describe("production dependency policy", () => {
       expect.objectContaining({ service: "api", value: "@gohighlevel/sdk" }),
     ]));
   });
+
+  it("inspects forbidden packages copied into the Next standalone runtime", async () => {
+    const root = await fixture({
+      "apps/web/.next/standalone/node_modules/@clerk/backend/index.js": "module.exports = {}",
+      "apps/web/package.json": JSON.stringify({ name: "@syntholo/web" }),
+      "package.json": JSON.stringify({ workspaces: ["apps/*"] }),
+    });
+
+    const graph = await inspectProductionDependencyGraph(root);
+
+    expect(productionDependencyPolicyPass(graph)).toBe(false);
+    expect(graph.policyViolations).toContainEqual(expect.objectContaining({
+      kind: "built",
+      path: "apps/web/.next/standalone/node_modules/@clerk/backend/index.js",
+      service: "web",
+      value: "@clerk/backend",
+    }));
+  });
+
+  it("follows Next NFT metadata using the web policy scope", async () => {
+    const root = await fixture({
+      "apps/web/.next/server/app.js.nft.json": JSON.stringify({
+        version: 1,
+        files: ["../../../../packages/private/dist/index.js"],
+      }),
+      "apps/web/package.json": JSON.stringify({ name: "@syntholo/web" }),
+      "package.json": JSON.stringify({ workspaces: ["apps/*", "packages/*"] }),
+      "packages/private/dist/index.js": "export { default } from 'stripe'",
+      "packages/private/package.json": JSON.stringify({
+        name: "@syntholo/private",
+        exports: { ".": "./dist/index.js" },
+      }),
+    });
+
+    const graph = await inspectProductionDependencyGraph(root);
+
+    expect(productionDependencyPolicyPass(graph)).toBe(false);
+    expect(graph.policyViolations).toContainEqual(expect.objectContaining({
+      kind: "built",
+      path: "packages/private/dist/index.js",
+      service: "web",
+      value: "stripe",
+    }));
+  });
+
+  it("resolves aliases inherited from a base TypeScript configuration", async () => {
+    const root = await fixture({
+      "apps/web/package.json": JSON.stringify({ name: "@syntholo/web" }),
+      "apps/web/src/app/page.ts": "import '@shared/server-adapter'",
+      "apps/web/tsconfig.json": JSON.stringify({ extends: "../../tsconfig.base.json" }),
+      "package.json": JSON.stringify({ workspaces: ["apps/*", "packages/*"] }),
+      "packages/shared/src/server-adapter.ts": "export { default } from '@workos-inc/node'",
+      "tsconfig.base.json": JSON.stringify({
+        compilerOptions: {
+          paths: { "@shared/*": ["packages/shared/src/*"] },
+        },
+      }),
+    });
+
+    const graph = await inspectProductionDependencyGraph(root);
+
+    expect(productionDependencyPolicyPass(graph)).toBe(false);
+    expect(graph.resolvedImports).toContainEqual(expect.objectContaining({
+      path: "apps/web/src/app/page.ts",
+      resolvedPath: "packages/shared/src/server-adapter.ts",
+      service: "web",
+      specifier: "@shared/server-adapter",
+    }));
+  });
+
+  it("includes root optional dependencies in the production lock closure", async () => {
+    const root = await fixture({
+      "package-lock.json": JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "": { optionalDependencies: { mongodb: "1.0.0" } },
+          "node_modules/mongodb": { version: "1.0.0" },
+        },
+      }),
+      "package.json": JSON.stringify({ optionalDependencies: { mongodb: "1.0.0" } }),
+    });
+
+    const graph = await inspectProductionDependencyGraph(root);
+
+    expect(productionDependencyPolicyPass(graph)).toBe(false);
+    expect(graph.policyViolations).toContainEqual(expect.objectContaining({
+      kind: "lockfile",
+      service: "root",
+      value: "mongodb",
+    }));
+  });
+
+  it("includes lockfile peer dependencies in each service closure", async () => {
+    const root = await fixture({
+      "apps/web/package.json": JSON.stringify({ dependencies: { adapter: "1.0.0" } }),
+      "package-lock.json": JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "apps/web": { dependencies: { adapter: "1.0.0" } },
+          "node_modules/adapter": { peerDependencies: { resend: "1.0.0" }, version: "1.0.0" },
+          "node_modules/resend": { version: "1.0.0" },
+        },
+      }),
+      "package.json": JSON.stringify({ workspaces: ["apps/*"] }),
+    });
+
+    const graph = await inspectProductionDependencyGraph(root);
+
+    expect(productionDependencyPolicyPass(graph)).toBe(false);
+    expect(graph.policyViolations).toContainEqual(expect.objectContaining({
+      kind: "lockfile",
+      service: "web",
+      value: "resend",
+    }));
+  });
+
+  it("keeps versioned lock closures isolated by service", async () => {
+    const root = await fixture({
+      "apps/api/package.json": JSON.stringify({ dependencies: { adapter: "1.0.0" } }),
+      "apps/web/package.json": JSON.stringify({ dependencies: { adapter: "2.0.0" } }),
+      "package-lock.json": JSON.stringify({
+        lockfileVersion: 3,
+        packages: {
+          "apps/api": { dependencies: { adapter: "1.0.0" } },
+          "apps/web": { dependencies: { adapter: "2.0.0" } },
+          "apps/web/node_modules/adapter": { version: "2.0.0" },
+          "node_modules/adapter": { dependencies: { stripe: "1.0.0" }, version: "1.0.0" },
+          "node_modules/stripe": { version: "1.0.0" },
+        },
+      }),
+      "package.json": JSON.stringify({ workspaces: ["apps/*"] }),
+    });
+
+    const graph = await inspectProductionDependencyGraph(root);
+
+    expect(productionDependencyPolicyPass(graph)).toBe(true);
+    expect(graph.policyViolations).toEqual([]);
+  });
 });
 
 describe("release source identity", () => {
@@ -434,8 +572,18 @@ describe("gate report trust boundary", () => {
     ["a skipped test", "it.skip('required contract', () => { expect(true).toBe(true) })"],
     ["a todo test", "it.todo('required contract')"],
     ["an empty test", "it('required contract', () => {})"],
+    ["a skipped suite", "describe.skip('suite', () => { it('required contract', () => { expect(runContract()).toBe(true) }) })"],
+    ["a conditional suite", "describe.runIf(enabled)('suite', () => { it('required contract', () => { expect(runContract()).toBe(true) }) })"],
+    ["a conditionally registered test", "if (enabled) { it('required contract', () => { expect(runContract()).toBe(true) }) }"],
+    ["an assertion-free behavior call", "it('required contract', () => { runContract() })"],
+    ["a non-executing token reference", "it('required contract', () => { void runContract; expect(true).toBe(true) })"],
+    ["an uncalled helper body", "it('required contract', () => { function fake() { expect(runContract()).toBe(true) }; expect(true).toBe(true) })"],
   ])("does not accept %s as an executable required contract", (_case, source) => {
-    expect(() => validateExecutableTestCases(source, ["required contract"]))
+    expect(() => validateExecutableTestCases(
+      source,
+      ["required contract"],
+      { "required contract": ["runContract"] },
+    ))
       .toThrow("REQUIRED_CONTRACT_MISSING");
   });
 

@@ -54,8 +54,13 @@ async function walk(root, current = root) {
   const entries = await readdir(current, { withFileTypes: true }).catch(() => []);
   const files = [];
   for (const entry of entries) {
-    if ([".git", "node_modules"].includes(entry.name)) continue;
     const path = join(current, entry.name);
+    const relativePath = normalized(root, path);
+    if (entry.name === ".git") continue;
+    if (
+      entry.name === "node_modules"
+      && !relativePath.startsWith("apps/web/.next/standalone/")
+    ) continue;
     if (entry.isDirectory()) files.push(...await walk(root, path));
     else if (entry.isFile()) files.push(path);
   }
@@ -123,25 +128,64 @@ function isForbiddenPackageForService(specifier, service) {
     || (service === "web" && webForbiddenServerPackages.has(name));
 }
 
+function tsconfigExtendsCandidates(configPath, specifier) {
+  if (!specifier.startsWith(".")) return [];
+  const base = join(dirname(configPath), specifier).split(sep).join("/");
+  return [base, `${base}.json`, `${base}/tsconfig.json`];
+}
+
 async function loadPathAliases(repositoryRoot, files) {
-  const aliases = [];
-  for (const file of files.filter((candidate) => candidate.endsWith("tsconfig.json"))) {
+  const fileByPath = new Map(files.map((file) => [normalized(repositoryRoot, file), file]));
+  const configPaths = [...fileByPath.keys()].filter((path) =>
+    /(?:^|\/)tsconfig(?:\.[^/]+)?\.json$/u.test(path)
+  );
+  const cache = new Map();
+  const loadConfig = async (configPath, loading = new Set()) => {
+    if (cache.has(configPath)) return cache.get(configPath);
+    if (loading.has(configPath)) return [];
+    const file = fileByPath.get(configPath);
+    if (file === undefined) return [];
+    const nextLoading = new Set(loading).add(configPath);
     try {
-      const parsed = JSON.parse(await readFile(file, "utf8"));
-      const configDirectory = dirname(relative(repositoryRoot, file));
-      for (const [pattern, targets] of Object.entries(parsed.compilerOptions?.paths ?? {})) {
+      const result = ts.parseConfigFileTextToJson(configPath, await readFile(file, "utf8"));
+      if (result.error !== undefined) return [];
+      const parsed = result.config ?? {};
+      const extendedPath = typeof parsed.extends === "string"
+        ? tsconfigExtendsCandidates(configPath, parsed.extends)
+          .find((candidate) => fileByPath.has(candidate))
+        : undefined;
+      const inherited = extendedPath === undefined
+        ? []
+        : await loadConfig(extendedPath, nextLoading);
+      const paths = parsed.compilerOptions?.paths;
+      if (paths === undefined || paths === null || typeof paths !== "object") {
+        cache.set(configPath, inherited);
+        return inherited;
+      }
+      const configDirectory = dirname(configPath);
+      const baseDirectory = typeof parsed.compilerOptions?.baseUrl === "string"
+        ? join(configDirectory, parsed.compilerOptions.baseUrl).split(sep).join("/")
+        : configDirectory;
+      const own = [];
+      for (const [pattern, targets] of Object.entries(paths)) {
         if (!Array.isArray(targets)) continue;
         for (const target of targets) {
-          aliases.push({
-            directory: configDirectory,
+          own.push({
             pattern,
-            target: join(configDirectory, String(target)).split(sep).join("/"),
+            target: join(baseDirectory, String(target)).split(sep).join("/"),
           });
         }
       }
+      cache.set(configPath, own);
+      return own;
     } catch {
-      // Malformed TypeScript configuration is attributed by the compiler check.
+      return [];
     }
+  };
+  const aliases = [];
+  for (const configPath of configPaths) {
+    const directory = dirname(configPath);
+    for (const alias of await loadConfig(configPath)) aliases.push({ directory, ...alias });
   }
   return aliases;
 }
@@ -224,7 +268,16 @@ function productionEntries(files) {
       entries.push({ path, service: "web" });
     }
     const builtMatch = /^(apps\/(api|web|worker)|packages\/[^/]+)\/(?:dist|\.next\/(?:server|standalone|static))(?:\/|$)/u.exec(path);
-    if (builtMatch && sourceExtension.test(path)) {
+    const nextTrace = /^apps\/web\/\.next\/(?:server|standalone)\/.+\.nft\.json$/u.test(path);
+    const standalonePackage = standalonePackageName(path);
+    const forbiddenStandaloneFile = standalonePackage !== undefined
+      && isForbiddenPackageForService(standalonePackage, "web")
+      && (sourceExtension.test(path) || path.endsWith("/package.json"));
+    if (
+      nextTrace
+      || forbiddenStandaloneFile
+      || (builtMatch && sourceExtension.test(path) && !path.includes("/node_modules/"))
+    ) {
       const service = builtMatch[2] === "web"
         ? "web"
         : path.endsWith("cron.js")
@@ -240,12 +293,67 @@ function productionEntries(files) {
   return entries;
 }
 
+function standalonePackageName(path) {
+  const match = /^apps\/web\/\.next\/standalone\/(?:.+\/)?node_modules\/(.+)$/u.exec(path);
+  if (match === null) return undefined;
+  const segments = match[1].split("/");
+  if (segments[0]?.startsWith("@")) {
+    return segments.length >= 2 ? segments.slice(0, 2).join("/") : undefined;
+  }
+  return segments[0];
+}
+
+function normalizedMetadataTarget(metadataPath, target) {
+  const resolved = join(dirname(metadataPath), target).split(sep).join("/");
+  return resolved === ".." || resolved.startsWith("../") ? undefined : resolved;
+}
+
 function addUnique(items, keys, item) {
   const key = JSON.stringify(item);
   if (!keys.has(key)) {
     keys.add(key);
     items.push(item);
   }
+}
+
+function productionDependencyNames(value, includePeers = true) {
+  return [...new Set([
+    ...Object.keys(value?.dependencies ?? {}),
+    ...Object.keys(value?.optionalDependencies ?? {}),
+    ...(includePeers ? Object.keys(value?.peerDependencies ?? {}) : []),
+  ])];
+}
+
+function lockDependencyCandidates(importerPath, dependencyName) {
+  const candidates = [];
+  let current = importerPath;
+  while (true) {
+    if (current === "") {
+      candidates.push(`node_modules/${dependencyName}`);
+      break;
+    }
+    if (!current.endsWith("/node_modules") && current !== "node_modules") {
+      candidates.push(`${current}/node_modules/${dependencyName}`);
+    }
+    const parent = dirname(current).split(sep).join("/");
+    current = parent === "." ? "" : parent;
+  }
+  return [...new Set(candidates.filter((candidate) => candidate !== importerPath))];
+}
+
+function dereferenceLockPath(path, lockNodes) {
+  const value = lockNodes.get(path);
+  if (value?.link !== true || typeof value.resolved !== "string") return path;
+  const resolved = value.resolved.replace(/^\.\//u, "").replace(/\/$/u, "");
+  return lockNodes.has(resolved) ? resolved : path;
+}
+
+function resolveLockedDependency(importerPath, dependencyName, lockNodes, workspaceManifests) {
+  const candidate = lockDependencyCandidates(importerPath, dependencyName)
+    .find((path) => lockNodes.has(path));
+  if (candidate !== undefined) return dereferenceLockPath(candidate, lockNodes);
+  const workspacePath = workspaceManifests.get(dependencyName)?.directory;
+  return workspacePath !== undefined && lockNodes.has(workspacePath) ? workspacePath : undefined;
 }
 
 export async function inspectProductionDependencyGraph(repositoryRoot) {
@@ -277,56 +385,68 @@ export async function inspectProductionDependencyGraph(repositoryRoot) {
   const lock = lockPath === undefined
     ? { packages: {} }
     : JSON.parse(await readFile(lockPath, "utf8"));
-  const lockDependencies = new Map();
-  const lockedPackages = new Set();
-  for (const [path, value] of Object.entries(lock.packages ?? {})) {
-    const name = packageNameFromLockPath(path) ?? value.name;
-    if (typeof name !== "string") continue;
-    lockedPackages.add(name);
-    const dependencies = new Set([
-      ...Object.keys(value.dependencies ?? {}),
-      ...Object.keys(value.optionalDependencies ?? {}),
-    ]);
-    const current = lockDependencies.get(name) ?? new Set();
-    for (const dependency of dependencies) current.add(dependency);
-    lockDependencies.set(name, current);
-  }
+  const lockNodes = new Map(Object.entries(lock.packages ?? {}));
 
   const manifestServices = [
+    ["", "root"],
     ["apps/api", "api"],
     ["apps/web", "web"],
     ["apps/worker", "worker"],
     ["packages/database", "migrate"],
   ];
   for (const [directory, service] of manifestServices) {
-    const root = manifestsByDirectory.get(directory);
+    const root = directory === ""
+      ? fileByPath.has("package.json")
+        ? {
+            directory: "",
+            path: "package.json",
+            value: JSON.parse(await readFile(fileByPath.get("package.json"), "utf8")),
+          }
+        : undefined
+      : manifestsByDirectory.get(directory);
     if (root === undefined) continue;
-    const queue = Object.keys(root.value.dependencies ?? {});
+    const lockRoot = lockNodes.get(directory);
+    const queue = [...new Set([
+      ...productionDependencyNames(root.value, false),
+      ...productionDependencyNames(lockRoot),
+    ])].map((name) => ({ importerPath: directory, name }));
     const seen = new Set();
     while (queue.length > 0) {
-      const name = queue.shift();
-      if (seen.has(name)) continue;
-      seen.add(name);
+      const { importerPath, name } = queue.shift();
+      const resolvedPath = resolveLockedDependency(
+        importerPath,
+        name,
+        lockNodes,
+        workspaceManifests,
+      );
+      const visitKey = resolvedPath ?? `${importerPath}:${name}:missing`;
+      if (seen.has(visitKey)) continue;
+      seen.add(visitKey);
       if (isForbiddenPackageForService(name, service)) {
         packages.add(name);
         addUnique(policyViolations, policyViolationKeys, {
           kind: "package", path: root.path, service, value: name,
         });
-        if (lockedPackages.has(name)) {
+        if (resolvedPath !== undefined) {
           lockfilePackages.add(name);
           addUnique(policyViolations, policyViolationKeys, {
             kind: "lockfile", path: "package-lock.json", service, value: name,
           });
         }
       }
+      if (resolvedPath === undefined) continue;
+      const dependencyNode = lockNodes.get(resolvedPath);
       const workspace = workspaceManifests.get(name);
-      const dependencies = workspace === undefined
-        ? lockDependencies.get(name)
-        : new Set([
-            ...Object.keys(workspace.value.dependencies ?? {}),
-            ...Object.keys(workspace.value.optionalDependencies ?? {}),
-          ]);
-      if (dependencies !== undefined) queue.push(...dependencies);
+      const dependencies = new Set([
+        ...productionDependencyNames(dependencyNode),
+        ...(workspace?.directory === resolvedPath
+          ? productionDependencyNames(workspace.value, false)
+          : []),
+      ]);
+      queue.push(...[...dependencies].map((dependency) => ({
+        importerPath: resolvedPath,
+        name: dependency,
+      })));
     }
   }
 
@@ -342,6 +462,44 @@ export async function inspectProductionDependencyGraph(repositoryRoot) {
     const contents = await readFile(file, "utf8").catch(() => "");
     const built = /\/(?:dist|\.next\/(?:server|standalone|static))(?:\/|$)/u.test(path);
     let builtViolation = false;
+    const standalonePackage = standalonePackageName(path);
+    if (
+      standalonePackage !== undefined
+      && isForbiddenPackageForService(standalonePackage, service)
+    ) {
+      packages.add(standalonePackage);
+      addUnique(policyViolations, policyViolationKeys, {
+        kind: "built", path, service, value: standalonePackage,
+      });
+      builtViolation = true;
+    }
+    if (path.endsWith(".nft.json")) {
+      try {
+        const trace = JSON.parse(contents);
+        for (const specifier of Array.isArray(trace.files) ? trace.files : []) {
+          if (typeof specifier !== "string") continue;
+          const resolvedPath = normalizedMetadataTarget(path, specifier);
+          if (resolvedPath === undefined) continue;
+          addUnique(resolvedImports, resolvedImportKeys, {
+            path, resolvedPath, service, specifier,
+          });
+          const tracedPackage = packageNameFromLockPath(resolvedPath);
+          if (
+            tracedPackage !== undefined
+            && isForbiddenPackageForService(tracedPackage, service)
+          ) {
+            packages.add(tracedPackage);
+            addUnique(policyViolations, policyViolationKeys, {
+              kind: "built", path: resolvedPath, service, value: tracedPackage,
+            });
+            builtViolation = true;
+          }
+          if (normalizedFiles.has(resolvedPath)) queue.push({ path: resolvedPath, service });
+        }
+      } catch {
+        // Malformed build metadata is attributed by the artifact/build check.
+      }
+    }
     for (const specifier of importsIn(contents)) {
       const resolvedPath = resolveLocalImport(
         specifier,
@@ -673,27 +831,97 @@ const requiredCheckContracts = Object.freeze({
   workspaces: [{ path: "packages/testing/src/foundation-gate-policy.test.ts", titles: ["requires the exact named check catalog and valid evidence metadata"], syntax: { "requires the exact named check catalog and valid evidence metadata": ["FOUNDATION_CHECK_CATALOG", "validateFoundationReport"] } }],
 });
 
-function testCallKind(expression) {
+function registrationCallKind(expression, activeNames, skippedNames) {
   if (ts.isIdentifier(expression)) {
-    if (["it", "test"].includes(expression.text)) return "active";
-    if (["xit", "xtest"].includes(expression.text)) return "skipped";
+    if (activeNames.has(expression.text)) return "active";
+    if (skippedNames.has(expression.text)) return "skipped";
     return undefined;
   }
-  if (ts.isCallExpression(expression)) return testCallKind(expression.expression);
+  if (ts.isCallExpression(expression)) {
+    return registrationCallKind(expression.expression, activeNames, skippedNames);
+  }
   if (!ts.isPropertyAccessExpression(expression)) return undefined;
-  const parent = testCallKind(expression.expression);
+  const parent = registrationCallKind(expression.expression, activeNames, skippedNames);
   if (parent === undefined) return undefined;
-  return ["skip", "todo"].includes(expression.name.text) ? "skipped" : parent;
+  if (["skip", "todo"].includes(expression.name.text)) return "skipped";
+  if (["runIf", "skipIf"].includes(expression.name.text)) return "conditional";
+  return parent;
 }
 
-function executableHandler(call) {
-  const handler = call.arguments.find((argument) =>
+function testCallKind(expression) {
+  return registrationCallKind(
+    expression,
+    new Set(["it", "test"]),
+    new Set(["xit", "xtest"]),
+  );
+}
+
+function suiteCallKind(expression) {
+  return registrationCallKind(
+    expression,
+    new Set(["context", "describe", "suite"]),
+    new Set(["xcontext", "xdescribe", "xsuite"]),
+  );
+}
+
+function functionHandler(call) {
+  return call.arguments.find((argument) =>
     ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)
   );
-  if (handler === undefined) return false;
-  return ts.isBlock(handler.body)
-    ? handler.body.statements.some((statement) => !ts.isEmptyStatement(statement))
-    : true;
+}
+
+function rootExpressionIdentifier(expression) {
+  if (ts.isIdentifier(expression)) return expression.text;
+  if (ts.isCallExpression(expression)) return rootExpressionIdentifier(expression.expression);
+  if (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) {
+    return rootExpressionIdentifier(expression.expression);
+  }
+  return undefined;
+}
+
+function isAssertionCall(call) {
+  const root = rootExpressionIdentifier(call.expression);
+  if (root === "assert") return true;
+  if (
+    root === "fc"
+    && ts.isPropertyAccessExpression(call.expression)
+    && call.expression.name.text === "assert"
+  ) return true;
+  return root === "expect"
+    && !(ts.isIdentifier(call.expression) && call.expression.text === "expect");
+}
+
+function testHandlerEvidence(handler) {
+  const evidenceTokens = new Set();
+  let hasAssertion = false;
+  const collectTokens = (node) => {
+    if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      evidenceTokens.add(node.text);
+    }
+    ts.forEachChild(node, collectTokens);
+  };
+  const visit = (node) => {
+    if (ts.isFunctionLike(node)) return;
+    if (ts.isCallExpression(node)) {
+      if (isAssertionCall(node)) hasAssertion = true;
+      collectTokens(node);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(handler.body);
+  return { evidenceTokens, hasAssertion };
+}
+
+function isConditionalRegistrationContainer(node) {
+  return ts.isIfStatement(node)
+    || ts.isConditionalExpression(node)
+    || ts.isSwitchStatement(node)
+    || ts.isForStatement(node)
+    || ts.isForInStatement(node)
+    || ts.isForOfStatement(node)
+    || ts.isWhileStatement(node)
+    || ts.isDoStatement(node)
+    || ts.isTryStatement(node);
 }
 
 export function validateExecutableTestCases(contents, requiredTitles, requiredSyntax = {}) {
@@ -705,35 +933,47 @@ export function validateExecutableTestCases(contents, requiredTitles, requiredSy
     ts.ScriptKind.TS,
   );
   const activeTests = new Map();
-  const visit = (node) => {
-    if (ts.isCallExpression(node) && testCallKind(node.expression) === "active") {
+  const visitRegistrations = (node) => {
+    if (isConditionalRegistrationContainer(node)) return;
+    if (ts.isFunctionLike(node)) return;
+    if (ts.isCallExpression(node)) {
+      const suiteKind = suiteCallKind(node.expression);
+      if (suiteKind !== undefined) {
+        const handler = functionHandler(node);
+        if (suiteKind === "active" && handler !== undefined) {
+          ts.forEachChild(handler.body, visitRegistrations);
+        }
+        return;
+      }
+      const kind = testCallKind(node.expression);
+      if (kind !== "active") {
+        if (kind !== undefined) return;
+        ts.forEachChild(node, visitRegistrations);
+        return;
+      }
       const title = node.arguments[0];
+      const handler = functionHandler(node);
       if (
         title !== undefined
         && (ts.isStringLiteral(title) || ts.isNoSubstitutionTemplateLiteral(title))
-        && executableHandler(node)
+        && handler !== undefined
       ) {
-        const tokens = new Set();
-        const handler = node.arguments.find((argument) =>
-          ts.isArrowFunction(argument) || ts.isFunctionExpression(argument)
-        );
-        const collect = (child) => {
-          if (ts.isIdentifier(child) || ts.isStringLiteral(child) || ts.isNoSubstitutionTemplateLiteral(child)) {
-            tokens.add(child.text);
-          }
-          ts.forEachChild(child, collect);
-        };
-        collect(handler.body);
-        activeTests.set(title.text, tokens);
+        const tests = activeTests.get(title.text) ?? [];
+        tests.push(testHandlerEvidence(handler));
+        activeTests.set(title.text, tests);
       }
+      return;
     }
-    ts.forEachChild(node, visit);
+    ts.forEachChild(node, visitRegistrations);
   };
-  visit(source);
+  if (source.parseDiagnostics.length > 0) throw new Error("REQUIRED_CONTRACT_MISSING");
+  ts.forEachChild(source, visitRegistrations);
   if (requiredTitles.some((title) => {
-    const tokens = activeTests.get(title);
-    return tokens === undefined
-      || (requiredSyntax[title] ?? []).some((token) => !tokens.has(token));
+    const tests = activeTests.get(title) ?? [];
+    return !tests.some(({ evidenceTokens, hasAssertion }) =>
+      hasAssertion
+      && (requiredSyntax[title] ?? []).every((token) => evidenceTokens.has(token))
+    );
   })) {
     throw new Error("REQUIRED_CONTRACT_MISSING");
   }

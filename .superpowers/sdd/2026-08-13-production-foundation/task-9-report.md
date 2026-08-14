@@ -293,3 +293,56 @@ this report is committed, and its exact state is returned in the commit
 handoff. No push was performed.
 
 DONE
+
+## Acceptance fix round 3 — 2026-08-14
+
+The two remaining Important findings against commit
+`f7f99d3914e9e2105cce9e5f1a22fa50fa765f9c` were reproduced with direct
+negative fixtures before either implementation changed.
+
+- Required-contract validation now walks only top-level registrations and
+  handlers of active, unconditional suites. Skipped suites, conditional suites,
+  conditionally registered tests, skipped/todo/conditional tests, empty tests,
+  assertion-free behavior, bare token references, and assertions hidden in
+  uncalled helpers cannot satisfy a contract. Every accepted test has an
+  executable assertion and every required contract identifier occurs in an
+  executed call/assertion evidence subtree rather than arbitrary body text.
+- The production graph now inventories forbidden packages copied into the Next
+  standalone runtime, follows `.nft.json` file edges under the originating web
+  scope, and resolves aliases inherited from `tsconfig.base.json`. Lock closure
+  begins at root optional dependencies as well as each service, follows
+  dependency/optional/peer edges, resolves npm's nearest versioned lock path,
+  and dereferences workspace links without merging same-name packages across
+  versions. Privileged server adapters remain allowed in API closure while the
+  web closure continues to reject them.
+- The initial focused RED had 11 expected failures covering six graph gaps and
+  five non-executing validator forms. Two strengthened mutation cycles then
+  separately proved a standalone forbidden JavaScript file (without relying on
+  its package manifest) and an assertion hidden in an uncalled helper were
+  rejected only after their respective implementation slices.
+
+### Acceptance-fix round 3 verification
+
+- Focused foundation policy — 44/44 PASS.
+- `npm run typecheck` and `npm run lint` — PASS in all eight workspaces.
+- `npm test` — PASS: 55 files and 685 tests across eight workspaces (API 131,
+  web 101, worker 44, contracts 15, database 109, domain 193, integrations 35,
+  testing 57).
+- Clean release builds for web/API/worker/cron/migration and `node --check` for
+  all four Node artifacts — PASS. Empty-environment startup of API, worker,
+  cron, and migration failed closed with status 1, empty stdout, and the exact
+  fixed service error on stderr.
+- `CI=false npm run test:e2e` — PASS: 63 passed, 17 intentional
+  project-specific skips, 80 total, one browser worker.
+- The final production graph follows 6,978 runtime, NFT, alias, workspace, and
+  standalone edges and reports `policyPass: true` with zero violations.
+  `git diff --check` — PASS.
+
+Docker, `psql`, and `TEST_DATABASE_URL` remain unavailable on this host. No
+local image or real-PostgreSQL PASS is claimed. Fresh deployed proxy/worker
+evidence and target-branch ancestry also remain launch-blocked until their
+external evidence is available. The exact clean committed-SHA foundation gate
+is rerun after this report is committed, and its result is returned with the
+commit handoff. No push was performed.
+
+DONE
