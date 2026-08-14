@@ -56,8 +56,10 @@ describe("durable job repository", () => {
 
     expect(claimed).toHaveLength(10);
     expect(new Set(claimed.map(({ id }) => id)).size).toBe(10);
-    expect(claimed.every(({ attempt, claimGeneration, claimToken }) =>
-      attempt === 1 && claimGeneration === 1 && /^[0-9a-f-]{36}$/u.test(claimToken)
+    expect(claimed.map(({ claimGeneration }) => claimGeneration))
+      .toEqual(Array.from({ length: 10 }, () => 1));
+    expect(claimed.every(({ attempt, claimToken }) =>
+      attempt === 1 && /^[0-9a-f-]{36}$/u.test(claimToken)
     )).toBe(true);
     const attempts = await harness.database.pool.query(
       "select job_id, attempt, outcome from job_attempts order by job_id",

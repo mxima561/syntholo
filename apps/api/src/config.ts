@@ -27,7 +27,7 @@ function exactUrl(value: string, kind: "origin" | "https-url" | "issuer"): strin
 }
 
 const ApiEnvironmentSchema = z.object({
-  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  NODE_ENV: z.enum(["development", "test", "production"]),
   HOST: z.string().trim().min(1).default("0.0.0.0"),
   PORT: z.coerce.number().int().positive().max(65_535).default(4_000),
   DATABASE_URL: optionalNonemptyString,

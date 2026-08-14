@@ -1211,12 +1211,14 @@ describe.sequential("entitlement authority database", () => {
       result.status === "fulfilled" ? [result.value] : []);
     expect(outcomes.filter(({ status }) => status === "applied")).toHaveLength(2);
     const denied = outcomes.filter(({ status }) => status === "denied");
-    expect(denied).toHaveLength(2);
-    for (const outcome of denied) {
-      expect(outcome).toMatchObject({
+    expect(denied).toEqual([
+      expect.objectContaining({
         status: "denied", code: "SEAT_CAPACITY_REACHED",
-      });
-    }
+      }),
+      expect.objectContaining({
+        status: "denied", code: "SEAT_CAPACITY_REACHED",
+      }),
+    ]);
     for (const [index, outcome] of outcomes.entries()) {
       expect(await commandEvidence(harness.database, commandIds[index]!)).toEqual({
         decisions: 1,

@@ -11,6 +11,8 @@ export type Database = NodePgDatabase<typeof schema> & {
 export type DatabaseConfig = Readonly<{
   url: string;
   applicationName: string;
+  connectionTimeoutMs?: number;
+  queryTimeoutMs?: number;
 }>;
 
 export type DatabaseCapability =
@@ -87,8 +89,10 @@ export function createDatabase(config: DatabaseConfig): Database {
 
   const pool = new Pool({
     application_name: applicationName,
+    connectionTimeoutMillis: config.connectionTimeoutMs,
     connectionString: url,
     options: "-c row_security=on -c app.account_id=",
+    query_timeout: config.queryTimeoutMs,
   });
   return Object.assign(drizzle(pool, { schema }), {
     close: () => pool.end(),

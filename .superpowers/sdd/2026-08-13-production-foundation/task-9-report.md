@@ -439,3 +439,68 @@ is rerun after this report is committed, and its result is returned with the
 commit handoff. No push was performed.
 
 DONE
+
+## Acceptance fix round 6 — 2026-08-14
+
+The final whole-branch review findings against commit
+`8d1ec600ac0970d33a676acbcba09ccb1855a821` were reproduced with direct RED
+fixtures before their implementation slices changed.
+
+- Required-contract validation now resolves test registration and assertion
+  roots through module import provenance and nested lexical scopes. Only
+  Vitest/Playwright registrations, their `expect` imports, Node assertion
+  imports, and fast-check assertions are trusted. Module-scope lookalikes,
+  shadowed bindings, conditional evidence, unproven callbacks, uninstantiated
+  instance fields, named class-expression shadowing, and static-block `var`
+  hoisting cannot certify a contract. Executable static blocks and imported
+  aliases remain valid controls. The initial RED contained 12 bypasses; a final
+  lexical audit added two independently RED static-class forms.
+- The API environment and release builder now require an explicit
+  `NODE_ENV=production`. The API image and Railway start command set that mode,
+  while omission fails before local staff-cookie names can be selected. Direct
+  configuration, compiled-artifact, Docker, and Railway regressions cover the
+  boundary.
+- The one-shot cron now treats advisory-lock overlap as a successful no-op,
+  runs the fixed-limit idempotent
+  `cleanup_staff_auth(statement_timestamp(), 500)` maintenance operation, and
+  validates its result. Connection, database query, work, unlock, and close
+  paths have hard deadlines; abort reaches in-flight work, timed-out clients
+  are destroyed, and a late connection is not returned to the pool. The
+  initial cron RED had five failures; a later direct database-timeout
+  regression first proved that maintenance incorrectly used the longer work
+  deadline.
+- Foundation reports, image evidence, external evidence validators, tests, and
+  operations documentation now use the exact schema identifier
+  `syntholo.foundation-gate.v1`. The current RLS contract and test title now
+  correctly describe all five inert capability roles. The extra EOF whitespace
+  in `apps/web/eslint.config.mjs` was removed.
+- The jobs and entitlement race contracts now contain direct assertions for
+  claim generation and both capacity-denied outcomes, so required syntax is
+  tied to executable assertions rather than only surrounding control flow.
+
+### Acceptance-fix round 6 verification
+
+- Focused foundation policy/CLI — 78/78 PASS; API app/auth — 126/126 PASS;
+  worker cron/runner — 41/41 PASS; database client/migration — 47/47 PASS.
+- `npm test` — PASS: 55 files and 721 tests across eight workspaces (API 133,
+  web 101, worker 48, contracts 15, database 109, domain 193, integrations 35,
+  testing 87).
+- `npm run typecheck` and `npm run lint` — PASS in all eight workspaces.
+- Production-mode web/API/worker/cron and migration builds plus Node syntax
+  checks — PASS. Empty-environment startup of API, worker, cron, and migration
+  failed closed with status 1, empty stdout, and each exact fixed stderr token.
+- `CI=false npm run test:e2e` — PASS: 63 passed, 17 intentional
+  project-specific skips, 80 total, one browser worker.
+- The production graph follows 6,978 resolved runtime edges and reports
+  `policyPass: true` with zero violations. Required-contract catalog validation,
+  working-tree `git diff --check`, and the full range check from
+  `4cadeea5519ddcd1ea26162c40053bb9d58e655e` — PASS.
+
+Docker, `psql`, `pg_isready`, and `TEST_DATABASE_URL` are unavailable on this
+host. No local image or real-PostgreSQL PASS is claimed. Fresh deployed
+proxy/worker evidence and target-branch ancestry also remain externally
+blocked. The exact clean committed-SHA foundation gate is rerun after this
+report is committed, and its result is returned with the commit handoff. No
+push was performed.
+
+DONE

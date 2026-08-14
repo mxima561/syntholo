@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import ts from "typescript";
 
 export const RELEASE_SHA_PATTERN = /^[0-9a-f]{40}$/u;
+export const FOUNDATION_EVIDENCE_SCHEMA = "syntholo.foundation-gate.v1";
 const execFileAsync = promisify(execFile);
 
 export const FOUNDATION_CHECK_CATALOG = Object.freeze([
@@ -667,7 +668,12 @@ function parseTomlSections(contents) {
 }
 
 const railwayServiceContract = Object.freeze({
-  api: { command: "/app/server.js", dockerfilePath: "apps/api/Dockerfile", restart: "ON_FAILURE" },
+  api: {
+    command: "/app/server.js",
+    dockerfilePath: "apps/api/Dockerfile",
+    restart: "ON_FAILURE",
+    startCommand: "/usr/bin/env NODE_ENV=production /usr/local/bin/node /app/server.js",
+  },
   cron: { command: "/app/cron.js", dockerfilePath: "apps/worker/Dockerfile.cron", restart: "NEVER" },
   migrate: { command: "/app/migrate.js", dockerfilePath: "apps/api/Dockerfile.migrate", restart: "NEVER" },
   worker: { command: "/app/runner.js", dockerfilePath: "apps/worker/Dockerfile", restart: "ON_FAILURE" },
@@ -685,13 +691,18 @@ export async function validateRailwayServiceConfigs(repositoryRoot, services = O
       if (
         config.build?.builder !== "DOCKERFILE"
         || config.build?.dockerfilePath !== contract.dockerfilePath
-        || config.deploy?.startCommand !== `/usr/local/bin/node ${contract.command}`
+        || config.deploy?.startCommand !== (
+          contract.startCommand ?? `/usr/local/bin/node ${contract.command}`
+        )
         || config.deploy?.restartPolicyType !== contract.restart
         || Object.keys(config.build ?? {}).some((key) => !railwayBuildKeys.has(key))
         || Object.keys(config.deploy ?? {}).some((key) => !railwayDeployKeys.has(key))
         || (service === "cron" && typeof config.deploy?.cronSchedule !== "string")
       ) throw new Error("contract");
       const dockerfile = await readFile(join(repositoryRoot, contract.dockerfilePath), "utf8");
+      if (service === "api" && !/^ENV NODE_ENV=production$/mu.test(dockerfile)) {
+        throw new Error("production mode");
+      }
       const commands = [...dockerfile.matchAll(/^CMD\s+\[([^\]]+)\]\s*$/gmu)];
       const finalCommand = commands.at(-1)?.[1]
         ?.split(",")
@@ -745,6 +756,7 @@ export function validateFoundationReport(report) {
   const state = evaluateFoundationGate(report?.checks ?? {});
   if (
     report?.version !== 1
+    || report?.schema !== FOUNDATION_EVIDENCE_SCHEMA
     || !["ci", "local"].includes(report.environment)
     || !RELEASE_SHA_PATTERN.test(report.releaseSha ?? "")
     || Number.isNaN(Date.parse(report.createdAt ?? ""))
@@ -791,6 +803,7 @@ export function validateExternalEvidence(evidence, options) {
     && workerReadyValid
   );
   const valid = evidence?.version === 1
+    && evidence?.schema === FOUNDATION_EVIDENCE_SCHEMA
     && evidence?.type === options.type
     && evidence?.status === "PASS"
     && evidence?.releaseSha === options.releaseSha
@@ -827,42 +840,9 @@ const requiredCheckContracts = Object.freeze({
   proxy: [{ path: "packages/testing/src/foundation-gate-policy.test.ts", titles: ["requires deployed proxy semantics and SHA-bound worker readiness"], syntax: { "requires deployed proxy semantics and SHA-bound worker readiness": ["validateExternalEvidence", "workerReady", "service"] } }],
   releaseSha: [{ path: "packages/testing/src/foundation-gate-policy.test.ts", titles: ["requires and matches the %s checkout SHA"], syntax: { "requires and matches the %s checkout SHA": ["evaluateProviderReleaseSha", "PROVIDER_COMMIT_SHA_MISMATCH"] } }],
   repository: [{ path: "packages/testing/src/foundation-gate-policy.test.ts", titles: ["rejects a tracked or untracked worktree before certification"], syntax: { "rejects a tracked or untracked worktree before certification": ["inspectRepositoryIdentity", "REPOSITORY_DIRTY"] } }],
-  rls: [{ path: "packages/database/src/rls.integration.test.ts", titles: ["creates exactly four inert capability roles with no password, settings, or outbound membership"], syntax: { "creates exactly four inert capability roles with no password, settings, or outbound membership": ["rolbypassrls", "capabilityRoles"] } }],
+  rls: [{ path: "packages/database/src/rls.integration.test.ts", titles: ["creates exactly five inert capability roles with no password, settings, or outbound membership"], syntax: { "creates exactly five inert capability roles with no password, settings, or outbound membership": ["rolbypassrls", "capabilityRoles"] } }],
   workspaces: [{ path: "packages/testing/src/foundation-gate-policy.test.ts", titles: ["requires the exact named check catalog and valid evidence metadata"], syntax: { "requires the exact named check catalog and valid evidence metadata": ["FOUNDATION_CHECK_CATALOG", "validateFoundationReport"] } }],
 });
-
-function registrationCallKind(expression, activeNames, skippedNames) {
-  if (ts.isIdentifier(expression)) {
-    if (activeNames.has(expression.text)) return "active";
-    if (skippedNames.has(expression.text)) return "skipped";
-    return undefined;
-  }
-  if (ts.isCallExpression(expression)) {
-    return registrationCallKind(expression.expression, activeNames, skippedNames);
-  }
-  if (!ts.isPropertyAccessExpression(expression)) return undefined;
-  const parent = registrationCallKind(expression.expression, activeNames, skippedNames);
-  if (parent === undefined) return undefined;
-  if (["skip", "todo"].includes(expression.name.text)) return "skipped";
-  if (["runIf", "skipIf"].includes(expression.name.text)) return "conditional";
-  return parent;
-}
-
-function testCallKind(expression) {
-  return registrationCallKind(
-    expression,
-    new Set(["it", "test"]),
-    new Set(["xit", "xtest"]),
-  );
-}
-
-function suiteCallKind(expression) {
-  return registrationCallKind(
-    expression,
-    new Set(["context", "describe", "suite"]),
-    new Set(["xcontext", "xdescribe", "xsuite"]),
-  );
-}
 
 function functionHandler(call) {
   return call.arguments.find((argument) =>
@@ -891,36 +871,205 @@ const nodeAssertMethods = new Set([
   "throws",
 ]);
 
-function nodeAssertBindings(source) {
-  const functions = new Set();
-  const namespaces = new Set();
+function addBindingNames(name, add) {
+  if (ts.isIdentifier(name)) {
+    add(name.text);
+    return;
+  }
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) addBindingNames(element.name, add);
+  }
+}
+
+const testRunnerModules = new Set(["@playwright/test", "vitest"]);
+const testRegistrationNames = new Set(["it", "test"]);
+const suiteRegistrationNames = new Set(["context", "describe", "suite"]);
+
+function importProvenance(moduleName, importedName) {
+  if (testRunnerModules.has(moduleName)) {
+    if (testRegistrationNames.has(importedName)) return `registration:test`;
+    if (suiteRegistrationNames.has(importedName)) return `registration:suite`;
+    if (importedName === "expect") return "assertion:expect";
+  }
+  if (["node:assert", "node:assert/strict"].includes(moduleName)) {
+    if (importedName === "default" || importedName === "strict" || importedName === "*") {
+      return "assertion:node-namespace";
+    }
+    if (nodeAssertMethods.has(importedName)) return "assertion:node-function";
+  }
+  if (moduleName === "fast-check" && ["default", "*"].includes(importedName)) {
+    return "assertion:fast-check";
+  }
+  return "shadow";
+}
+
+function addRuntimeDeclaration(statement, bindings) {
+  const shadow = (name) => bindings.set(name, "shadow");
+  if (ts.isVariableStatement(statement)) {
+    for (const declaration of statement.declarationList.declarations) {
+      addBindingNames(declaration.name, shadow);
+    }
+    return;
+  }
+  if (
+    ts.isFunctionDeclaration(statement)
+    || ts.isClassDeclaration(statement)
+    || ts.isEnumDeclaration(statement)
+    || ts.isModuleDeclaration(statement)
+  ) {
+    if (statement.name !== undefined) shadow(statement.name.text);
+  }
+}
+
+function moduleScope(source) {
+  const bindings = new Map();
   for (const statement of source.statements) {
     if (
       !ts.isImportDeclaration(statement)
       || !ts.isStringLiteral(statement.moduleSpecifier)
-      || !["node:assert", "node:assert/strict"].includes(statement.moduleSpecifier.text)
       || statement.importClause?.isTypeOnly === true
     ) continue;
+    const moduleName = statement.moduleSpecifier.text;
     const importClause = statement.importClause;
-    if (importClause?.name !== undefined) namespaces.add(importClause.name.text);
-    const bindings = importClause?.namedBindings;
-    if (bindings === undefined) continue;
-    if (ts.isNamespaceImport(bindings)) {
-      namespaces.add(bindings.name.text);
+    if (importClause?.name !== undefined) {
+      bindings.set(importClause.name.text, importProvenance(moduleName, "default"));
+    }
+    const named = importClause?.namedBindings;
+    if (named === undefined) continue;
+    if (ts.isNamespaceImport(named)) {
+      bindings.set(
+        named.name.text,
+        testRunnerModules.has(moduleName)
+          ? "test-runner:namespace"
+          : importProvenance(moduleName, "*"),
+      );
       continue;
     }
-    for (const element of bindings.elements) {
+    for (const element of named.elements) {
       if (element.isTypeOnly) continue;
-      const imported = element.propertyName?.text ?? element.name.text;
-      if (imported === "strict") namespaces.add(element.name.text);
-      if (nodeAssertMethods.has(imported)) functions.add(element.name.text);
+      const importedName = element.propertyName?.text ?? element.name.text;
+      bindings.set(
+        element.name.text,
+        importProvenance(moduleName, importedName),
+      );
     }
   }
-  return { functions, namespaces };
+  for (const statement of source.statements) {
+    if (!ts.isImportDeclaration(statement)) addRuntimeDeclaration(statement, bindings);
+  }
+  return { bindings, parent: undefined };
 }
 
-function isExpectMatcherCall(call, shadowedBindings) {
-  if (!ts.isPropertyAccessExpression(call.expression)) return false;
+function nestedScope(parent, statements = [], names = []) {
+  const bindings = new Map(names.map((name) => [name, "shadow"]));
+  for (const statement of statements) addRuntimeDeclaration(statement, bindings);
+  return { bindings, parent };
+}
+
+function resolveBinding(scope, name) {
+  for (let current = scope; current !== undefined; current = current.parent) {
+    if (current.bindings.has(name)) return current.bindings.get(name);
+  }
+  return undefined;
+}
+
+function collectFunctionVarBindings(node, bindings) {
+  const visit = (node) => {
+    if (ts.isFunctionLike(node)) return;
+    if (ts.isClassLike(node)) return;
+    if (
+      ts.isVariableDeclarationList(node)
+      && (node.flags & ts.NodeFlags.BlockScoped) === 0
+    ) {
+      for (const declaration of node.declarations) {
+        addBindingNames(declaration.name, (name) => bindings.set(name, "shadow"));
+      }
+      return;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(node);
+}
+
+function functionScope(handler, parent) {
+  const names = [];
+  if (ts.isFunctionExpression(handler) && handler.name !== undefined) {
+    names.push(handler.name.text);
+  }
+  for (const parameter of handler.parameters) {
+    addBindingNames(parameter.name, (name) => names.push(name));
+  }
+  const statements = ts.isBlock(handler.body) ? handler.body.statements : [];
+  const scope = nestedScope(parent, statements, names);
+  collectFunctionVarBindings(handler.body, scope.bindings);
+  return scope;
+}
+
+function classScope(classNode, parent) {
+  return nestedScope(
+    parent,
+    [],
+    classNode.name === undefined ? [] : [classNode.name.text],
+  );
+}
+
+function staticBlockScope(block, parent) {
+  const scope = nestedScope(parent, block.body.statements);
+  collectFunctionVarBindings(block.body, scope.bindings);
+  return scope;
+}
+
+function registrationKindForName(name) {
+  if (testRegistrationNames.has(name)) return "test";
+  if (suiteRegistrationNames.has(name)) return "suite";
+  return undefined;
+}
+
+function registrationCallInfo(expression, scope) {
+  if (ts.isIdentifier(expression)) {
+    const provenance = resolveBinding(scope, expression.text);
+    if (provenance === "registration:test") return { kind: "test", state: "active" };
+    if (provenance === "registration:suite") return { kind: "suite", state: "active" };
+    return undefined;
+  }
+  if (ts.isCallExpression(expression)) {
+    return registrationCallInfo(expression.expression, scope);
+  }
+  if (!ts.isPropertyAccessExpression(expression)) return undefined;
+  if (
+    ts.isIdentifier(expression.expression)
+    && resolveBinding(scope, expression.expression.text) === "test-runner:namespace"
+  ) {
+    const kind = registrationKindForName(expression.name.text);
+    return kind === undefined ? undefined : { kind, state: "active" };
+  }
+  const parent = registrationCallInfo(expression.expression, scope);
+  if (parent === undefined) return undefined;
+  if (expression.name.text === "describe" && parent.kind === "test") {
+    return { kind: "suite", state: parent.state };
+  }
+  if (["skip", "todo"].includes(expression.name.text)) {
+    return { ...parent, state: "skipped" };
+  }
+  if (["runIf", "skipIf"].includes(expression.name.text)) {
+    return { ...parent, state: "conditional" };
+  }
+  return parent;
+}
+
+function expectInvocation(expression, scope) {
+  if (ts.isIdentifier(expression)) {
+    return resolveBinding(scope, expression.text) === "assertion:expect";
+  }
+  return ts.isPropertyAccessExpression(expression)
+    && ts.isIdentifier(expression.expression)
+    && resolveBinding(scope, expression.expression.text) === "test-runner:namespace"
+    && expression.name.text === "expect";
+}
+
+function expectMatcherName(call, scope) {
+  if (!ts.isPropertyAccessExpression(call.expression)) return undefined;
+  const matcherName = call.expression.name.text;
   let subject = call.expression.expression;
   while (
     ts.isPropertyAccessExpression(subject)
@@ -928,104 +1077,155 @@ function isExpectMatcherCall(call, shadowedBindings) {
   ) {
     subject = subject.expression;
   }
-  return ts.isCallExpression(subject)
-    && ts.isIdentifier(subject.expression)
-    && subject.expression.text === "expect"
-    && !shadowedBindings.has("expect");
+  return ts.isCallExpression(subject) && expectInvocation(subject.expression, scope)
+    ? matcherName
+    : undefined;
 }
 
-function isNodeAssertCall(call, bindings, shadowedBindings) {
+function nodeAssertCall(call, scope) {
   if (ts.isIdentifier(call.expression)) {
-    return !shadowedBindings.has(call.expression.text)
-      && (
-        bindings.functions.has(call.expression.text)
-        || bindings.namespaces.has(call.expression.text)
-      );
+    const provenance = resolveBinding(scope, call.expression.text);
+    return provenance === "assertion:node-function"
+      || provenance === "assertion:node-namespace";
   }
   if (!ts.isPropertyAccessExpression(call.expression)) return false;
   const receiver = call.expression.expression;
   if (
     ts.isIdentifier(receiver)
-    && !shadowedBindings.has(receiver.text)
-    && bindings.namespaces.has(receiver.text)
+    && resolveBinding(scope, receiver.text) === "assertion:node-namespace"
     && nodeAssertMethods.has(call.expression.name.text)
   ) return true;
   return ts.isPropertyAccessExpression(receiver)
     && receiver.name.text === "strict"
     && ts.isIdentifier(receiver.expression)
-    && !shadowedBindings.has(receiver.expression.text)
-    && bindings.namespaces.has(receiver.expression.text)
+    && resolveBinding(scope, receiver.expression.text) === "assertion:node-namespace"
     && nodeAssertMethods.has(call.expression.name.text);
 }
 
-function isAssertionCall(call, assertBindings, shadowedBindings) {
-  if (
-    isExpectMatcherCall(call, shadowedBindings)
-    || isNodeAssertCall(call, assertBindings, shadowedBindings)
-  ) return true;
+function fastCheckMethod(call, scope, method) {
   return ts.isPropertyAccessExpression(call.expression)
     && ts.isIdentifier(call.expression.expression)
-    && call.expression.expression.text === "fc"
-    && !shadowedBindings.has("fc")
-    && call.expression.name.text === "assert";
+    && resolveBinding(scope, call.expression.expression.text) === "assertion:fast-check"
+    && call.expression.name.text === method;
 }
 
-function addBindingNames(name, bindings) {
-  if (ts.isIdentifier(name)) {
-    bindings.add(name.text);
-    return;
+function assertionCallInfo(call, scope) {
+  const matcherName = expectMatcherName(call, scope);
+  if (matcherName !== undefined) {
+    return {
+      assertion: true,
+      executesCallback: ["toThrow", "toThrowError"].includes(matcherName),
+    };
   }
-  for (const element of name.elements) {
-    if (ts.isBindingElement(element)) addBindingNames(element.name, bindings);
+  if (nodeAssertCall(call, scope)) {
+    const method = ts.isPropertyAccessExpression(call.expression)
+      ? call.expression.name.text
+      : undefined;
+    return {
+      assertion: true,
+      executesCallback: ["doesNotReject", "doesNotThrow", "rejects", "throws"].includes(method),
+    };
   }
-}
-
-function handlerLocalBindings(handler) {
-  const bindings = new Set();
-  if (ts.isFunctionExpression(handler) && handler.name !== undefined) {
-    bindings.add(handler.name.text);
-  }
-  for (const parameter of handler.parameters) addBindingNames(parameter.name, bindings);
-  const visit = (node) => {
-    if (ts.isFunctionDeclaration(node)) {
-      if (node.name !== undefined) bindings.add(node.name.text);
-      return;
-    }
-    if (ts.isFunctionLike(node)) return;
-    if (
-      ts.isClassDeclaration(node)
-      || ts.isEnumDeclaration(node)
-      || ts.isModuleDeclaration(node)
-    ) {
-      if (node.name !== undefined) bindings.add(node.name.text);
-      return;
-    }
-    if (ts.isVariableDeclaration(node)) addBindingNames(node.name, bindings);
-    ts.forEachChild(node, visit);
+  return {
+    assertion: fastCheckMethod(call, scope, "assert"),
+    executesCallback: fastCheckMethod(call, scope, "assert"),
   };
-  ts.forEachChild(handler.body, visit);
-  return bindings;
 }
 
-function testHandlerEvidence(handler, assertBindings) {
+function trustedCallbackCall(call, scope) {
+  if (
+    ts.isPropertyAccessExpression(call.expression)
+    && ["every", "filter", "find", "findIndex", "flatMap", "forEach", "map", "reduce", "reduceRight", "some", "transaction"].includes(call.expression.name.text)
+  ) return true;
+  return ["asyncProperty", "property"].some((method) => fastCheckMethod(call, scope, method));
+}
+
+function isStaticClassMember(member) {
+  return member.modifiers?.some(({ kind }) => kind === ts.SyntaxKind.StaticKeyword) === true;
+}
+
+function testHandlerEvidence(handler, parentScope) {
   const evidenceTokens = new Set();
   let hasAssertion = false;
-  const shadowedBindings = handlerLocalBindings(handler);
-  const collectTokens = (node) => {
+  const rootScope = functionScope(handler, parentScope);
+  const addToken = (node) => {
     if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       evidenceTokens.add(node.text);
     }
-    ts.forEachChild(node, collectTokens);
   };
-  const visit = (node) => {
-    if (ts.isFunctionLike(node)) return;
-    if (ts.isCallExpression(node)) {
-      if (isAssertionCall(node, assertBindings, shadowedBindings)) hasAssertion = true;
-      collectTokens(node);
+  const visit = (node, scope, state = "active", insideCall = false, callbackProven = false) => {
+    if (state === "active" && insideCall) addToken(node);
+    if (isShortCircuitExpression(node)) {
+      visit(node.left, scope, state, insideCall, callbackProven);
+      visit(
+        node.right,
+        scope,
+        state === "active" ? "conditional" : state,
+        insideCall,
+        callbackProven,
+      );
+      return;
     }
-    ts.forEachChild(node, visit);
+    if (isConditionalRegistrationContainer(node)) {
+      ts.forEachChild(node, (child) =>
+        visit(child, scope, state === "active" ? "conditional" : state, insideCall, callbackProven)
+      );
+      return;
+    }
+    if (ts.isBlock(node)) {
+      const blockScope = nestedScope(scope, node.statements);
+      for (const statement of node.statements) {
+        visit(statement, blockScope, state, insideCall, callbackProven);
+      }
+      return;
+    }
+    if (ts.isClassLike(node)) {
+      const bodyScope = classScope(node, scope);
+      for (const member of node.members) {
+        if (ts.isClassStaticBlockDeclaration(member)) {
+          const staticScope = staticBlockScope(member, bodyScope);
+          for (const statement of member.body.statements) {
+            visit(statement, staticScope, state, insideCall, callbackProven);
+          }
+        } else if (
+          ts.isPropertyDeclaration(member)
+          && isStaticClassMember(member)
+          && member.initializer !== undefined
+        ) {
+          visit(member.initializer, bodyScope, state, insideCall, callbackProven);
+        }
+      }
+      return;
+    }
+    if (ts.isFunctionLike(node)) {
+      if (!callbackProven || node.body === undefined) return;
+      const callbackScope = functionScope(node, scope);
+      visit(node.body, callbackScope, state, insideCall, false);
+      return;
+    }
+    if (ts.isCallExpression(node)) {
+      const assertion = assertionCallInfo(node, scope);
+      if (state === "active" && assertion.assertion) hasAssertion = true;
+      const callbacksExecute = callbackProven
+        || assertion.executesCallback
+        || trustedCallbackCall(node, scope);
+      visit(node.expression, scope, state, true, callbacksExecute);
+      for (const argument of node.arguments) {
+        visit(argument, scope, state, true, callbacksExecute);
+      }
+      return;
+    }
+    ts.forEachChild(node, (child) =>
+      visit(child, scope, state, insideCall, callbackProven)
+    );
   };
-  visit(handler.body);
+  if (ts.isBlock(handler.body)) {
+    for (const statement of handler.body.statements) {
+      visit(statement, rootScope);
+    }
+  } else {
+    visit(handler.body, rootScope);
+  }
   return { evidenceTokens, hasAssertion };
 }
 
@@ -1060,54 +1260,98 @@ export function validateExecutableTestCases(contents, requiredTitles, requiredSy
     true,
     ts.ScriptKind.TS,
   );
-  const assertBindings = nodeAssertBindings(source);
+  const rootScope = moduleScope(source);
   const activeTests = new Map();
-  const visitRegistrations = (node, state = "active") => {
+  const visitRegistrations = (node, scope = rootScope, state = "active") => {
     if (ts.isFunctionLike(node)) return;
     if (isShortCircuitExpression(node)) {
-      visitRegistrations(node.left, state);
-      visitRegistrations(node.right, state === "active" ? "conditional" : state);
+      visitRegistrations(node.left, scope, state);
+      visitRegistrations(
+        node.right,
+        scope,
+        state === "active" ? "conditional" : state,
+      );
       return;
     }
     if (isConditionalRegistrationContainer(node)) {
       ts.forEachChild(node, (child) =>
-        visitRegistrations(child, state === "active" ? "conditional" : state)
+        visitRegistrations(
+          child,
+          scope,
+          state === "active" ? "conditional" : state,
+        )
       );
       return;
     }
-    if (ts.isCallExpression(node)) {
-      const suiteKind = suiteCallKind(node.expression);
-      if (suiteKind !== undefined) {
-        const handler = functionHandler(node);
-        if (handler !== undefined) {
-          const suiteState = suiteKind === "active" ? state : suiteKind;
-          ts.forEachChild(handler.body, (child) => visitRegistrations(child, suiteState));
-        }
-        return;
-      }
-      const kind = testCallKind(node.expression);
-      if (kind !== "active" || state !== "active") {
-        if (kind !== undefined) return;
-        ts.forEachChild(node, (child) => visitRegistrations(child, state));
-        return;
-      }
-      const title = node.arguments[0];
-      const handler = functionHandler(node);
-      if (
-        title !== undefined
-        && (ts.isStringLiteral(title) || ts.isNoSubstitutionTemplateLiteral(title))
-        && handler !== undefined
-      ) {
-        const tests = activeTests.get(title.text) ?? [];
-        tests.push(testHandlerEvidence(handler, assertBindings));
-        activeTests.set(title.text, tests);
+    if (ts.isBlock(node)) {
+      const blockScope = nestedScope(scope, node.statements);
+      for (const statement of node.statements) {
+        visitRegistrations(statement, blockScope, state);
       }
       return;
     }
-    ts.forEachChild(node, (child) => visitRegistrations(child, state));
+    if (ts.isClassLike(node)) {
+      const bodyScope = classScope(node, scope);
+      for (const member of node.members) {
+        if (ts.isClassStaticBlockDeclaration(member)) {
+          const staticScope = staticBlockScope(member, bodyScope);
+          for (const statement of member.body.statements) {
+            visitRegistrations(statement, staticScope, state);
+          }
+        } else if (
+          ts.isPropertyDeclaration(member)
+          && isStaticClassMember(member)
+          && member.initializer !== undefined
+        ) {
+          visitRegistrations(member.initializer, bodyScope, state);
+        }
+      }
+      return;
+    }
+    if (ts.isCallExpression(node)) {
+      const registration = registrationCallInfo(node.expression, scope);
+      if (registration?.kind === "suite") {
+        const handler = functionHandler(node);
+        if (handler !== undefined) {
+          const suiteState = registration.state === "active"
+            ? state
+            : registration.state;
+          const suiteScope = functionScope(handler, scope);
+          if (ts.isBlock(handler.body)) {
+            for (const statement of handler.body.statements) {
+              visitRegistrations(statement, suiteScope, suiteState);
+            }
+          }
+        }
+        return;
+      }
+      if (registration?.kind === "test") {
+        if (registration.state !== "active" || state !== "active") return;
+        const title = node.arguments[0];
+        const handler = functionHandler(node);
+        if (
+          title !== undefined
+          && (ts.isStringLiteral(title) || ts.isNoSubstitutionTemplateLiteral(title))
+          && handler !== undefined
+        ) {
+          const tests = activeTests.get(title.text) ?? [];
+          tests.push(testHandlerEvidence(handler, scope));
+          activeTests.set(title.text, tests);
+        }
+        return;
+      }
+      visitRegistrations(node.expression, scope, state);
+      for (const argument of node.arguments) {
+        if (!ts.isFunctionLike(argument)) visitRegistrations(argument, scope, state);
+      }
+      return;
+    }
+    ts.forEachChild(node, (child) => visitRegistrations(child, scope, state));
   };
   if (source.parseDiagnostics.length > 0) throw new Error("REQUIRED_CONTRACT_MISSING");
-  ts.forEachChild(source, visitRegistrations);
+  for (const statement of source.statements) {
+    visitRegistrations(statement, rootScope);
+  }
   if (requiredTitles.some((title) => {
     const tests = activeTests.get(title) ?? [];
     return !tests.some(({ evidenceTokens, hasAssertion }) =>

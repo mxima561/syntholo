@@ -28,6 +28,7 @@ export type ProductionDependencyGraph = Readonly<{
 }>;
 
 export const FOUNDATION_CHECK_CATALOG: readonly string[];
+export const FOUNDATION_EVIDENCE_SCHEMA: "syntholo.foundation-gate.v1";
 export const RELEASE_SHA_PATTERN: RegExp;
 export function evaluateFoundationGate(
   checks: Readonly<Record<string, GateCheck>>,

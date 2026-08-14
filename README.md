@@ -40,7 +40,7 @@ Useful entry points:
 npm run lint
 npm run typecheck
 npm test
-npm run build
+NODE_ENV=production RELEASE_SHA="$(git rev-parse HEAD)" npm run build
 npm run test:e2e
 npm run gate:foundation
 ```

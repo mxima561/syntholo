@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
+import { FOUNDATION_EVIDENCE_SCHEMA } from "./foundation-gate-lib.mjs";
 
 const releaseSha = process.env.RELEASE_SHA?.trim();
 if (!/^[0-9a-f]{40}$/u.test(releaseSha ?? "")) {
@@ -20,6 +21,7 @@ await writeFile("image-evidence.json", `${JSON.stringify({
   createdAt: new Date().toISOString(),
   environment: "ci",
   releaseSha,
+  schema: FOUNDATION_EVIDENCE_SCHEMA,
   services: ["api", "cron", "migrate", "worker"],
   status: "PASS",
   type: "images",

@@ -5,6 +5,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import {
   FOUNDATION_CHECK_CATALOG,
+  FOUNDATION_EVIDENCE_SCHEMA,
   evaluateFoundationGate,
   evaluateReleaseSha,
   foundationExitCode,
@@ -121,6 +122,7 @@ function reportFor(checks, releaseSha) {
     ...state,
     environment: process.env.CI === "true" ? "ci" : "local",
     releaseSha,
+    schema: FOUNDATION_EVIDENCE_SCHEMA,
     version: 1,
   };
 }
@@ -196,7 +198,10 @@ async function productionReport() {
       process.env.RELEASE_SHA,
     );
   }
-  const releaseEnvironment = { RELEASE_SHA: process.env.RELEASE_SHA };
+  const releaseEnvironment = {
+    NODE_ENV: "production",
+    RELEASE_SHA: process.env.RELEASE_SHA,
+  };
   const definitions = [
     { name: "workspaces", command: "required contracts + lint + typecheck + unit", timeoutMs: 900_000,
       run: async (signal) => validateRequiredContracts(process.cwd()).then(() => command("npm", ["run", "lint"], {}, [], signal)).then(() => command("npm", ["run", "typecheck"], {}, [], signal)).then(() => command("npm", ["run", "test:coverage"], {}, [], signal)) },

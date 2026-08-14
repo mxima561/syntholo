@@ -417,6 +417,26 @@ describe("Railway service topology", () => {
     await expect(validateRailwayServiceConfigs(root, ["api"]))
       .rejects.toThrow("RAILWAY_CONFIG_INVALID");
   });
+
+  it("rejects an API image and Railway command without an explicit production mode", async () => {
+    const root = await fixture({
+      "apps/api/Dockerfile": [
+        "FROM node:22",
+        'ENTRYPOINT ["/usr/local/bin/node"]',
+        'CMD ["/app/server.js"]',
+      ].join("\n"),
+      "infra/railway/api.toml": [
+        "[build]",
+        'builder = "DOCKERFILE"',
+        'dockerfilePath = "apps/api/Dockerfile"',
+        "[deploy]",
+        'startCommand = "/usr/local/bin/node /app/server.js"',
+        'restartPolicyType = "ON_FAILURE"',
+      ].join("\n"),
+    });
+    await expect(validateRailwayServiceConfigs(root, ["api"]))
+      .rejects.toThrow("RAILWAY_CONFIG_INVALID");
+  });
 });
 
 describe("gate report trust boundary", () => {
@@ -438,10 +458,13 @@ describe("gate report trust boundary", () => {
       environment: "local",
       launchGate: "PASS",
       releaseSha,
+      schema: "syntholo.foundation-gate.v1",
       version: 1,
     };
 
     expect(validateFoundationReport(report)).toBe(report);
+    expect(() => validateFoundationReport({ ...report, schema: undefined }))
+      .toThrow("FOUNDATION_REPORT_INVALID");
     const incompleteChecks = Object.fromEntries(
       Object.entries(checks).filter(([name]) => name !== "jobs"),
     );
@@ -484,6 +507,7 @@ describe("gate report trust boundary", () => {
       createdAt: now.toISOString(),
       environment: "ci",
       releaseSha,
+      schema: "syntholo.foundation-gate.v1",
       services: ["api", "cron", "migrate", "worker"],
       status: "PASS",
       type: "images",
@@ -494,6 +518,11 @@ describe("gate report trust boundary", () => {
       releaseSha,
       type: "images",
     })).toEqual({ status: "PASS" });
+    expect(validateExternalEvidence({ ...evidence, schema: "foundation-gate.v1" }, {
+      now,
+      releaseSha,
+      type: "images",
+    })).toEqual({ reason: "EVIDENCE_INVALID", status: "FAILED" });
     expect(validateExternalEvidence({ ...evidence, releaseSha: "1".repeat(40) }, {
       now,
       releaseSha,
@@ -527,6 +556,7 @@ describe("gate report trust boundary", () => {
       locationPreserved: true,
       multipleSetCookiePreserved: true,
       releaseSha,
+      schema: "syntholo.foundation-gate.v1",
       status: "PASS",
       statusCodePreserved: true,
       type: "proxy",
@@ -590,6 +620,19 @@ describe("gate report trust boundary", () => {
     ["a shadowed default assert binding", "import assert from 'node:assert/strict'; it('required contract', () => { const assert = () => {}; assert(runContract()) })"],
     ["a shadowed named equal binding", "import { equal } from 'node:assert/strict'; it('required contract', () => { const equal = () => {}; equal(runContract(), true) })"],
     ["a shadowed expect binding", "it('required contract', () => { const expect = () => ({ toBe() {} }); expect(runContract()).toBe(true) })"],
+    ["a module-scope fake it binding", "import { expect } from 'vitest'; const it = (_title, handler) => handler(); it('required contract', () => { expect(runContract()).toBe(true) })"],
+    ["a module-scope fake test import", "import { test, expect } from './fake-runner'; test('required contract', () => { expect(runContract()).toBe(true) })"],
+    ["a module-scope fake describe binding", "import { it, expect } from 'vitest'; const describe = (_title, handler) => handler(); describe('suite', () => { it('required contract', () => { expect(runContract()).toBe(true) }) })"],
+    ["a module-scope fake expect binding", "import { it } from 'vitest'; const expect = () => ({ toBe() {} }); it('required contract', () => { expect(runContract()).toBe(true) })"],
+    ["a class static-block shadowed expect binding", "import { it, expect } from 'vitest'; it('required contract', () => { class Evidence { static { const expect = () => ({ toBe() {} }); expect(runContract()).toBe(true) } } })"],
+    ["a class static-block shadowed default assert binding", "import assert from 'node:assert/strict'; import { it } from 'vitest'; it('required contract', () => { class Evidence { static { const assert = { equal() {} }; assert.equal(runContract(), true) } } })"],
+    ["a class static-block shadowed named equal binding", "import { equal } from 'node:assert/strict'; import { it } from 'vitest'; it('required contract', () => { class Evidence { static { const equal = () => {}; equal(runContract(), true) } } })"],
+    ["a nested static-block var binding", "import { it, expect } from 'vitest'; it('required contract', () => { class Evidence { static { { var expect = () => ({ toBe() {} }) } expect(runContract()).toBe(true) } } })"],
+    ["a named class-expression assert binding", "import assert from 'node:assert/strict'; import { it } from 'vitest'; it('required contract', () => { const Evidence = class assert { static equal() {} static { assert.equal(runContract(), true) } }; void Evidence })"],
+    ["an uninstantiated instance-field assertion", "import { it, expect } from 'vitest'; it('required contract', () => { class Evidence { value = expect(runContract()).toBe(true) }; expect(true).toBe(true) })"],
+    ["a conditional assertion branch", "import { it, expect } from 'vitest'; it('required contract', () => { if (enabled) expect(runContract()).toBe(true); expect(true).toBe(true) })"],
+    ["a short-circuit assertion branch", "import { it, expect } from 'vitest'; it('required contract', () => { enabled && expect(runContract()).toBe(true); expect(true).toBe(true) })"],
+    ["an assertion hidden in an unproven callback", "import { it, expect } from 'vitest'; it('required contract', () => { execute(() => expect(runContract()).toBe(true)); expect(true).toBe(true) })"],
   ])("does not accept %s as an executable required contract", (_case, source) => {
     expect(() => validateExecutableTestCases(
       source,
@@ -601,7 +644,7 @@ describe("gate report trust boundary", () => {
 
   it("accepts an executable non-skipped required test", () => {
     expect(() => validateExecutableTestCases(
-      "it('required contract', () => { expect(runContract()).toBe(true) })",
+      "import { expect, it } from 'vitest'; it('required contract', () => { expect(runContract()).toBe(true) })",
       ["required contract"],
       { "required contract": ["runContract"] },
     )).not.toThrow();
@@ -609,7 +652,7 @@ describe("gate report trust boundary", () => {
 
   it("accepts an imported node:assert assertion invocation", () => {
     expect(() => validateExecutableTestCases(
-      "import assert from 'node:assert/strict'; it('required contract', () => { assert.equal(runContract(), true) })",
+      "import assert from 'node:assert/strict'; import { it } from 'vitest'; it('required contract', () => { assert.equal(runContract(), true) })",
       ["required contract"],
       { "required contract": ["runContract"] },
     )).not.toThrow();
@@ -617,7 +660,23 @@ describe("gate report trust boundary", () => {
 
   it("accepts an imported named node:assert assertion invocation", () => {
     expect(() => validateExecutableTestCases(
-      "import { equal } from 'node:assert/strict'; it('required contract', () => { equal(runContract(), true) })",
+      "import { equal } from 'node:assert/strict'; import { it } from 'vitest'; it('required contract', () => { equal(runContract(), true) })",
+      ["required contract"],
+      { "required contract": ["runContract"] },
+    )).not.toThrow();
+  });
+
+  it("accepts imported aliases and an executable class static block", () => {
+    expect(() => validateExecutableTestCases(
+      "import { expect as verify, it as spec } from 'vitest'; spec('required contract', () => { class Evidence { static { verify(runContract()).toBe(true) } } })",
+      ["required contract"],
+      { "required contract": ["runContract"] },
+    )).not.toThrow();
+  });
+
+  it("accepts an imported Playwright test and assertion", () => {
+    expect(() => validateExecutableTestCases(
+      "import { expect, test } from '@playwright/test'; test('required contract', () => { expect(runContract()).toBe(true) })",
       ["required contract"],
       { "required contract": ["runContract"] },
     )).not.toThrow();
@@ -625,12 +684,12 @@ describe("gate report trust boundary", () => {
 
   it("requires structured syntax from the executable test body", () => {
     expect(() => validateExecutableTestCases(
-      "it('required contract', () => { expect(true).toBe(true) })",
+      "import { expect, it } from 'vitest'; it('required contract', () => { expect(true).toBe(true) })",
       ["required contract"],
       { "required contract": ["runContract"] },
     )).toThrow("REQUIRED_CONTRACT_MISSING");
     expect(() => validateExecutableTestCases(
-      "it('required contract', () => { expect(runContract()).toBe(true) })",
+      "import { expect, it } from 'vitest'; it('required contract', () => { expect(runContract()).toBe(true) })",
       ["required contract"],
       { "required contract": ["runContract"] },
     )).not.toThrow();

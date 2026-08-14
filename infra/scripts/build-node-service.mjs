@@ -24,6 +24,9 @@ if (provider !== undefined && evaluateProviderReleaseSha(process.env, provider).
 }
 
 const service = process.argv[2];
+if (service === "api" && process.env.NODE_ENV !== "production") {
+  throw new Error("API_BUILD_MODE_INVALID");
+}
 const configuration = service === "api"
   ? { entryPoints: ["src/server.ts"], outfile: "dist/server.js" }
   : service === "worker"

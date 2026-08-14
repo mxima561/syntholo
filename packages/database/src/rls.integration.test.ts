@@ -654,7 +654,7 @@ describe("PostgreSQL account role boundary", () => {
     }
   });
 
-  it("creates exactly four inert capability roles with no password, settings, or outbound membership", async () => {
+  it("creates exactly five inert capability roles with no password, settings, or outbound membership", async () => {
     const result = await harness.database.pool.query<{
       rolbypassrls: boolean;
       rolcanlogin: boolean;

@@ -18,6 +18,7 @@ type GateResult = Readonly<{
     engineeringGate: string;
     launchGate: string;
     releaseSha: string | null;
+    schema: string;
     version: number;
   };
 }>;
@@ -55,6 +56,7 @@ describe("foundation gate report", () => {
     });
 
     expect(result.exitCode).toBe(1);
+    expect(result.json.schema).toBe("syntholo.foundation-gate.v1");
     expect(result.json.checks.releaseSha).toMatchObject({
       reason: "RELEASE_SHA_REQUIRED",
       status: "BLOCKED",

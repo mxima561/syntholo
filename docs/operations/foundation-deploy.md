@@ -10,6 +10,10 @@ malformed, or different runtime value before opening a listener or claiming
 work. Railway builds also require `RAILWAY_GIT_COMMIT_SHA`, and Vercel builds
 require `VERCEL_GIT_COMMIT_SHA`; the provider-supplied checkout SHA must equal
 `RELEASE_SHA`. Do not replace either provider value with a manually chosen SHA.
+Every API release build and runtime must also set `NODE_ENV=production`
+explicitly. Omission is invalid and never falls back to local non-Secure staff
+cookies. The API image and Railway API start command both supply the production
+default; local API development must set `NODE_ENV=development` explicitly.
 
 Node 22.22.2, npm 10.9.7, PostgreSQL 16.14, and Playwright 1.62.1 are the pinned
 foundation toolchain. Secrets belong in provider secret stores, never CI,
@@ -27,8 +31,13 @@ Configure five independent services and explicitly select the matching config:
 | one-shot cron | `infra/railway/cron.toml` | dedicated `apps/worker/Dockerfile.cron`; `/app/cron.js` | safe worker LOGIN URL |
 | web | hosting-project config | Next standalone artifact | no database URL or privileged provider secret |
 
-The cron holds one PostgreSQL advisory lock, performs its bounded readiness
-work once, releases the lock, and exits. Overlap or failure exits nonzero. The
+The cron attempts one PostgreSQL advisory lock, verifies readiness, and invokes
+the idempotent `cleanup_staff_auth(statement_timestamp(), 500)` maintenance
+function once. An overlapping/already-running invocation performs no work and
+exits zero. Database connect/query, readiness/maintenance work, advisory unlock,
+and pool close all have hard bounds; aborts propagate to in-flight work and
+destroy the checked-out connection so its session lock is released. Any actual
+readiness, maintenance, timeout, unlock, or close failure exits nonzero. The
 long-running worker stops claiming on termination and drains in-flight fenced
 jobs. None of API, worker, cron, or web runs migrations on boot.
 The migration URL must be a direct PostgreSQL endpoint; pooler hostnames and
@@ -59,9 +68,10 @@ Run:
 RELEASE_SHA="$(git rev-parse HEAD)" npm run gate:foundation
 ```
 
-The versioned `foundation-gate.json` records environment, SHA, named status,
-duration, command/artifact hash, and redacted reason. Independent checks keep
-running after failures. Local absence of Docker is never recorded as image
+The versioned `foundation-gate.json` and image/deployed evidence use the exact
+schema identifier `syntholo.foundation-gate.v1` and record environment, SHA,
+named status, duration, command/artifact hash, and redacted reason. Independent
+checks keep running after failures. Local absence of Docker is never recorded as image
 success: the Docker-capable CI image job builds with `--no-cache`, inspects
 numeric user/process/label/files/history, smoke-tests missing configuration,
 creates CycloneDX SBOMs, and blocks unresolved high/critical runtime findings.

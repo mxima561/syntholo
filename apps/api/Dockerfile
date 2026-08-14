@@ -17,7 +17,7 @@ COPY apps/api apps/api
 COPY packages packages
 COPY infra/scripts/build-node-service.mjs infra/scripts/build-node-service.mjs
 COPY infra/scripts/foundation-gate-lib.mjs infra/scripts/foundation-gate-lib.mjs
-RUN SYNTHOLO_BUILD_PROVIDER=railway RELEASE_SHA="$RELEASE_SHA" RAILWAY_GIT_COMMIT_SHA="$RAILWAY_GIT_COMMIT_SHA" npm run build -w @syntholo/api
+RUN NODE_ENV=production SYNTHOLO_BUILD_PROVIDER=railway RELEASE_SHA="$RELEASE_SHA" RAILWAY_GIT_COMMIT_SHA="$RAILWAY_GIT_COMMIT_SHA" npm run build -w @syntholo/api
 RUN SYNTHOLO_BUILD_PROVIDER=railway RELEASE_SHA="$RELEASE_SHA" RAILWAY_GIT_COMMIT_SHA="$RAILWAY_GIT_COMMIT_SHA" npm run build:migrate
 
 FROM node:22.22.2-bookworm-slim@sha256:9f6d5975c7dca860947d3915877f85607946403fc55349f39b4bc3688448bb6e AS migration-runtime
@@ -39,6 +39,7 @@ LABEL org.opencontainers.image.revision="$RELEASE_SHA" \
 RUN groupadd --gid 10001 syntholo && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin syntholo \
   && rm -rf /usr/local/lib/node_modules/npm /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 WORKDIR /app
+ENV NODE_ENV=production
 COPY --from=build --chown=10001:10001 /workspace/apps/api/dist/server.js /app/server.js
 USER 10001:10001
 EXPOSE 4000
