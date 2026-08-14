@@ -11,22 +11,25 @@ const staffActor = {
   authenticatedAt: "2026-08-14T12:00:00.000Z",
 } as const;
 
-function resolve(actor: unknown) {
+function resolve(response: Response) {
   return resolveProductionAdminAccess({
     apiUpstreamOrigin: "https://api.syntholo.test",
     cookieName: "__Host-syntholo_staff_session",
     cookieStore: { getAll: () => [{ value: "x".repeat(43) }] },
-    fetch: vi.fn(async () => new Response(JSON.stringify(actor), { status: 200 })),
+    fetch: vi.fn(async () => response),
   });
 }
 
 describe("production staff access", () => {
   it("accepts a valid API-resolved WorkOS administrator", async () => {
-    await expect(resolve(staffActor)).resolves.toBe(true);
+    await expect(resolve(new Response(JSON.stringify(staffActor), { status: 200 })))
+      .resolves.toBe("authorized");
   });
 
   it("does not authorize a valid WorkOS coach for the admin surface", async () => {
-    await expect(resolve({ ...staffActor, role: "coach" })).resolves.toBe(false);
+    await expect(resolve(new Response(JSON.stringify({ ...staffActor, role: "coach" }), {
+      status: 200,
+    }))).resolves.toBe("forbidden");
   });
 
   it("fails closed for an invalid or missing staff cookie", async () => {
@@ -35,6 +38,18 @@ describe("production staff access", () => {
       cookieName: "__Host-syntholo_staff_session",
       cookieStore: { getAll: () => [] },
       fetch: vi.fn(),
-    })).resolves.toBe(false);
+    })).resolves.toBe("unauthenticated");
+  });
+
+  it("distinguishes an expired session from an unavailable upstream", async () => {
+    await expect(resolve(new Response(null, { status: 401 })))
+      .resolves.toBe("unauthenticated");
+    await expect(resolve(new Response(null, { status: 503 })))
+      .resolves.toBe("unavailable");
+  });
+
+  it("treats a malformed successful actor response as unavailable", async () => {
+    await expect(resolve(new Response(JSON.stringify({ role: "admin" }), { status: 200 })))
+      .resolves.toBe("unavailable");
   });
 });

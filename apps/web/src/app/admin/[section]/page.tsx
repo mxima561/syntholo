@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { ArrowRight, Search } from "lucide-react";
+import { AdminAccessState } from "@/components/admin-access-state";
 import { requireAdminAccess } from "@/lib/auth/staff-access";
 
 const sections = {
@@ -12,7 +13,8 @@ const sections = {
 } as const;
 
 export default async function AdminSectionPage({ params }: { params: Promise<{ section: string }> }) {
-  await requireAdminAccess();
+  const access = await requireAdminAccess();
+  if (access !== "authorized") return <AdminAccessState state={access} />;
   const { section } = await params;
   const data = sections[section as keyof typeof sections];
   if (!data) notFound();

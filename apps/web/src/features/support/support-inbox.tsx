@@ -15,7 +15,10 @@ function formatMessageDate(value: string) {
   return `${monthNames[date.getUTCMonth()]} ${date.getUTCDate()} · ${displayHour}:${minutes} ${hour >= 12 ? "PM" : "AM"}`;
 }
 
-export function SupportInbox({ initialThreads }: { initialThreads: SupportThread[] }) {
+export function SupportInbox({ currentMember, initialThreads }: {
+  currentMember: { businessName: string; id: string; name: string };
+  initialThreads: SupportThread[];
+}) {
   const [threads, setThreads] = useState(initialThreads);
   const [selectedId, setSelectedId] = useState(initialThreads[0]?.id);
   const [reply, setReply] = useState("");
@@ -29,8 +32,8 @@ export function SupportInbox({ initialThreads }: { initialThreads: SupportThread
       status: "waiting_on_coach",
       messages: [...thread.messages, {
         id: `message-${thread.messages.length + 1}`,
-        authorId: "member-maria",
-        authorName: "Maria Chen",
+        authorId: currentMember.id,
+        authorName: currentMember.name,
         authorRole: "customer",
         body,
         createdAt: new Date().toISOString(),
@@ -48,12 +51,12 @@ export function SupportInbox({ initialThreads }: { initialThreads: SupportThread
       <section className="conversation-panel">
         <header><div><span className="micro-label">{selected.category.replace("_", " ")}</span><h2>{selected.subject}</h2><p>Assigned to {selected.assignedCoachName}</p></div><span className={`conversation-sla ${selected.status === "waiting_on_customer" ? "paused" : ""}`}><Clock3 size={13} /> {selected.status === "waiting_on_customer" ? "SLA paused · your reply" : "Reply due within 2 business days"}</span></header>
         <div className="message-stream">
-          {selected.messages.map((message) => <article className={message.authorRole} key={message.id}><span className={message.authorRole === "coach" ? "coach-avatar" : "member-message-avatar"}>{message.authorName.split(" ").map((part) => part[0]).join("")}</span><div><div><strong>{message.authorName}</strong><small>{message.authorRole === "coach" ? "Human coach" : "Northstar Advisory"}</small></div><p>{message.body}</p><time>{formatMessageDate(message.createdAt)}</time></div></article>)}
-          {selected.status === "waiting_on_customer" ? <div className="reply-needed"><CheckCircle2 size={15} /> Naomi replied. The response timer is paused until you write back.</div> : null}
+          {selected.messages.map((message) => <article className={message.authorRole} key={message.id}><span className={message.authorRole === "coach" ? "coach-avatar" : "member-message-avatar"}>{message.authorName.split(" ").map((part) => part[0]).join("")}</span><div><div><strong>{message.authorName}</strong><small>{message.authorRole === "coach" ? "Human coach" : currentMember.businessName}</small></div><p>{message.body}</p><time>{formatMessageDate(message.createdAt)}</time></div></article>)}
+          {selected.status === "waiting_on_customer" ? <div className="reply-needed"><CheckCircle2 size={15} /> {selected.assignedCoachName.split(" ")[0]} replied. The response timer is paused until you write back.</div> : null}
         </div>
         <form className="reply-composer" onSubmit={(event) => { event.preventDefault(); sendReply(); }}><label htmlFor="coach-reply">Reply to {selected.assignedCoachName.split(" ")[0]}</label><textarea id="coach-reply" onChange={(event) => setReply(event.target.value)} placeholder="Share context, a decision, or the specific feedback you need…" value={reply} /><div><div><button aria-label="Attach a file" type="button"><Paperclip size={15} /></button><button aria-label="Attach an artifact" type="button"><FilePlus2 size={15} /></button><span>PDF, DOCX, XLSX, CSV, PNG or JPG · 25 MB</span></div><Button disabled={!reply.trim()} size="small" type="submit" variant="human">Send reply <Send size={14} /></Button></div></form>
       </section>
-      <aside className="coach-profile"><span className="coach-avatar large">NR</span><span className="online-dot" /><h2>Naomi Reed</h2><p>Implementation coach</p><dl><div><dt>Typical reply</dt><dd>1 business day</dd></div><div><dt>Specialty</dt><dd>Client operations</dd></div></dl><div className="support-standard"><strong>Human support standard</strong><p>Every substantive question receives a real response within two U.S. business days.</p></div></aside>
+      <aside className="coach-profile"><span className="coach-avatar large">{selected.assignedCoachName.split(" ").map((part) => part[0]).join("")}</span><span className="online-dot" /><h2>{selected.assignedCoachName}</h2><p>Implementation coach</p><dl><div><dt>Typical reply</dt><dd>1 business day</dd></div><div><dt>Specialty</dt><dd>Client operations</dd></div></dl><div className="support-standard"><strong>Human support standard</strong><p>Every substantive question receives a real response within two U.S. business days.</p></div></aside>
     </div>
   );
 }

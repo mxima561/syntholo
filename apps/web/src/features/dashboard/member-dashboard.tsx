@@ -35,7 +35,7 @@ export function MemberDashboard({ dashboard }: { dashboard: DashboardView }) {
     <div className="member-page member-dashboard">
       <section className="dashboard-heading">
         <div>
-          <span className="meta-label">Northstar Advisory · Academy</span>
+          <span className="meta-label">{dashboard.organization.name} · Academy</span>
           <h1>Keep building your business OS.</h1>
           <p>One focused action, a practical recommendation, and a real person in your corner.</p>
         </div>

@@ -7,7 +7,7 @@ import { SupportInbox } from "./support-inbox";
 describe("SupportInbox", () => {
   it("adds a customer reply to the shared thread", async () => {
     const user = userEvent.setup();
-    render(<SupportInbox initialThreads={demoSupportThreads} />);
+    render(<SupportInbox currentMember={{ businessName: "Northstar Advisory", id: "member-maria", name: "Maria Chen" }} initialThreads={demoSupportThreads} />);
 
     await user.type(screen.getByLabelText(/reply to naomi/i), "We added the exception owner.");
     await user.click(screen.getByRole("button", { name: /send reply/i }));

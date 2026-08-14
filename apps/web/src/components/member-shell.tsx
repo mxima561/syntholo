@@ -36,7 +36,17 @@ const navGroups = [
   },
 ] as const;
 
-export function MemberShell({ children }: { children: ReactNode }) {
+type MemberShellProps = {
+  children: ReactNode;
+  identity: {
+    initials: string;
+    memberName: string;
+    organizationName: string;
+    supportEndsLabel: string;
+  };
+};
+
+export function MemberShell({ children, identity }: MemberShellProps) {
   const pathname = usePathname();
 
   return (
@@ -60,13 +70,13 @@ export function MemberShell({ children }: { children: ReactNode }) {
         </nav>
         <div className="sidebar-program">
           <Sparkles size={15} />
-          <div><span>Academy access</span><strong>Lifetime course</strong><small>Human support through Jul 30, 2027</small></div>
+          <div><span>Academy access</span><strong>Lifetime course</strong><small>Human support through {identity.supportEndsLabel}</small></div>
         </div>
-        <div className="member-identity"><span>MC</span><div><strong>Maria Chen</strong><small>Northstar Advisory</small></div></div>
+        <div className="member-identity"><span>{identity.initials}</span><div><strong>{identity.memberName}</strong><small>{identity.organizationName}</small></div></div>
       </aside>
       <div className="member-content">
         <header className="member-topbar">
-          <div><span className="mobile-brand">Syntholo</span><strong>Northstar Advisory</strong><small>AI Operating System Academy</small></div>
+          <div><span className="mobile-brand">Syntholo</span><strong>{identity.organizationName}</strong><small>AI Operating System Academy</small></div>
           <div className="topbar-actions">
             <Link aria-label="Browse lessons and templates" className="topbar-browse" href="/learn/course">
               <BookOpen aria-hidden="true" size={16} />

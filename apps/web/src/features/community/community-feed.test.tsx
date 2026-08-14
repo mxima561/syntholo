@@ -7,7 +7,7 @@ import { CommunityFeed } from "./community-feed";
 describe("CommunityFeed", () => {
   it("publishes a new member post into the selected space", async () => {
     const user = userEvent.setup();
-    render(<CommunityFeed initialPosts={demoCommunityPosts} />);
+    render(<CommunityFeed currentMember={{ authorName: "Maria Chen", authorRole: "Founder", businessName: "Northstar Advisory", initials: "MC" }} initialPosts={demoCommunityPosts} referenceTime="2026-08-11T20:00:00.000Z" />);
 
     await user.click(screen.getByRole("button", { name: /share an update/i }));
     await user.type(screen.getByLabelText(/post title/i), "Our onboarding test is ready");

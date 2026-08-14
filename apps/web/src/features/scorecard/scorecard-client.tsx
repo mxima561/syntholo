@@ -80,7 +80,7 @@ export function ScorecardClient() {
             <label>Work email<input name="email" placeholder="maria@company.com" required type="email" /></label>
           </div>
           <div className="field-grid">
-            <label>Business name<input name="business" placeholder="Northstar Advisory" required /></label>
+            <label>Business name<input name="business" placeholder="Example Advisory" required /></label>
             <label>Country<select defaultValue="" name="country" required><option disabled value="">Select country</option><option>United States</option><option>Canada</option><option>United Kingdom</option><option>Australia</option><option>Other</option></select></label>
           </div>
           <label className="consent-row"><input name="marketing" type="checkbox" /> Send me practical AI implementation notes. Optional, unsubscribe anytime.</label>

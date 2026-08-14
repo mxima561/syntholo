@@ -10,6 +10,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:production-artifacts": "node --test tests/build/production-learn-artifacts.test.mjs",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
   },

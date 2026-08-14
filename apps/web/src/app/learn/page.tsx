@@ -1,9 +1,11 @@
-import { MemberDashboard } from "@/features/dashboard/member-dashboard";
 import { ProductionMemberAccess } from "@/components/production-member-access";
 import { isDemoMode } from "@/lib/config/mode";
-import { getDashboard } from "@/lib/demo/repository";
 
-export default function LearnDashboardPage() {
+export default async function LearnDashboardPage() {
   if (!isDemoMode()) return <ProductionMemberAccess />;
+  const [{ MemberDashboard }, { getDashboard }] = await Promise.all([
+    import("@/features/dashboard/member-dashboard"),
+    import("@/lib/demo/repository"),
+  ]);
   return <MemberDashboard dashboard={getDashboard("member-maria")} />;
 }

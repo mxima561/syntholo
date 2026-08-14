@@ -20,12 +20,30 @@ type CookieStore = Readonly<{
   getAll(name: string): readonly { value: string }[];
 }>;
 
+export type AdminAccessResolution =
+  | "authorized"
+  | "unauthenticated"
+  | "forbidden"
+  | "unavailable";
+
 export async function resolveProductionAdminAccess(input: Readonly<{
   apiUpstreamOrigin: string;
   cookieName: string;
   cookieStore: CookieStore;
   fetch?: typeof fetch;
-}>): Promise<boolean> {
+}>): Promise<AdminAccessResolution> {
+  let cookieValues: readonly { value: string }[];
+  try {
+    cookieValues = input.cookieStore.getAll(input.cookieName);
+  } catch {
+    return "unavailable";
+  }
+  if (
+    cookieValues.length !== 1
+    || !/^[A-Za-z0-9_-]{43}$/u.test(cookieValues[0]?.value ?? "")
+  ) {
+    return "unauthenticated";
+  }
   try {
     const request = createServerStaffApiClient({
       apiUpstreamOrigin: input.apiUpstreamOrigin,
@@ -33,26 +51,37 @@ export async function resolveProductionAdminAccess(input: Readonly<{
       fetch: input.fetch,
     });
     const response = await request("/v1/staff/whoami", input.cookieStore);
-    if (!response.ok) return false;
+    if (response.status === 401) return "unauthenticated";
+    if (response.status === 403) return "forbidden";
+    if (!response.ok) return "unavailable";
     const actor = StaffActorSchema.safeParse(await response.json());
-    return actor.success && actor.data.role === "admin";
+    if (!actor.success) return "unavailable";
+    return actor.data.role === "admin" ? "authorized" : "forbidden";
   } catch {
-    return false;
+    return "unavailable";
   }
 }
 
-const hasProductionAdminAccess = cache(async (): Promise<boolean> => {
-  const config = parseWebApiConfig(process.env);
-  return resolveProductionAdminAccess({
-    apiUpstreamOrigin: config.apiUpstreamOrigin,
-    cookieName: config.staffCookieName,
-    cookieStore: await cookies(),
-  });
+const productionAdminAccess = cache(async (): Promise<AdminAccessResolution> => {
+  try {
+    const config = parseWebApiConfig(process.env);
+    return resolveProductionAdminAccess({
+      apiUpstreamOrigin: config.apiUpstreamOrigin,
+      cookieName: config.staffCookieName,
+      cookieStore: await cookies(),
+    });
+  } catch {
+    return "unavailable";
+  }
 });
 
-export async function requireAdminAccess(): Promise<void> {
-  if (isDemoMode()) return;
-  if (!(await hasProductionAdminAccess())) {
+export async function requireAdminAccess(): Promise<
+  "authorized" | "forbidden" | "unavailable"
+> {
+  if (isDemoMode()) return "authorized";
+  const resolution = await productionAdminAccess();
+  if (resolution === "unauthenticated") {
     redirect("/v1/staff/auth/sign-in?returnTo=%2Fadmin");
   }
+  return resolution;
 }

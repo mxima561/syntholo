@@ -71,17 +71,17 @@ describe("production member routes", () => {
     }
   });
 
-  it("does not add the deterministic member shell around production children", () => {
-    render(<LearnLayout><p>Production member state</p></LearnLayout>);
+  it("does not add the deterministic member shell around production children", async () => {
+    render(await LearnLayout({ children: <p>Production member state</p> }));
 
     expect(screen.getByText("Production member state")).toBeInTheDocument();
     expect(screen.queryByText(/Maria Chen|Northstar Advisory/u)).not.toBeInTheDocument();
   });
 
-  it("preserves the local prototype only when demo mode is explicit", () => {
+  it("preserves the local prototype only when demo mode is explicit", async () => {
     vi.stubEnv("APP_MODE", "demo");
 
-    render(<LearnDashboardPage />);
+    render(await LearnDashboardPage());
 
     expect(screen.getByText(/Northstar Advisory · Academy/u)).toBeInTheDocument();
     expect(demoRepository.getDashboard).toHaveBeenCalledWith("member-maria");
