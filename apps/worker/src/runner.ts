@@ -61,7 +61,8 @@ export function createDomainEventJobHandler(
     if (
       typeof eventId !== "string"
       || typeof handlerName !== "string"
-      || handlerName !== "foundation_audit_projection"
+      || !["foundation_audit_projection", "entitlement_reconciliation_queue"]
+        .includes(handlerName)
     ) {
       throw new HandlerFailure({ code: "JOB_INPUT_INVALID", permanent: true });
     }
@@ -311,6 +312,24 @@ export type OutboxPumpDependencies = Readonly<{
   wait?: (delayMs: number, signal: AbortSignal) => Promise<void>;
 }>;
 
+export function handlersForOutboxEvent(
+  event: import("@syntholo/database").ClaimedOutboxEvent,
+): readonly string[] {
+  switch (event.eventType) {
+    case "commerce.payment_paid.v1":
+    case "entitlements.command_applied.v1":
+    case "foundation.account_name_changed.v1":
+    case "foundation.aggregate_created.v1":
+    case "foundation.lock_lost.v1":
+    case "foundation.notification_sent.v1":
+      return Object.freeze(["foundation_audit_projection"]);
+    case "entitlements.reconciliation_required.v1":
+      return Object.freeze(["entitlement_reconciliation_queue"]);
+    default:
+      throw new HandlerFailure({ code: "JOB_INPUT_INVALID", permanent: true });
+  }
+}
+
 export async function runOutboxPump(
   dependencies: OutboxPumpDependencies,
   signal: AbortSignal,
@@ -472,18 +491,7 @@ async function main(): Promise<void> {
       () => runOutboxPump({
         clock,
         config,
-        handlersForEvent: (event) => {
-          switch (event.eventType) {
-            case "commerce.payment_paid.v1":
-            case "foundation.account_name_changed.v1":
-            case "foundation.aggregate_created.v1":
-            case "foundation.lock_lost.v1":
-            case "foundation.notification_sent.v1":
-              return ["foundation_audit_projection"];
-            default:
-              throw new HandlerFailure({ code: "JOB_INPUT_INVALID", permanent: true });
-          }
-        },
+        handlersForEvent: handlersForOutboxEvent,
         outbox,
         random: Math.random,
         workerId,

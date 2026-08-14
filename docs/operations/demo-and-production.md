@@ -32,7 +32,7 @@
 3. Visitor supplies contact details and explicit educational-email consent to unlock the full report.
 4. Stripe Checkout collects payment and sends a signed webhook.
 5. Webhook signature is verified and event ID is atomically claimed in MongoDB. Replays return success without applying fulfillment twice.
-6. Fulfillment creates the purchase, organization, three-seat entitlement, account-claim token, and receipt email.
+6. Fulfillment creates the purchase, organization, three-seat capacity with zero occupied reservation rows, account-claim token, and receipt email. Owner claim activates slot one; teammate invitations reserve the remaining slots.
 7. WorkOS claims the account and binds the identity to exactly one customer organization.
 8. Refunds/revocations update entitlements through the same idempotent event path.
 

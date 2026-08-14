@@ -7,6 +7,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -19,6 +20,10 @@ export const accounts = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
     status: text("status").notNull().default("active"),
+    ownerEstablishedAt: timestamp("owner_established_at", {
+      precision: 3,
+      withTimezone: true,
+    }),
     createdAt: timestampWithTimezone("created_at").notNull().defaultNow(),
     updatedAt: timestampWithTimezone("updated_at").notNull().defaultNow(),
   },
@@ -26,6 +31,10 @@ export const accounts = pgTable(
     check(
       "accounts_status_check",
       sql`${table.status} in ('active', 'suspended', 'deleted')`,
+    ),
+    check(
+      "accounts_owner_established_time_check",
+      sql`${table.ownerEstablishedAt} is null or (isfinite(${table.ownerEstablishedAt}) and ${table.ownerEstablishedAt} >= '2000-01-01 00:00:00+00'::timestamptz and ${table.ownerEstablishedAt} < '10000-01-01 00:00:00+00'::timestamptz and ${table.ownerEstablishedAt} = date_trunc('milliseconds', ${table.ownerEstablishedAt}))`,
     ),
   ],
 );
@@ -80,6 +89,7 @@ export const memberships = pgTable(
       table.accountId,
       table.memberIdentityId,
     ),
+    unique("memberships_id_account_unique").on(table.id, table.accountId),
     foreignKey({
       columns: [table.memberIdentityId, table.accountId],
       foreignColumns: [memberIdentities.id, memberIdentities.accountId],
@@ -99,6 +109,9 @@ export const memberships = pgTable(
       table.accountId,
       table.status,
     ),
+    uniqueIndex("memberships_one_active_owner_per_account")
+      .on(table.accountId)
+      .where(sql`${table.role} = 'owner' and ${table.status} = 'active'`),
   ],
 );
 

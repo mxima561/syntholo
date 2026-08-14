@@ -22,6 +22,10 @@ export type {
   HandlerReceiptClaim,
 } from "./repositories/outbox-processing.js";
 export { TransactionAccountRepository } from "./repositories/transaction-accounts.js";
+export {
+  MemberAccessUnavailableError,
+  MemberEntitlementReadRepository,
+} from "./repositories/member-entitlements.js";
 export { JobRepository, nextAttempt } from "./repositories/jobs.js";
 export type {
   ClaimedJob,
@@ -49,13 +53,43 @@ export type {
   AccountScope,
 } from "./repositories/accounts.js";
 export { createUnitOfWork } from "./unit-of-work.js";
+export { attestSystemDatabase, createSystemUnitOfWork } from "./unit-of-work.js";
+export {
+  canonicalEntitlementSnapshotHashV1,
+  databaseErrorCode,
+  EntitlementCommandDeniedError,
+  SeatCapacityReachedError,
+} from "./repositories/entitlements.js";
+export type { ProductFulfillmentValue } from "./repositories/entitlements.js";
+export type {
+  CommerceReconciliationRecord,
+  CommerceReconciliationStatus,
+  DecisionInput,
+  EntitlementDecisionSnapshotInput,
+  EntitlementAppliedOutcome,
+  EntitlementCommandOutcome,
+  EntitlementDeniedOutcome,
+  SystemDatabase,
+} from "./repositories/entitlements.js";
 export type {
   TransactionContext,
   UnitOfWork,
 } from "./unit-of-work.js";
 export {
   accounts,
+  accessDecisionAudit,
+  administrativeGrantRestorations,
+  accountHolds,
+  accountHoldSources,
   auditEvents,
+  businessOsSubscriptionCancellations,
+  clubSubscriptionCancellations,
+  businessOsSetupReceipts,
+  commerceFulfillmentReceipts,
+  commerceReconciliations,
+  entitlementCommands,
+  entitlementGrants,
+  entitlementSources,
   eventHandlerReceipts,
   jobAttempts,
   jobs,
@@ -66,4 +100,7 @@ export {
   staffIdentities,
   staffLoginAttempts,
   staffSessions,
+  seatInvitationTokenGenerations,
+  seatInvitations,
+  seatReservations,
 } from "./schema/index.js";

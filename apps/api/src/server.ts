@@ -3,6 +3,7 @@ import {
   assertDatabaseCapability,
   createDatabase,
   MemberIdentityRepository,
+  MemberEntitlementReadRepository,
   StaffIdentityRepository,
   StaffLoginAttemptRepository,
   StaffSessionRepository,
@@ -88,6 +89,9 @@ async function productionDependencies(config: ApiConfig): Promise<{
                 publishableKey: config.clerkPublishableKey,
               }),
               identities: new MemberIdentityRepository(memberDatabase),
+              access: new MemberEntitlementReadRepository(memberDatabase, {
+                now: () => new Date(),
+              }),
             },
             staff: {
               config: {

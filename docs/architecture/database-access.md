@@ -1,8 +1,9 @@
 # Database access boundary
 
-Syntholo uses four PostgreSQL capability roles. They are group roles, not login
-users: `syntholo_migrator`, `syntholo_member_api`, `syntholo_staff_api`, and
-`syntholo_worker` are all `NOLOGIN`, `NOSUPERUSER`, and `NOBYPASSRLS`.
+Syntholo uses five PostgreSQL capability roles. They are group roles, not login
+users: `syntholo_migrator`, `syntholo_member_api`, `syntholo_staff_api`,
+`syntholo_system_api`, and `syntholo_worker` are all `NOLOGIN`, `NOSUPERUSER`,
+and `NOBYPASSRLS`.
 Environment-specific runtime login users are created with SQL in a controlled
 direct administrative session, receive credentials through the deployment secret
 manager, and are granted membership in exactly one runtime capability. Do not
@@ -14,9 +15,10 @@ migration.
 Production migrations are different from runtime traffic. They run through a
 dedicated direct Neon owner/migration login, never a transaction-pooled URL. The
 login is operationally associated with `syntholo_migrator`; its direct connection
-owns the migration session and can perform DDL. Member, staff, and worker URLs use
-separate least-privilege login members and may use the appropriate Neon pooled
-endpoints. A runtime URL must never contain owner or migration credentials.
+owns the migration session and can perform DDL. Member, staff, signed-provider
+system, and worker URLs use separate least-privilege login members and may use
+the appropriate Neon pooled endpoints. A runtime URL must never contain owner or
+migration credentials.
 
 ## Current table access matrix
 
@@ -26,20 +28,23 @@ read` is a staff-only `SELECT` policy. `operational` is a worker policy limited 
 the listed grants. A dash means the role has neither a table grant nor an allowing
 policy.
 
-| Table | Ownership | Migrator | Member API | Staff API | Worker |
-| --- | --- | --- | --- | --- | --- |
-| `accounts` | customer (`id`) | all current table privileges; admin policy | `SELECT`, `INSERT`, `UPDATE`; one command-specific scope policy each | `SELECT`; cross-account read policy | — |
-| `member_identities` | customer (`account_id`) | all; admin policy | `SELECT`, `INSERT`, `UPDATE`; one command-specific scope policy each | `SELECT`; cross-account read policy | — |
-| `memberships` | customer (`account_id`) | all; admin policy | `SELECT`, `INSERT`, `UPDATE`; one command-specific scope policy each | `SELECT`; cross-account read policy | — |
-| `audit_events` | customer/global fact | insert/select/trigger only; admin policy | scoped `INSERT` only | `SELECT`, attested `INSERT` | — |
-| `outbox_events` | customer/global operation | all; admin policy | scoped canonical `INSERT` only | `SELECT`, attested canonical `INSERT` | — |
-| `jobs` | customer/global operation | all; admin policy | — | `SELECT` | — |
-| `job_attempts` | attempt history | all; admin policy | — | `SELECT` | — |
-| `event_handler_receipts` | delivery fence | all; admin policy | — | `SELECT` | — |
-| `staff_identities` | global staff identity | all | — | `SELECT` for authorized identity lookup | — |
-| `staff_sessions` | global staff secret | all | — | `SELECT`; mutations only through narrow security-definer functions | — |
-| `staff_login_attempts` | global short-lived staff secret | all | — | no direct table grant; create/consume only through narrow security-definer functions | — |
-| `provider_event_receipts` | global provider operation | all | — | — | `SELECT`, `INSERT`, `UPDATE` |
+| Table | Ownership | Migrator | Member API | Staff API | System API | Worker |
+| --- | --- | --- | --- | --- | --- | --- |
+| `accounts` | customer (`id`) | all current table privileges; admin policy | scoped `SELECT` and name update | `SELECT`; cross-account read policy | scoped `SELECT` for closed commands | — |
+| `member_identities` | customer (`account_id`) | all; admin policy | scoped `SELECT` | `SELECT`; cross-account read policy | — | — |
+| `memberships` | customer (`account_id`) | all; admin policy | scoped `SELECT` | `SELECT`; cross-account read policy | — | — |
+| `audit_events` | customer/global fact | insert/select/trigger only; admin policy | scoped `INSERT` only | `SELECT`, attested `INSERT` | scoped attested `INSERT` | — |
+| `outbox_events` | customer/global operation | all; admin policy | scoped canonical `INSERT` only | `SELECT`, attested canonical `INSERT` | scoped attested canonical `INSERT` | — |
+| `jobs` | customer/global operation | all; admin policy | — | `SELECT` | — | — |
+| `job_attempts` | attempt history | all; admin policy | — | `SELECT` | — | — |
+| `event_handler_receipts` | delivery fence | all; admin policy | — | `SELECT` | — | — |
+| `staff_identities` | global staff identity | all | — | `SELECT` for authorized identity lookup | — | — |
+| `staff_sessions` | global staff secret | all | — | `SELECT`; mutations only through narrow security-definer functions | — | — |
+| `staff_login_attempts` | global short-lived staff secret | all | — | no direct table grant; create/consume only through narrow security-definer functions | — | — |
+| `provider_event_receipts` | global provider operation | all | — | — | — | `SELECT`, `INSERT`, `UPDATE` |
+| `entitlement_grants`, `account_holds`, `seat_reservations` | customer (`account_id`) | explicit current privileges; admin policy | scoped `SELECT`; mutations use closed commands | no raw read/write | no raw read/write | — |
+| Entitlement sources, commerce/setup receipts, reconciliations, cancellations, hold sources, invitations/tokens, administrative restorations, command ledger | customer (`account_id`) | explicit current privileges; admin policy | no raw read/write | no raw read/write | no raw read/write | — |
+| `access_decision_audit` | append-only customer decision fact | `SELECT`, attested `INSERT` | scoped attested `INSERT` | attested `INSERT` | closed-function insert only | — |
 
 Every customer-owned foundation table has RLS both enabled and forced. Member
 policies fail closed when `app.account_id` is absent or empty. Member API has no
@@ -48,8 +53,12 @@ staff identity, or provider receipt rows. Any future member operation must add
 both its command-specific grant and matching scoped policy in the same migration;
 an accidental grant alone must not activate an existing `FOR ALL` policy. Staff
 domain/customer-table policies are read-only; Task 7 additionally permits only
-provenance-attested initial audit/outbox inserts. Other cross-account writes
-require a future, explicitly authorized and audited use case. Worker has no
+provenance-attested initial audit/outbox inserts. Task 8 raw commerce and
+entitlement tables are not staff-readable: admin plus `entitlements:manage`
+uses narrow list/claim/resolve functions, while coaches receive no provider,
+billing, invitation-token, or decision history. System API has no raw
+entitlement-table access and invokes only its exact allowlisted closed commands.
+Other cross-account writes require an explicitly authorized and audited use case. Worker has no
 account, member identity, membership, or staff identity access, and cannot delete
 operational rows. The migrator policy exists because a non-bypass capability with
 table grants would otherwise still be blocked by forced RLS.
@@ -81,13 +90,15 @@ The API verifies a token and resolves an internal actor before selecting a pool:
 | --- | --- |
 | Clerk member actor with a resolved account | member login granted `syntholo_member_api` |
 | WorkOS staff actor with route permission | staff login granted `syntholo_staff_api` |
+| Signed provider fulfillment/lifecycle command | system login granted `syntholo_system_api` |
 | Durable job/outbox/provider processing | worker login granted `syntholo_worker` |
 | Versioned production migration | dedicated direct Neon owner/migration login |
 
 The pools are separate objects with separate URLs. Code must not authenticate with
 an owner URL and then use `SET ROLE` as a production pool-selection mechanism.
-The integration suite connects through separate SQL-created member, staff, and
-worker login users and proves `session_user = current_user = runtime login`, safe
+The integration suite connects through separate SQL-created member, staff,
+system, and worker login users and proves
+`session_user = current_user = runtime login`, safe
 role attributes, exact membership options, and the absence of any reachable
 owner, migrator, `neon_superuser`, or extra capability membership.
 
@@ -113,6 +124,9 @@ CREATE ROLE syntholo_member_runtime
 CREATE ROLE syntholo_staff_runtime
   LOGIN PASSWORD NULL
   NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+CREATE ROLE syntholo_system_runtime
+  LOGIN PASSWORD NULL
+  NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
 CREATE ROLE syntholo_worker_runtime
   LOGIN PASSWORD NULL
   NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
@@ -121,14 +135,16 @@ GRANT syntholo_member_api TO syntholo_member_runtime
   WITH INHERIT TRUE, SET FALSE, ADMIN FALSE;
 GRANT syntholo_staff_api TO syntholo_staff_runtime
   WITH INHERIT TRUE, SET FALSE, ADMIN FALSE;
+GRANT syntholo_system_api TO syntholo_system_runtime
+  WITH INHERIT TRUE, SET FALSE, ADMIN FALSE;
 GRANT syntholo_worker TO syntholo_worker_runtime
   WITH INHERIT TRUE, SET FALSE, ADMIN FALSE;
 ```
 
-Use `\password syntholo_member_runtime` (and the corresponding staff/worker
+Use `\password syntholo_member_runtime` (and the corresponding staff/system/worker
 command) in a direct `psql` session or an equivalent parameterized password
 rotation operation. Put each generated password only in the deployment secret
-manager and construct three separate runtime URLs. Never paste a password into a
+manager and construct four separate runtime URLs. Never paste a password into a
 checked-in SQL file, shell history, ticket, or log.
 
 Before deployment, verify login attributes and direct memberships:
@@ -140,6 +156,7 @@ FROM pg_roles
 WHERE rolname IN (
   'syntholo_member_runtime',
   'syntholo_staff_runtime',
+  'syntholo_system_runtime',
   'syntholo_worker_runtime'
 )
 ORDER BY rolname;
@@ -155,6 +172,7 @@ JOIN pg_roles parent_role ON parent_role.oid = membership.roleid
 WHERE member_role.rolname IN (
   'syntholo_member_runtime',
   'syntholo_staff_runtime',
+  'syntholo_system_runtime',
   'syntholo_worker_runtime'
 )
 ORDER BY member_role.rolname, parent_role.rolname;
@@ -174,9 +192,10 @@ database-specific setting, and no direct or transitive outbound membership.
 
 ## Capability role migration behavior
 
-Migration 0002 creates a missing capability with only `NOLOGIN PASSWORD NULL`,
-whose remaining safe flags are PostgreSQL defaults. It then validates all four
-capabilities from catalogs: no login, superuser, database/role creation,
+Migration 0002 creates the original four capabilities with only
+`NOLOGIN PASSWORD NULL`; migration 0005 applies the same pattern to
+`syntholo_system_api`. Together they validate all five capabilities from
+catalogs: no login, superuser, database/role creation,
 replication, or RLS bypass; no global `rolconfig`; no global or database-specific
 `pg_db_role_setting`; and no outbound membership in another role. Incoming
 memberships are allowed because the creating migration actor receives an
@@ -190,6 +209,13 @@ It never tries to set protected false attributes such as `NOSUPERUSER`. An unsaf
 collision or missing administrative relationship aborts with
 `SYNTHOLO_CAPABILITY_ROLE_PROVISIONING_REQUIRED`; operators must repair the role
 topology explicitly before retrying.
+
+The system capability receives no DDL, ownership, alternate-schema, column, or
+non-allowlisted routine authority. Migration and startup attest all user schemas,
+database `CREATE`/`TEMP`, object ownership, direct/transitive membership, table
+and column ACLs, and exact routine signatures. A paid provider command runs only
+through `createSystemUnitOfWork` after `attestSystemDatabase`; ordinary
+`createUnitOfWork` rejects a system actor.
 
 ## Account-scoped transaction sequence
 
@@ -216,12 +242,27 @@ to detect scope leakage.
 
 `withAccountScope` and `DatabaseTransaction` remain package-internal mechanics;
 they are not root exports and must not be offered to use-case callbacks.
+The concrete transaction entitlement repository and its constructor are also
+package-internal. Consumers receive only the frozen repository interface on the
+canonical `TransactionContext`; an escaped or unawaited repository call fails
+after the callback closes. Recent-auth provenance follows the same authority
+boundary: only the verified Clerk/WorkOS authentication composition can register
+the canonical millisecond instant. A structurally similar actor or caller-chosen
+`Date` is never trusted as recent authentication.
 
 `AccountRepository.getById({ accountId }, id)` is the only exported customer read
 for accounts. It applies both the account scope and an explicit `accounts.id`
 predicate and returns `null` for a cross-account ID, revealing neither whether the
 other account exists nor any of its fields. There is no unscoped member-runtime
 account read or list method.
+
+The member effective-access reader pins one pool connection and acquires a
+session-level shared account advisory lock before `BEGIN REPEATABLE READ, READ
+ONLY`. It then revalidates account and membership, captures one trusted UTC
+millisecond instant, loads grants/holds/seats, evaluates the frozen snapshot, and
+commits before releasing the lock. Suspension, member revocation, and entitlement
+mutations take the matching exclusive account-first lock, so a response is wholly
+before or wholly after a writer and never a hybrid or post-commit stale snapshot.
 
 ## Identity bootstrap boundary
 
@@ -242,6 +283,13 @@ weaken normal account RLS.
   account is denied.
 - A staff pool updating any customer-owned foundation row: PostgreSQL permission
   denied even though staff can read across accounts.
+- A coach, or a staff session with spoofed context, selecting raw Task 8 sources,
+  receipts, holds, invitations/tokens, or decision history: PostgreSQL permission
+  denied. Only an attested admin with `entitlements:manage` may use the narrow
+  reconciliation projection and claim/resolve commands.
+- A system pool reading raw entitlement or Task 6 staff-secret tables, owning an
+  object, creating in any user schema, or executing a routine outside the exact
+  signed-provider allowlist: startup and command-time attestation fail closed.
 - A worker pool reading accounts or member identities, mutating an audit row, or
   deleting a provider receipt: PostgreSQL permission denied.
 - A pooled runtime URL used for DDL, or a direct migration/owner URL used for

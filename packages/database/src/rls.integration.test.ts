@@ -40,6 +40,7 @@ const capabilityRoles = [
   "syntholo_member_api",
   "syntholo_migrator",
   "syntholo_staff_api",
+  "syntholo_system_api",
   "syntholo_worker",
 ] as const;
 
@@ -55,8 +56,20 @@ const customerTables = [
 ] as const;
 
 const foundationTables = [
+  "access_decision_audit",
+  "account_hold_sources",
+  "account_holds",
   "accounts",
+  "administrative_grant_restorations",
   "audit_events",
+  "business_os_setup_receipts",
+  "business_os_subscription_cancellations",
+  "club_subscription_cancellations",
+  "commerce_fulfillment_receipts",
+  "commerce_reconciliations",
+  "entitlement_commands",
+  "entitlement_grants",
+  "entitlement_sources",
   "event_handler_receipts",
   "job_attempts",
   "jobs",
@@ -64,6 +77,9 @@ const foundationTables = [
   "memberships",
   "outbox_events",
   "provider_event_receipts",
+  "seat_invitation_token_generations",
+  "seat_invitations",
+  "seat_reservations",
   "staff_identities",
   "staff_login_attempts",
   "staff_sessions",
@@ -449,7 +465,7 @@ describe.sequential("capability role provisioning migration", () => {
           "select count(*)::text as count from drizzle.__drizzle_migrations",
         )
       ));
-      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["4", "4"]);
+      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["5", "5"]);
       const passwords = await maintenance.query<{
         rolname: string;
         rolpasswordisnull: boolean;
@@ -701,7 +717,7 @@ describe("PostgreSQL account role boundary", () => {
     expect(outboundMemberships.rows).toEqual([]);
   });
 
-  it("enables and forces RLS with member and staff policies on all customer tables", async () => {
+  it("enables and forces RLS with the exact policies on original customer tables", async () => {
     const tableState = await harness.database.pool.query<{
       relforcerowsecurity: boolean;
       relname: string;
@@ -766,8 +782,11 @@ describe("PostgreSQL account role boundary", () => {
       ...memberPolicies,
       { cmd: "INSERT", policyname: "audit_events_member_insert", roles: ["syntholo_member_api"], tablename: "audit_events" },
       { cmd: "INSERT", policyname: "audit_events_staff_insert", roles: ["syntholo_staff_api"], tablename: "audit_events" },
+      { cmd: "INSERT", policyname: "audit_events_system_insert", roles: ["syntholo_system_api"], tablename: "audit_events" },
+      { cmd: "SELECT", policyname: "accounts_system_scope", roles: ["syntholo_system_api"], tablename: "accounts" },
       { cmd: "INSERT", policyname: "outbox_events_member_insert", roles: ["syntholo_member_api"], tablename: "outbox_events" },
       { cmd: "INSERT", policyname: "outbox_events_staff_insert", roles: ["syntholo_staff_api"], tablename: "outbox_events" },
+      { cmd: "INSERT", policyname: "outbox_events_system_insert", roles: ["syntholo_system_api"], tablename: "outbox_events" },
       ...workerPolicies,
     ].sort(
       (left, right) =>
@@ -1357,16 +1376,23 @@ describe("PostgreSQL account role boundary", () => {
     );
 
     expect(runtimeGrants).toEqual([
-      ...["accounts", "member_identities", "memberships"].flatMap(
-        (table_name) => ["INSERT", "SELECT", "UPDATE"].map(
-          (privilege_type) => ({
-            grantee: "syntholo_member_api",
-            privilege_type,
-            table_name,
-          }),
-        ),
-      ),
-      ...["audit_events", "outbox_events"].map((table_name) => ({
+      ...[
+        "account_holds",
+        "accounts",
+        "entitlement_grants",
+        "member_identities",
+        "memberships",
+        "seat_reservations",
+      ].map((table_name) => ({
+        grantee: "syntholo_member_api",
+        privilege_type: "SELECT",
+        table_name,
+      })),
+      ...[
+        "access_decision_audit",
+        "audit_events",
+        "outbox_events",
+      ].map((table_name) => ({
         grantee: "syntholo_member_api",
         privilege_type: "INSERT",
         table_name,
@@ -1387,8 +1413,17 @@ describe("PostgreSQL account role boundary", () => {
         privilege_type: "SELECT",
         table_name,
       })),
-      ...["audit_events", "outbox_events"].map((table_name) => ({
+      ...[
+        "access_decision_audit",
+        "audit_events",
+        "outbox_events",
+      ].map((table_name) => ({
         grantee: "syntholo_staff_api",
+        privilege_type: "INSERT",
+        table_name,
+      })),
+      ...["audit_events", "outbox_events"].map((table_name) => ({
+        grantee: "syntholo_system_api",
         privilege_type: "INSERT",
         table_name,
       })),
@@ -1599,15 +1634,33 @@ describe("PostgreSQL account role boundary", () => {
          and grantee = 'syntholo_migrator'
        order by table_name, privilege_type`,
     );
+    const appendOnlyTables = new Set([
+      "administrative_grant_restorations",
+      "audit_events",
+      "business_os_setup_receipts",
+      "business_os_subscription_cancellations",
+      "club_subscription_cancellations",
+      "commerce_fulfillment_receipts",
+      "commerce_reconciliations",
+      "seat_invitations",
+    ]);
     expect(migratorTableGrants.rows).toEqual(foundationTables.flatMap(
-      (table_name) => [
-        ...(table_name === "audit_events" ? [] : ["DELETE"]),
-        "INSERT",
-        "REFERENCES",
-        "SELECT",
-        "TRIGGER",
-        ...(table_name === "audit_events" ? [] : ["TRUNCATE", "UPDATE"]),
-      ].map((privilege_type) => ({ privilege_type, table_name })),
+      (table_name) => {
+        const privileges = table_name === "access_decision_audit"
+          ? ["INSERT", "SELECT"]
+          : appendOnlyTables.has(table_name)
+            ? ["INSERT", "REFERENCES", "SELECT", "TRIGGER"]
+            : [
+              "DELETE",
+              "INSERT",
+              "REFERENCES",
+              "SELECT",
+              "TRIGGER",
+              "TRUNCATE",
+              "UPDATE",
+            ];
+        return privileges.map((privilege_type) => ({ privilege_type, table_name }));
+      },
     ).sort((left, right) =>
       `${left.table_name}:${left.privilege_type}`.localeCompare(
         `${right.table_name}:${right.privilege_type}`,
@@ -1694,12 +1747,12 @@ describe("PostgreSQL account role boundary", () => {
       const afterUpgrade = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterUpgrade.rows[0]?.count).toBe("4");
+      expect(afterUpgrade.rows[0]?.count).toBe("5");
       await migrateDatabase(upgradeDb);
       const afterRerun = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterRerun.rows[0]?.count).toBe("4");
+      expect(afterRerun.rows[0]?.count).toBe("5");
       const normalized = await upgradeDb.pool.query(
         `select
           (select bool_and(actor_id is not null and correlation_id is not null)
@@ -1747,7 +1800,7 @@ describe("PostgreSQL account role boundary", () => {
       const freshJournal = await freshDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(freshJournal.rows[0]?.count).toBe("4");
+      expect(freshJournal.rows[0]?.count).toBe("5");
     } finally {
       await Promise.allSettled([
         upgradeDb?.close(),

@@ -265,6 +265,11 @@ function authFakes(options: {
             : options.member,
         ),
       },
+      access: {
+        getEffectiveAccess: vi.fn(async () => {
+          throw new Error("TEST_MEMBER_ACCESS_NOT_CONFIGURED");
+        }),
+      },
     },
     staff: {
       config: {

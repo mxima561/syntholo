@@ -101,6 +101,7 @@ describe("database transactions", () => {
     });
     let escapedRename: (() => Promise<unknown>) | undefined;
     let escapedAppend: (() => Promise<unknown>) | undefined;
+    let escapedDecision: (() => Promise<unknown>) | undefined;
 
     await unitOfWork.transaction(async (transaction) => {
       escapedRename = () => transaction.accounts.rename("Escaped");
@@ -110,12 +111,27 @@ describe("database transactions", () => {
         targetId: null,
         targetType: "foundation",
       });
+      escapedDecision = () => transaction.entitlements.recordDecision({
+        commandId: "10000000-0000-4000-8000-000000000096",
+        checkKind: "capability:academy_course",
+        allowed: false,
+        reasonCode: "ACADEMY_REQUIRED",
+        sourceIds: [],
+      });
+      expect(Object.isFrozen(transaction.entitlements)).toBe(true);
+      expect(Object.getOwnPropertyNames(transaction.entitlements)).toEqual([]);
+      expect(() => Object.defineProperty(transaction.entitlements, "metadata", {
+        value: { accountId: "20000000-0000-4000-8000-000000000002" },
+      })).toThrow();
     });
 
     await expect(escapedRename?.()).rejects.toThrow(
       "TRANSACTION_CONTEXT_EXPIRED",
     );
     await expect(escapedAppend?.()).rejects.toThrow(
+      "TRANSACTION_CONTEXT_EXPIRED",
+    );
+    await expect(escapedDecision?.()).rejects.toThrow(
       "TRANSACTION_CONTEXT_EXPIRED",
     );
   });
@@ -174,6 +190,39 @@ describe("database transactions", () => {
       [accountId],
     );
     expect(result.rows[0]?.name).toBe("Before");
+  });
+
+  it("rolls back an unawaited entitlement repository operation", async () => {
+    const accountId = await harness.factories.account(harness.database);
+    const unitOfWork = createUnitOfWork(harness.database, {
+      accountId,
+      actor: {
+        accountId,
+        actorId: "10000000-0000-4000-8000-000000000098",
+        authenticatedAt: new Date("2026-08-13T15:00:00.000Z"),
+        clerkUserId: "clerk_foundation_test",
+        kind: "member",
+        membershipId: "10000000-0000-4000-8000-000000000097",
+        role: "owner",
+      },
+      clock: { now: () => new Date("2026-08-13T16:00:00.000Z") },
+      correlationId: "10000000-0000-4000-8000-000000000099",
+    });
+    let pending: Promise<unknown> | undefined;
+    await expect(unitOfWork.transaction(async (transaction) => {
+      pending = transaction.entitlements.recordDecision({
+        commandId: "10000000-0000-4000-8000-000000000096",
+        checkKind: "capability:academy_course",
+        allowed: false,
+        reasonCode: "ACADEMY_REQUIRED",
+        sourceIds: [],
+      });
+    })).rejects.toThrow("TRANSACTION_OPERATION_NOT_AWAITED");
+    await pending?.catch(() => undefined);
+    const result = await harness.database.pool.query(
+      "select count(*)::int count from access_decision_audit",
+    );
+    expect(result.rows[0]?.count).toBe(0);
   });
 
   it("rolls back when a fire-and-forget validation failure is not awaited", async () => {

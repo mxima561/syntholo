@@ -5,6 +5,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { parseWorkerConfig } from "./config.js";
 import {
   createDomainEventJobHandler,
+  handlersForOutboxEvent,
   runOutboxPump,
   runWorker,
   createWorkerId,
@@ -453,6 +454,22 @@ describe("runWorker", () => {
 });
 
 describe("outbox and production lifecycle", () => {
+  it("routes entitlement events without sending reconciliation into provisioning", () => {
+    const base = {
+      attempt: 1, claimGeneration: 1,
+      claimToken: "10000000-0000-4000-8000-000000000001",
+      eventId: "10000000-0000-4000-8000-000000000002",
+      leaseExpiresAt: new Date(now.getTime() + 10_000), maxAttempts: 5,
+      workerId: "worker-test",
+    } as const;
+    expect(handlersForOutboxEvent({ ...base,
+      eventType: "entitlements.command_applied.v1" }))
+      .toEqual(["foundation_audit_projection"]);
+    expect(handlersForOutboxEvent({ ...base,
+      eventType: "entitlements.reconciliation_required.v1" }))
+      .toEqual(["entitlement_reconciliation_queue"]);
+  });
+
   it("classifies permanent routing failures and injects retry jitter", async () => {
     const controller = new AbortController();
     const claim = {

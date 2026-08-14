@@ -260,7 +260,7 @@ Self-review result: all addendum sections have an owning implementation task. Th
 - Create one integration branch from the current approved visual baseline: `codex/production-platform`.
 - Implement each numbered task on a short `codex/<plan>-<task>` branch or isolated worktree, then merge only after the task's focused checks and plan-level regression pass.
 - Use `local`, `test`, `staging`, and `production` configuration modes. Staging and production use separate Clerk, WorkOS, Stripe, Neon, Mux, Blob, Resend, Circle, PostHog, and Sentry resources.
-- Use four database roles: migration owner, RLS-constrained member API, audited cross-account staff API, and worker runtime. The API keeps separate member/staff pools and selects one only after actor authorization; worker access is service-scoped and audited.
+- Use five `NOLOGIN` PostgreSQL capability roles: migration, RLS-constrained member API, audited staff API, signed-provider system API, and worker runtime. Member, staff, system, and worker use separate least-privilege login pools selected only after authorization; migrations use the dedicated direct owner connection.
 - Attach one immutable `RELEASE_SHA` to web, API, worker, Sentry, health responses, and deployment annotations.
 
 ## Ordered Gate Evidence

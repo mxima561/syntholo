@@ -1,10 +1,18 @@
 import { Buffer } from "node:buffer";
+import { trustedActorAuthenticationTime } from "@syntholo/domain";
 import { sql } from "drizzle-orm";
+import { registerTrustedActorAuthentication } from
+  "../../domain/src/identity/authentication.js";
 import type { Database } from "./client.js";
 import { AuditRepository } from "./repositories/audit.js";
 import type { TrustedTransactionMetadata } from "./repositories/context.js";
 import { OutboxRepository } from "./repositories/outbox.js";
 import { TransactionAccountRepository } from "./repositories/transaction-accounts.js";
+import {
+  TransactionEntitlementRepository,
+  type SystemDatabase,
+} from "./repositories/entitlements.js";
+import { assertDatabaseCapability } from "./client.js";
 
 const canonicalUuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
@@ -23,6 +31,7 @@ export interface TransactionContext {
   readonly accounts: TransactionAccountRepository;
   readonly audit: AuditRepository;
   readonly outbox: OutboxRepository;
+  readonly entitlements: TransactionEntitlementRepository;
 }
 
 export interface UnitOfWork {
@@ -51,6 +60,23 @@ class PostgresUnitOfWork implements UnitOfWork {
       await databaseTransaction.execute(
         sql`select set_config('app.actor_id', ${this.metadata.actor.actorId}, true),
                    set_config('app.actor_kind', ${this.metadata.actor.kind}, true),
+                   set_config('app.actor_role', ${this.metadata.actor.kind === "system"
+                     ? ""
+                     : this.metadata.actor.role}, true),
+                   set_config('app.actor_permissions', ${this.metadata.actor.kind === "staff"
+                     ? JSON.stringify(this.metadata.actor.permissions)
+                     : "[]"}, true),
+                   set_config('app.membership_id', ${this.metadata.actor.kind === "member"
+                     ? this.metadata.actor.membershipId
+                     : ""}, true),
+                   set_config('app.authenticated_at', ${this.metadata.actor.kind === "system"
+                     ? ""
+                     : (() => {
+                       const canonical = trustedActorAuthenticationTime(
+                         this.metadata.actor,
+                       );
+                       return canonical === null ? "" : new Date(canonical).toISOString();
+                     })()}, true),
                    set_config('app.correlation_id', ${this.metadata.correlationId}, true)`,
       );
       let active = true;
@@ -111,6 +137,11 @@ class PostgresUnitOfWork implements UnitOfWork {
         ),
         audit: new AuditRepository(databaseTransaction, transactionMetadata, guard),
         outbox: new OutboxRepository(databaseTransaction, transactionMetadata, guard),
+        entitlements: new TransactionEntitlementRepository(
+          databaseTransaction,
+          transactionMetadata,
+          guard,
+        ),
       });
       try {
         const result = await run(transaction);
@@ -160,6 +191,7 @@ export function createUnitOfWork(
     if (metadata.actor.kind === "system") {
       throw new Error("TRANSACTION_METADATA_INVALID");
     }
+    const canonicalAuthentication = trustedActorAuthenticationTime(metadata.actor);
     const actor = metadata.actor.kind === "member"
       ? Object.freeze({
         accountId: metadata.actor.accountId,
@@ -179,6 +211,10 @@ export function createUnitOfWork(
         staffId: metadata.actor.staffId,
         workosUserId: metadata.actor.workosUserId,
       });
+    registerTrustedActorAuthentication(
+      actor,
+      canonicalAuthentication === null ? null : new Date(canonicalAuthentication),
+    );
     const now = metadata.clock.now.bind(metadata.clock);
     return new PostgresUnitOfWork(database, Object.freeze({
       accountId: metadata.accountId,
@@ -194,6 +230,37 @@ export function createUnitOfWork(
     ) {
       throw error;
     }
+    throw new Error("TRANSACTION_METADATA_INVALID");
+  }
+}
+
+const attestedSystemDatabases = new WeakSet<Database>();
+
+export async function attestSystemDatabase(
+  database: Database,
+): Promise<SystemDatabase> {
+  await assertDatabaseCapability(database, "syntholo_system_api");
+  attestedSystemDatabases.add(database);
+  return database as SystemDatabase;
+}
+
+export function createSystemUnitOfWork(
+  database: SystemDatabase,
+  metadata: TrustedTransactionMetadata,
+): UnitOfWork {
+  try {
+    validateMetadata(metadata);
+    if (metadata.actor.kind !== "system" || !attestedSystemDatabases.has(database)) {
+      throw new Error("TRANSACTION_METADATA_INVALID");
+    }
+    const now = metadata.clock.now.bind(metadata.clock);
+    return new PostgresUnitOfWork(database, Object.freeze({
+      accountId: metadata.accountId,
+      actor: Object.freeze({ ...metadata.actor }),
+      clock: Object.freeze({ now }),
+      correlationId: metadata.correlationId,
+    }));
+  } catch {
     throw new Error("TRANSACTION_METADATA_INVALID");
   }
 }

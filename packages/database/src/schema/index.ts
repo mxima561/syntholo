@@ -13,3 +13,20 @@ export {
   providerEventReceipts,
 } from "./operations.js";
 export { staffLoginAttempts, staffSessions } from "./auth.js";
+export {
+  accessDecisionAudit,
+  administrativeGrantRestorations,
+  accountHolds,
+  accountHoldSources,
+  businessOsSetupReceipts,
+  businessOsSubscriptionCancellations,
+  clubSubscriptionCancellations,
+  commerceFulfillmentReceipts,
+  commerceReconciliations,
+  entitlementGrants,
+  entitlementCommands,
+  entitlementSources,
+  seatInvitationTokenGenerations,
+  seatInvitations,
+  seatReservations,
+} from "./entitlements.js";

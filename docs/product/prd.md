@@ -41,7 +41,7 @@ No AI coach, native workflow builder, mobile app, public certificate lookup, cer
 
 Course refunds are unconditional for seven days, subject to mandatory law. Operator Club cancels at term end. Business OS onboarding is refundable until provisioning starts. Failed subscriptions receive seven days of grace; day eight restricts paid benefits without deleting data.
 
-Operator Club is available only to existing Academy accounts. If selected before the included 12-month support window expires, billing and renewed support/community benefits begin at expiry. Business OS is independent and does not grant or gate Academy or Operator Club access.
+Operator Club is available only to existing Academy accounts. Its initial interval begins at the later of the exact included-support end and trusted fulfillment time, so early selection waits for expiry and later re-entry is not backdated. Business OS is independent: only its recurring subscription funds Business OS access, while the setup fee is a zero-grant receipt; neither grants nor gates Academy or Operator Club access.
 
 Entitlements are `course`, `support`, `community_write`, `operator_club`, and `business_os`; statuses are `active`, `grace`, `expired`, `refunded`, and `revoked`.
 

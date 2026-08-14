@@ -666,7 +666,7 @@ git commit -m "feat: add audit and durable job primitives"
 - Modify: `packages/domain/package.json`
 - Create: `packages/database/src/schema/entitlements.ts`
 - Create: `packages/database/src/repositories/entitlements.ts`
-- Create: `packages/database/drizzle/0004_entitlements.sql`
+- Create: `packages/database/drizzle/0005_entitlements.sql`
 - Create: `packages/database/src/entitlements.integration.test.ts`
 - Create: `apps/api/src/modules/entitlements/get-effective-access.ts`
 - Create: `apps/api/src/routes/member/access.ts`

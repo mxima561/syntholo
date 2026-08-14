@@ -1,11 +1,16 @@
-import type { Actor, MemberActor, StaffActor } from "@syntholo/domain";
+import {
+  trustedActorAuthenticationTime,
+  type Actor,
+  type MemberActor,
+  type StaffActor,
+} from "@syntholo/domain";
+import { registerTrustedActorAuthentication } from
+  "../../../../packages/domain/src/identity/authentication.js";
 import { AppError } from "../plugins/error-handler.js";
 
 type AuthorizationRequirement =
   | { readonly role: MemberActor["role"] | StaffActor["role"] }
   | { readonly permission: string };
-
-const canonicalAuthenticationTimes = new WeakMap<Actor, number | null>();
 
 function authorizationError(
   code: "FORBIDDEN" | "RECENT_AUTH_REQUIRED",
@@ -30,9 +35,7 @@ export function authorize<T extends Actor>(
 }
 
 function canonicalAuthenticationTime(actor: Actor): number | null {
-  return canonicalAuthenticationTimes.has(actor)
-    ? canonicalAuthenticationTimes.get(actor) ?? null
-    : null;
+  return trustedActorAuthenticationTime(actor);
 }
 
 function publicAuthenticationDate(timestamp: number | null): Date {
@@ -51,8 +54,10 @@ export function projectMemberActor(
     ...actor,
     authenticatedAt: publicAuthenticationDate(timestamp),
   });
-  canonicalAuthenticationTimes.set(projection, timestamp);
-  return projection;
+  return registerTrustedActorAuthentication(
+    projection,
+    timestamp === null ? null : new Date(timestamp),
+  );
 }
 
 export function projectStaffActor(
@@ -68,8 +73,10 @@ export function projectStaffActor(
     permissions: Object.freeze([...actor.permissions]),
     authenticatedAt: publicAuthenticationDate(timestamp),
   });
-  canonicalAuthenticationTimes.set(projection, timestamp);
-  return projection;
+  return registerTrustedActorAuthentication(
+    projection,
+    timestamp === null ? null : new Date(timestamp),
+  );
 }
 
 export function requireMember(actor: Actor): MemberActor {

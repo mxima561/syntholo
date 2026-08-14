@@ -138,8 +138,8 @@ Hard invariants:
 3. Owners may resend, revoke, replace, and reassign teammate seats and may transfer ownership after recent authentication.
 4. A non-refunded Guided Pilot or Self-Paced purchase provides lifetime course access.
 5. Included support and Circle write access expire 12 months after the Academy purchase unless an Operator Club grant applies.
-6. Operator Club is available only to an account with a valid Academy purchase. If scheduled early, billing and renewed benefits start when included support ends.
-7. Business OS is a separate grant and state machine. Its purchase, provisioning, degradation, suspension, or cancellation never gates Academy access.
+6. Operator Club is available only to an account with a valid Academy purchase. Its initial interval starts at the later of the exact included-support end and trusted fulfillment time, so early scheduling waits for support expiry and later re-entry is never backdated.
+7. Business OS is a separate grant and state machine. Only the recurring $199 subscription funds its finite entitlement; the $999 setup payment is a zero-grant financial/provisioning receipt. Provisioning, degradation, suspension, cancellation, or either payment's disposition never gates Academy access.
 8. UI-only flags cannot grant access. Every effective grant has a durable source and audit event.
 9. Refunds, disputes, cancellations, and seat changes never delete progress, certificate, financial, or audit history.
 
@@ -160,7 +160,7 @@ Certificate issuance depends only on lesson-completion state. Purchase tier, sup
 1. A visitor lands on a native campaign page; Syntholo records consent-appropriate UTM and scorecard context.
 2. The visitor starts the public $399 Stripe Checkout.
 3. Stripe sends a signed webhook. The API claims the provider/event ID before mutation; replay returns success without duplicate fulfillment.
-4. One transaction creates the pending purchase, account, three-seat Academy grant, 12-month support/community window, enrollment, claim token, receipt job, and audit event.
+4. One transaction creates the pending purchase, account, three-seat Academy capacity with zero occupied seat rows, source-linked Academy/support/community grants, enrollment, claim token, receipt job, and audit event.
 5. The buyer follows the claim link, authenticates through Clerk, and proves the verified checkout email. The token is single-use and expires after seven days.
 6. The owner completes onboarding, claims seat one, invites up to two teammates, and starts the Academy.
 
@@ -170,7 +170,7 @@ Certificate issuance depends only on lesson-completion state. Purchase tier, sup
 2. A WorkOS-authenticated admin reviews the application, requests information, approves, or declines with an audited decision.
 3. Approval requires a cohort assignment and available capacity.
 4. The worker emails an expiring private $750 Stripe Checkout link with the seven-day refund disclosure and cohort terms.
-5. Signed, idempotent payment fulfillment creates the Pilot purchase, three seats, lifetime Academy access, 12 months support/community, cohort enrollment, account claim, and notifications.
+5. Signed, idempotent payment fulfillment creates the Pilot purchase, three-seat capacity with zero occupied rows, lifetime Academy access, 12 months support/community, cohort enrollment, account claim, and notifications. Owner claim later activates slot one; invitations reserve the remaining slots.
 
 ### Flow 3 — Human support and artifact review
 
@@ -193,10 +193,10 @@ Certificate issuance depends only on lesson-completion state. Purchase tier, sup
 ### Flow 5 — Recurring products and Business OS
 
 1. An eligible Academy account selects Operator Club monthly or annual renewal.
-2. If included support remains active, Stripe schedules billing for its expiry; otherwise the subscription begins immediately.
+2. The initial Club interval starts at `max(exact included-support end, trusted fulfillment now)`: Stripe schedules an early selection for expiry, while a later re-entry starts immediately without backdating.
 3. Invoice success, payment failure, cancellation, and renewal update only Operator Club-derived support and Circle grants.
 4. Business OS Checkout is enabled only after the HighLevel readiness dependency and all pre-sale disclosures pass.
-5. Payment creates Syntholo onboarding and provisioning records. HighLevel work occurs under separate authentication.
+5. The $999 setup payment creates a reversible zero-grant financial/provisioning receipt. The recurring $199 subscription alone creates finite Business OS eligibility. HighLevel work occurs under separate authentication and an external link additionally requires active provisioning.
 6. Syntholo records questionnaire state, SLA state, seven-check evidence, customer notices, and the external HighLevel login hyperlink. It never mirrors HighLevel customer data.
 
 ### Flow 6 — Refund, cancellation, payment failure, and dispute
@@ -212,7 +212,7 @@ Policy outcomes:
 
 - **Academy refund:** Guided Pilot and Self-Paced purchases have an unconditional seven-day refund window, subject to mandatory law. An approved full refund marks transaction-sourced course, support, and community grants refunded and releases its seats. It preserves the account, progress, previously issued certificates, financial records, and audit history.
 - **Operator Club failure/cancellation:** failed payment enters seven days of grace; day eight restricts only Club-derived benefits. Cancellation applies at the paid term's end. Lifetime Academy access is unchanged.
-- **Business OS refund/cancellation:** onboarding is refundable until provisioning starts. Cancellation affects only Business OS; it never changes Academy access.
+- **Business OS refund/cancellation:** onboarding is refundable until provisioning starts. A setup refund changes only that receipt; recurring cancellation ends only its finite Business OS grant at authoritative paid-through. Neither changes Academy access.
 - **Dispute:** an open Stripe dispute places an administrative hold on new purchases, teammate invitations/replacements, and Business OS activation while preserving existing learning access. A won dispute clears the hold. A lost dispute revokes only grants sourced from the disputed transaction.
 
 ## 10. Admin content system and lesson launch gate

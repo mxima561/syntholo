@@ -152,6 +152,8 @@ describe("domain event envelope", () => {
   it.each([
     "foundation.notification_sent.v1",
     "commerce.payment_paid.v1",
+    "entitlements.command_applied.v1",
+    "entitlements.reconciliation_required.v1",
     "foundation.lock_lost.v1",
   ])("accepts the registered irregular past-tense event %s", (type) => {
     expect(() => createDomainEvent(

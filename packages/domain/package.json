@@ -5,6 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./entitlements": "./src/entitlements/index.ts",
+    "./entitlements/internal": "./src/entitlements/internal.ts",
     "./events": "./src/events.ts",
     "./identity/actor": "./src/identity/actor.ts"
   },

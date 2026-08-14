@@ -16,8 +16,12 @@
 - Self-Paced payment remains blocked until `ContentLaunchReadiness.canSellAcademy === true`.
 - Guided Pilot requires approved application, cohort capacity, and an unexpired single-use private checkout authorization.
 - Purchaser claim tokens are single-use, seven-day, hashed at rest, and require a verified Clerk email matching the checkout email.
-- One paid Academy source creates exactly three seat reservations; owner claims seat one and pending invites reserve capacity.
-- Business OS never creates Academy or Operator Club grants.
+- One paid Academy source creates three-seat capacity with zero occupied rows;
+  owner claim activates slot one and pending teammate invitations reserve slots
+  two and three.
+- Business OS never creates Academy or Operator Club grants. Its $999 setup
+  payment creates a zero-grant financial/provisioning receipt; only the recurring
+  subscription lifecycle creates the finite `business_os` grant.
 - Full Academy refund is unconditionally available for seven days subject to law; the same policy version appears in sales, Pilot email, Checkout, and terms.
 - Open disputes hold new purchases, seat changes, and Business OS activation while preserving existing learning access until the dispute result.
 - Never delete achievement, progress, account, financial, or audit history during refund/cancellation/dispute processing.
@@ -329,7 +333,9 @@ git commit -m "feat: create authorized Stripe checkouts"
 **Interfaces:**
 - Consumes `POST /v1/webhooks/stripe` raw body and `stripe-signature`.
 - Produces event receipt state `claimed | processed | failed_retryable | failed_terminal`.
-- On `checkout.session.completed`, atomically creates purchase, account, source-linked grants, support window, three seat reservations, enrollment seed, claim token hash, audit, and outbox events.
+- On `checkout.session.completed`, atomically creates purchase, account,
+  source-linked grants, support window, three-seat capacity with zero occupied
+  reservation rows, enrollment seed, claim token hash, audit, and outbox events.
 
 - [ ] **Step 1: Write invalid-signature and replay RED tests**
 
@@ -368,13 +374,17 @@ Use the foundation's `fastify-raw-body` plugin only for signed webhook routes; o
 
 - [ ] **Step 4: Implement offer-specific fulfillment**
 
-Self-Paced and Pilot create Academy course/support/Circle sources; Pilot also creates cohort enrollment. Business OS creates only Business OS onboarding/grant state. Operator Club is handled by subscription events in Task 8.
+Self-Paced and Pilot create Academy course/support/Circle sources; Pilot also
+creates cohort enrollment. Business OS setup fulfillment records its immutable
+zero-grant receipt and provisioning/reconciliation state. Only an authoritative
+recurring subscription event creates finite Business OS access. Operator Club is
+handled by subscription events in Task 8.
 
 ```ts
 export const FULFILLMENT_CAPABILITIES: Record<PurchasableOfferCode, readonly GrantCapability[]> = {
   self_paced: ["academy_course", "support", "circle_write"],
   guided_pilot: ["academy_course", "support", "circle_write"],
-  business_os: ["business_os"],
+  business_os: [], // setup payment is a zero-grant receipt
 };
 
 export function grantsForPurchase(purchase: Purchase): readonly NewEntitlementGrant[] {
@@ -672,7 +682,7 @@ git commit -m "feat: operate Guided Pilot enrollment"
 
 **Interfaces:**
 - Eligible only with a valid non-refunded Academy purchase.
-- If included support is active, creates a Stripe Subscription Schedule starting at support expiry; otherwise starts immediately.
+- Selects the initial Club start as `max(exact included-support end, trusted fulfillment now)`: an early selection schedules Stripe for support expiry, while later re-entry starts immediately and is never backdated.
 - Invoice success/failure/cancel events mutate only Club-derived `support`, `circle_write`, and `operator_club` grants.
 
 - [ ] **Step 1: Write eligibility/start-date/grace RED tests**
@@ -823,7 +833,7 @@ git commit -m "feat: handle refunds and payment disputes"
 Test public Self-Paced purchase simulation → claim → owner seat → invites; Pilot application → admin approval → cohort → private Checkout; Operator Club scheduled start; refund and dispute access impact.
 
 ```ts
-test("Self-Paced purchase claims one owner and reserves three seats", async ({ page, stripeFixture }) => {
+test("Self-Paced purchase claims the owner inside three-seat capacity", async ({ page, stripeFixture }) => {
   await page.goto("/checkout/self-paced");
   await page.getByRole("button", { name: /continue to checkout/i }).click();
   await stripeFixture.completeCheckout({ offer: "self_paced" });

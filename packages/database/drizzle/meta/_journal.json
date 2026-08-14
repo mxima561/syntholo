@@ -29,6 +29,13 @@
       "when": 1786640400000,
       "tag": "0004_audit_and_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786647600000,
+      "tag": "0005_entitlements",
+      "breakpoints": true
     }
   ]
 }

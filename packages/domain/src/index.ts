@@ -11,3 +11,24 @@ export type {
   JsonValue,
 } from "./events.js";
 export type { Actor, MemberActor, StaffActor } from "./identity/actor.js";
+export { trustedActorAuthenticationTime } from "./identity/authentication.js";
+export {
+  CAPABILITIES,
+  GRANT_STATUSES,
+  HOLD_KINDS,
+  addExactly168Hours,
+  evaluateEntitlements,
+  oneYearAnniversaryUtc,
+} from "./entitlements/index.js";
+export type {
+  AccountHold,
+  EffectiveAccess,
+  EntitlementEvaluationInput,
+  EntitlementGrant,
+  EntitlementOfferCode,
+  GrantCapability,
+  GrantSourceKind,
+  GrantStatus,
+  HoldKind,
+  SeatReservation,
+} from "./entitlements/index.js";

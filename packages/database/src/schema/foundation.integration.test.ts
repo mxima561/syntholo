@@ -133,8 +133,20 @@ describe("foundation migration", () => {
          where table_schema = 'public'
            and table_name = any($1::text[])`,
         [[
+          "access_decision_audit",
+          "account_hold_sources",
+          "account_holds",
           "accounts",
+          "administrative_grant_restorations",
           "audit_events",
+          "business_os_setup_receipts",
+          "business_os_subscription_cancellations",
+          "club_subscription_cancellations",
+          "commerce_fulfillment_receipts",
+          "commerce_reconciliations",
+          "entitlement_commands",
+          "entitlement_grants",
+          "entitlement_sources",
           "event_handler_receipts",
           "job_attempts",
           "jobs",
@@ -142,6 +154,9 @@ describe("foundation migration", () => {
           "memberships",
           "outbox_events",
           "provider_event_receipts",
+          "seat_invitation_token_generations",
+          "seat_invitations",
+          "seat_reservations",
           "staff_identities",
           "staff_login_attempts",
           "staff_sessions",
@@ -163,8 +178,8 @@ describe("foundation migration", () => {
       );
 
       expect(first.stderr).toBe("");
-      expect(migratedTables.rows[0]?.count).toBe("12");
-      expect(firstJournal.rows).toHaveLength(4);
+      expect(migratedTables.rows[0]?.count).toBe("27");
+      expect(firstJournal.rows).toHaveLength(5);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
       const rerun = await runDatabaseNpm(

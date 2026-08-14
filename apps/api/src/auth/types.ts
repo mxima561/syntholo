@@ -80,6 +80,9 @@ export interface AuthRouteDependencies {
         clerkUserId: string,
       ): Promise<MemberActor | null>;
     };
+    access: {
+      getEffectiveAccess(actor: MemberActor): Promise<unknown>;
+    };
   };
   staff: {
     config: {
