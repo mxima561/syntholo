@@ -393,3 +393,49 @@ is rerun after this report is committed, and its result is returned with the
 commit handoff. No push was performed.
 
 DONE
+
+## Acceptance fix round 5 — 2026-08-14
+
+The two final Important validator bypasses against commit
+`80af2a02844283a45bbcef37f77ffa49e98c447a` were reproduced with six direct
+negative fixtures before the implementation changed.
+
+- Required-test registration traversal now propagates conditional state to the
+  right-hand side of logical assignment (`&&=`, `||=`, and `??=`) as well as
+  the existing short-circuit operators. A required contract registered through
+  any of those assignment operators cannot satisfy the gate.
+- Assertion evidence now rejects assertion roots shadowed by handler-local
+  value bindings. Imported default `assert`, imported named methods such as
+  `equal`, global `expect`, and `fc.assert` are accepted only when the active
+  test handler does not bind the same root identifier; nested helper internals
+  remain outside executable evidence collection.
+- Positive controls retain unshadowed global `expect`, default Node assert, and
+  named Node assert support. The complete repository contract catalog remains
+  accepted by the focused policy suite.
+
+The focused RED contained exactly six expected failures: one for each logical
+assignment registration and one for each shadowed default assert, named equal,
+and expect binding. After the implementation, the focused foundation-policy
+suite passed 58/58 and the combined foundation-policy/CLI slice passed 62/62.
+
+### Acceptance-fix round 5 verification
+
+- `npm run typecheck` and `npm run lint` — PASS in all eight workspaces.
+- `npm test` — PASS: 55 files and 699 tests across eight workspaces (API 131,
+  web 101, worker 44, contracts 15, database 109, domain 193, integrations 35,
+  testing 71).
+- Clean release builds for web/API/worker/cron/migration and `node --check` for
+  all four Node artifacts plus the changed gate library — PASS.
+- `CI=false npm run test:e2e` — PASS: 63 passed, 17 intentional
+  project-specific skips, 80 total, one browser worker.
+- The production graph follows 6,978 resolved runtime edges and reports
+  `policyPass: true` with zero violations. `git diff --check` — PASS.
+
+Docker, `psql`, and `TEST_DATABASE_URL` remain unavailable on this host. No
+local image or real-PostgreSQL PASS is claimed. Fresh deployed proxy/worker
+evidence and target-branch ancestry also remain launch-blocked until their
+external evidence is available. The exact clean committed-SHA foundation gate
+is rerun after this report is committed, and its result is returned with the
+commit handoff. No push was performed.
+
+DONE

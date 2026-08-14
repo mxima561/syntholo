@@ -919,7 +919,7 @@ function nodeAssertBindings(source) {
   return { functions, namespaces };
 }
 
-function isExpectMatcherCall(call) {
+function isExpectMatcherCall(call, shadowedBindings) {
   if (!ts.isPropertyAccessExpression(call.expression)) return false;
   let subject = call.expression.expression;
   while (
@@ -930,39 +930,87 @@ function isExpectMatcherCall(call) {
   }
   return ts.isCallExpression(subject)
     && ts.isIdentifier(subject.expression)
-    && subject.expression.text === "expect";
+    && subject.expression.text === "expect"
+    && !shadowedBindings.has("expect");
 }
 
-function isNodeAssertCall(call, bindings) {
+function isNodeAssertCall(call, bindings, shadowedBindings) {
   if (ts.isIdentifier(call.expression)) {
-    return bindings.functions.has(call.expression.text)
-      || bindings.namespaces.has(call.expression.text);
+    return !shadowedBindings.has(call.expression.text)
+      && (
+        bindings.functions.has(call.expression.text)
+        || bindings.namespaces.has(call.expression.text)
+      );
   }
   if (!ts.isPropertyAccessExpression(call.expression)) return false;
   const receiver = call.expression.expression;
   if (
     ts.isIdentifier(receiver)
+    && !shadowedBindings.has(receiver.text)
     && bindings.namespaces.has(receiver.text)
     && nodeAssertMethods.has(call.expression.name.text)
   ) return true;
   return ts.isPropertyAccessExpression(receiver)
     && receiver.name.text === "strict"
     && ts.isIdentifier(receiver.expression)
+    && !shadowedBindings.has(receiver.expression.text)
     && bindings.namespaces.has(receiver.expression.text)
     && nodeAssertMethods.has(call.expression.name.text);
 }
 
-function isAssertionCall(call, assertBindings) {
-  if (isExpectMatcherCall(call) || isNodeAssertCall(call, assertBindings)) return true;
+function isAssertionCall(call, assertBindings, shadowedBindings) {
+  if (
+    isExpectMatcherCall(call, shadowedBindings)
+    || isNodeAssertCall(call, assertBindings, shadowedBindings)
+  ) return true;
   return ts.isPropertyAccessExpression(call.expression)
     && ts.isIdentifier(call.expression.expression)
     && call.expression.expression.text === "fc"
+    && !shadowedBindings.has("fc")
     && call.expression.name.text === "assert";
+}
+
+function addBindingNames(name, bindings) {
+  if (ts.isIdentifier(name)) {
+    bindings.add(name.text);
+    return;
+  }
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) addBindingNames(element.name, bindings);
+  }
+}
+
+function handlerLocalBindings(handler) {
+  const bindings = new Set();
+  if (ts.isFunctionExpression(handler) && handler.name !== undefined) {
+    bindings.add(handler.name.text);
+  }
+  for (const parameter of handler.parameters) addBindingNames(parameter.name, bindings);
+  const visit = (node) => {
+    if (ts.isFunctionDeclaration(node)) {
+      if (node.name !== undefined) bindings.add(node.name.text);
+      return;
+    }
+    if (ts.isFunctionLike(node)) return;
+    if (
+      ts.isClassDeclaration(node)
+      || ts.isEnumDeclaration(node)
+      || ts.isModuleDeclaration(node)
+    ) {
+      if (node.name !== undefined) bindings.add(node.name.text);
+      return;
+    }
+    if (ts.isVariableDeclaration(node)) addBindingNames(node.name, bindings);
+    ts.forEachChild(node, visit);
+  };
+  ts.forEachChild(handler.body, visit);
+  return bindings;
 }
 
 function testHandlerEvidence(handler, assertBindings) {
   const evidenceTokens = new Set();
   let hasAssertion = false;
+  const shadowedBindings = handlerLocalBindings(handler);
   const collectTokens = (node) => {
     if (ts.isIdentifier(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
       evidenceTokens.add(node.text);
@@ -972,7 +1020,7 @@ function testHandlerEvidence(handler, assertBindings) {
   const visit = (node) => {
     if (ts.isFunctionLike(node)) return;
     if (ts.isCallExpression(node)) {
-      if (isAssertionCall(node, assertBindings)) hasAssertion = true;
+      if (isAssertionCall(node, assertBindings, shadowedBindings)) hasAssertion = true;
       collectTokens(node);
     }
     ts.forEachChild(node, visit);
@@ -996,8 +1044,11 @@ function isConditionalRegistrationContainer(node) {
 function isShortCircuitExpression(node) {
   return ts.isBinaryExpression(node) && [
     ts.SyntaxKind.AmpersandAmpersandToken,
+    ts.SyntaxKind.AmpersandAmpersandEqualsToken,
     ts.SyntaxKind.BarBarToken,
+    ts.SyntaxKind.BarBarEqualsToken,
     ts.SyntaxKind.QuestionQuestionToken,
+    ts.SyntaxKind.QuestionQuestionEqualsToken,
   ].includes(node.operatorToken.kind);
 }
 
