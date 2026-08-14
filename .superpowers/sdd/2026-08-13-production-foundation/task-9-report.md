@@ -504,3 +504,61 @@ report is committed, and its result is returned with the commit handoff. No
 push was performed.
 
 DONE
+
+## Acceptance fix round 7 — 2026-08-14
+
+The remaining whole-branch callback-provenance finding against commit
+`3ec378f8294385bd87b1951d0eca9f63cd2a03c0` was reproduced with direct RED
+fixtures before the implementation changed.
+
+- Required-contract validation no longer treats a callback method name as
+  execution evidence. A fake `.transaction` receiver and an empty-array
+  `.forEach` now fail with `REQUIRED_CONTRACT_MISSING`, even when their callback
+  contains the only assertion and required syntax token.
+- Callback evidence is owned by the exact trusted invocation that executes it.
+  Vitest/Playwright throw matchers, Node assertion callback methods, a
+  fast-check property passed directly to `fc.assert`, repository unit-of-work
+  transactions created through the trusted imported factories, and
+  `map`/`forEach` on a statically proven non-empty array are the supported
+  controls. An arbitrary nested call does not inherit callback trust from an
+  enclosing trusted callback.
+- Receiver provenance is lexical and immutable. Shadowed, local lookalikes and
+  mutable `let`-bound array or transaction receivers are rejected; imported
+  unit-of-work factories, their immutable local wrappers, non-empty literals,
+  and `Array.from` with a positive literal length remain accepted.
+- The jobs and RLS required contracts now contain direct edge assertions for
+  `claimGeneration` and `rolbypassrls`, so their required syntax does not depend
+  on generic array-callback traversal. The four-invitation race remains
+  accepted through independently proven non-empty-array and unit-of-work
+  transaction ownership.
+
+The first focused RED ran 77 tests with exactly two failures for the fake
+transaction and empty-array `forEach` bypasses. A separate positive-control RED
+proved that a statically non-empty native array was not yet recognized, and a
+final mutation RED produced exactly two failures for mutable array and
+transaction provenance. After the implementation, the focused foundation
+policy/CLI slice passed 84/84.
+
+### Acceptance-fix round 7 verification
+
+- `npm run typecheck` and `npm run lint` — PASS in all eight workspaces.
+- `npm test` — PASS: 55 files and 727 tests across eight workspaces (API 133,
+  web 101, worker 48, contracts 15, database 109, domain 193, integrations 35,
+  testing 93).
+- Production-mode web/API/worker/cron and migration builds plus `node --check`
+  for all four Node artifacts and the changed gate library — PASS.
+- `CI=false npm run test:e2e` — PASS: the generated Playwright report records
+  63 expected passes, 17 intentional project-specific skips, zero unexpected
+  results, 80 total, and one browser worker.
+- The production graph follows 6,978 resolved runtime edges and reports
+  `policyPass: true` with zero violations. Required-contract catalog validation
+  and working-tree `git diff --check` — PASS.
+
+Docker, `psql`, `pg_isready`, and `TEST_DATABASE_URL` remain unavailable on
+this host. No local image or real-PostgreSQL PASS is claimed. Fresh deployed
+proxy/worker evidence and target-branch ancestry also remain externally
+blocked. The exact clean committed-SHA foundation gate is rerun after this
+report is committed, and its result is returned with the commit handoff. No
+push was performed.
+
+DONE

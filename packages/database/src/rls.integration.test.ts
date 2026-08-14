@@ -673,6 +673,7 @@ describe("PostgreSQL account role boundary", () => {
       [capabilityRoles],
     );
 
+    expect(result.rows[0]?.rolbypassrls).toBe(false);
     expect(result.rows).toEqual(capabilityRoles.map((rolname) => ({
       rolbypassrls: false,
       rolcanlogin: false,

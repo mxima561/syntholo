@@ -633,6 +633,11 @@ describe("gate report trust boundary", () => {
     ["a conditional assertion branch", "import { it, expect } from 'vitest'; it('required contract', () => { if (enabled) expect(runContract()).toBe(true); expect(true).toBe(true) })"],
     ["a short-circuit assertion branch", "import { it, expect } from 'vitest'; it('required contract', () => { enabled && expect(runContract()).toBe(true); expect(true).toBe(true) })"],
     ["an assertion hidden in an unproven callback", "import { it, expect } from 'vitest'; it('required contract', () => { execute(() => expect(runContract()).toBe(true)); expect(true).toBe(true) })"],
+    ["an assertion hidden in a fake transaction callback", "import { it, expect } from 'vitest'; it('required contract', () => { const fake = { transaction(_cb) {} }; fake.transaction(() => expect(runContract()).toBe(true)) })"],
+    ["an assertion hidden in an empty-array forEach callback", "import { it, expect } from 'vitest'; it('required contract', () => { [].forEach(() => expect(runContract()).toBe(true)) })"],
+    ["an arbitrary nested callback inside a trusted callback", "import { it, expect } from 'vitest'; it('required contract', () => { expect(() => execute(() => expect(runContract()).toBe(true))).not.toThrow() })"],
+    ["a callback receiver whose non-empty array provenance is mutable", "import { it, expect } from 'vitest'; it('required contract', () => { let values = [1]; values = []; values.forEach(() => expect(runContract()).toBe(true)) })"],
+    ["a callback receiver whose transaction provenance is mutable", "import { createUnitOfWork } from '@syntholo/database'; import { it, expect } from 'vitest'; let unitOfWork = () => createUnitOfWork(database, metadata); unitOfWork = () => ({ transaction(_cb) {} }); it('required contract', () => { unitOfWork().transaction(() => expect(runContract()).toBe(true)) })"],
   ])("does not accept %s as an executable required contract", (_case, source) => {
     expect(() => validateExecutableTestCases(
       source,
@@ -677,6 +682,29 @@ describe("gate report trust boundary", () => {
   it("accepts an imported Playwright test and assertion", () => {
     expect(() => validateExecutableTestCases(
       "import { expect, test } from '@playwright/test'; test('required contract', () => { expect(runContract()).toBe(true) })",
+      ["required contract"],
+      { "required contract": ["runContract"] },
+    )).not.toThrow();
+  });
+
+  it("accepts callbacks directly owned by trusted assertion and property APIs", () => {
+    expect(() => validateExecutableTestCases(
+      "import { expect, it } from 'vitest'; it('required contract', () => { expect(() => runContract()).not.toThrow() })",
+      ["required contract"],
+      { "required contract": ["runContract"] },
+    )).not.toThrow();
+    expect(() => validateExecutableTestCases(
+      "import fc from 'fast-check'; import { expect, it } from 'vitest'; it('required contract', () => { fc.assert(fc.property(fc.constant(true), () => { expect(runContract()).toBe(true) })) })",
+      ["required contract"],
+      { "required contract": ["runContract"] },
+    )).not.toThrow();
+    expect(() => validateExecutableTestCases(
+      "import { createUnitOfWork } from '@syntholo/database'; import { expect, it } from 'vitest'; const ownerUnitOfWork = () => createUnitOfWork(database, metadata); it('required contract', () => { ownerUnitOfWork().transaction(() => expect(runContract()).toBe(true)) })",
+      ["required contract"],
+      { "required contract": ["runContract"] },
+    )).not.toThrow();
+    expect(() => validateExecutableTestCases(
+      "import { expect, it } from 'vitest'; it('required contract', () => { [1].forEach(() => expect(runContract()).toBe(true)) })",
       ["required contract"],
       { "required contract": ["runContract"] },
     )).not.toThrow();

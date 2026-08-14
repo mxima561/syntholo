@@ -900,14 +900,79 @@ function importProvenance(moduleName, importedName) {
   if (moduleName === "fast-check" && ["default", "*"].includes(importedName)) {
     return "assertion:fast-check";
   }
+  if (
+    ["@syntholo/database", "./index.js"].includes(moduleName)
+    && ["createSystemUnitOfWork", "createUnitOfWork"].includes(importedName)
+  ) return "callback-factory:transaction";
   return "shadow";
 }
 
-function addRuntimeDeclaration(statement, bindings) {
+function expressionProvenance(expression, scope) {
+  if (ts.isIdentifier(expression)) return resolveBinding(scope, expression.text);
+  if (ts.isParenthesizedExpression(expression)) {
+    return expressionProvenance(expression.expression, scope);
+  }
+  if (ts.isArrayLiteralExpression(expression) && expression.elements.length > 0) {
+    return "callback-owner:nonempty-array";
+  }
+  if (!ts.isCallExpression(expression)) return undefined;
+  if (
+    ts.isPropertyAccessExpression(expression.expression)
+    && ts.isIdentifier(expression.expression.expression)
+    && expression.expression.expression.text === "Array"
+    && resolveBinding(scope, "Array") === undefined
+    && expression.expression.name.text === "from"
+    && expression.arguments[0] !== undefined
+    && ts.isObjectLiteralExpression(expression.arguments[0])
+  ) {
+    const length = expression.arguments[0].properties.find((property) =>
+      ts.isPropertyAssignment(property)
+      && ts.isIdentifier(property.name)
+      && property.name.text === "length"
+    );
+    if (
+      length !== undefined
+      && ts.isPropertyAssignment(length)
+      && ts.isNumericLiteral(length.initializer)
+      && Number(length.initializer.text) > 0
+    ) return "callback-owner:nonempty-array";
+  }
+  return expressionProvenance(expression.expression, scope) === "callback-factory:transaction"
+    ? "callback-owner:transaction"
+    : undefined;
+}
+
+function returnedExpression(functionNode) {
+  if (!ts.isBlock(functionNode.body)) return functionNode.body;
+  if (functionNode.body.statements.length !== 1) return undefined;
+  const statement = functionNode.body.statements[0];
+  return ts.isReturnStatement(statement) ? statement.expression : undefined;
+}
+
+function declarationProvenance(initializer, scope) {
+  if (initializer === undefined) return undefined;
+  if (ts.isArrowFunction(initializer) || ts.isFunctionExpression(initializer)) {
+    const returned = returnedExpression(initializer);
+    return returned !== undefined
+      && expressionProvenance(returned, scope) === "callback-owner:transaction"
+      ? "callback-factory:transaction"
+      : undefined;
+  }
+  return expressionProvenance(initializer, scope);
+}
+
+function addRuntimeDeclaration(statement, bindings, parent) {
   const shadow = (name) => bindings.set(name, "shadow");
   if (ts.isVariableStatement(statement)) {
+    const immutable = (statement.declarationList.flags & ts.NodeFlags.Const) !== 0;
     for (const declaration of statement.declarationList.declarations) {
-      addBindingNames(declaration.name, shadow);
+      const provenance = immutable && ts.isIdentifier(declaration.name)
+        ? declarationProvenance(declaration.initializer, { bindings, parent })
+        : undefined;
+      addBindingNames(
+        declaration.name,
+        (name) => bindings.set(name, provenance ?? "shadow"),
+      );
     }
     return;
   }
@@ -955,14 +1020,16 @@ function moduleScope(source) {
     }
   }
   for (const statement of source.statements) {
-    if (!ts.isImportDeclaration(statement)) addRuntimeDeclaration(statement, bindings);
+    if (!ts.isImportDeclaration(statement)) {
+      addRuntimeDeclaration(statement, bindings, undefined);
+    }
   }
   return { bindings, parent: undefined };
 }
 
 function nestedScope(parent, statements = [], names = []) {
   const bindings = new Map(names.map((name) => [name, "shadow"]));
-  for (const statement of statements) addRuntimeDeclaration(statement, bindings);
+  for (const statement of statements) addRuntimeDeclaration(statement, bindings, parent);
   return { bindings, parent };
 }
 
@@ -1082,6 +1149,20 @@ function expectMatcherName(call, scope) {
     : undefined;
 }
 
+function expectSubjectCall(call, scope) {
+  if (!ts.isPropertyAccessExpression(call.expression)) return undefined;
+  let subject = call.expression.expression;
+  while (
+    ts.isPropertyAccessExpression(subject)
+    && ["not", "rejects", "resolves"].includes(subject.name.text)
+  ) {
+    subject = subject.expression;
+  }
+  return ts.isCallExpression(subject) && expectInvocation(subject.expression, scope)
+    ? subject
+    : undefined;
+}
+
 function nodeAssertCall(call, scope) {
   if (ts.isIdentifier(call.expression)) {
     const provenance = resolveBinding(scope, call.expression.text);
@@ -1112,32 +1193,63 @@ function fastCheckMethod(call, scope, method) {
 function assertionCallInfo(call, scope) {
   const matcherName = expectMatcherName(call, scope);
   if (matcherName !== undefined) {
-    return {
-      assertion: true,
-      executesCallback: ["toThrow", "toThrowError"].includes(matcherName),
-    };
+    return { assertion: true };
+  }
+  if (nodeAssertCall(call, scope)) {
+    return { assertion: true };
+  }
+  return { assertion: fastCheckMethod(call, scope, "assert") };
+}
+
+function trustedCallbackArguments(call, scope) {
+  const callbacks = [];
+  const matcherName = expectMatcherName(call, scope);
+  if (["toThrow", "toThrowError"].includes(matcherName)) {
+    const callback = expectSubjectCall(call, scope)?.arguments[0];
+    if (callback !== undefined && ts.isFunctionLike(callback)) callbacks.push(callback);
   }
   if (nodeAssertCall(call, scope)) {
     const method = ts.isPropertyAccessExpression(call.expression)
       ? call.expression.name.text
       : undefined;
-    return {
-      assertion: true,
-      executesCallback: ["doesNotReject", "doesNotThrow", "rejects", "throws"].includes(method),
-    };
+    const callback = call.arguments[0];
+    if (
+      ["doesNotReject", "doesNotThrow", "rejects", "throws"].includes(method)
+      && callback !== undefined
+      && ts.isFunctionLike(callback)
+    ) callbacks.push(callback);
   }
-  return {
-    assertion: fastCheckMethod(call, scope, "assert"),
-    executesCallback: fastCheckMethod(call, scope, "assert"),
-  };
-}
-
-function trustedCallbackCall(call, scope) {
+  if (fastCheckMethod(call, scope, "assert")) {
+    for (const argument of call.arguments) {
+      if (
+        !ts.isCallExpression(argument)
+        || !["asyncProperty", "property"].some((method) =>
+          fastCheckMethod(argument, scope, method)
+        )
+      ) continue;
+      const callback = argument.arguments.at(-1);
+      if (callback !== undefined && ts.isFunctionLike(callback)) callbacks.push(callback);
+    }
+  }
   if (
     ts.isPropertyAccessExpression(call.expression)
-    && ["every", "filter", "find", "findIndex", "flatMap", "forEach", "map", "reduce", "reduceRight", "some", "transaction"].includes(call.expression.name.text)
-  ) return true;
-  return ["asyncProperty", "property"].some((method) => fastCheckMethod(call, scope, method));
+    && call.expression.name.text === "transaction"
+    && expressionProvenance(call.expression.expression, scope) === "callback-owner:transaction"
+  ) {
+    for (const argument of call.arguments) {
+      if (ts.isFunctionLike(argument)) callbacks.push(argument);
+    }
+  }
+  if (
+    ts.isPropertyAccessExpression(call.expression)
+    && ["forEach", "map"].includes(call.expression.name.text)
+    && expressionProvenance(call.expression.expression, scope)
+      === "callback-owner:nonempty-array"
+  ) {
+    const callback = call.arguments[0];
+    if (callback !== undefined && ts.isFunctionLike(callback)) callbacks.push(callback);
+  }
+  return callbacks;
 }
 
 function isStaticClassMember(member) {
@@ -1153,29 +1265,28 @@ function testHandlerEvidence(handler, parentScope) {
       evidenceTokens.add(node.text);
     }
   };
-  const visit = (node, scope, state = "active", insideCall = false, callbackProven = false) => {
+  const visit = (node, scope, state = "active", insideCall = false) => {
     if (state === "active" && insideCall) addToken(node);
     if (isShortCircuitExpression(node)) {
-      visit(node.left, scope, state, insideCall, callbackProven);
+      visit(node.left, scope, state, insideCall);
       visit(
         node.right,
         scope,
         state === "active" ? "conditional" : state,
         insideCall,
-        callbackProven,
       );
       return;
     }
     if (isConditionalRegistrationContainer(node)) {
       ts.forEachChild(node, (child) =>
-        visit(child, scope, state === "active" ? "conditional" : state, insideCall, callbackProven)
+        visit(child, scope, state === "active" ? "conditional" : state, insideCall)
       );
       return;
     }
     if (ts.isBlock(node)) {
       const blockScope = nestedScope(scope, node.statements);
       for (const statement of node.statements) {
-        visit(statement, blockScope, state, insideCall, callbackProven);
+        visit(statement, blockScope, state, insideCall);
       }
       return;
     }
@@ -1185,38 +1296,37 @@ function testHandlerEvidence(handler, parentScope) {
         if (ts.isClassStaticBlockDeclaration(member)) {
           const staticScope = staticBlockScope(member, bodyScope);
           for (const statement of member.body.statements) {
-            visit(statement, staticScope, state, insideCall, callbackProven);
+            visit(statement, staticScope, state, insideCall);
           }
         } else if (
           ts.isPropertyDeclaration(member)
           && isStaticClassMember(member)
           && member.initializer !== undefined
         ) {
-          visit(member.initializer, bodyScope, state, insideCall, callbackProven);
+          visit(member.initializer, bodyScope, state, insideCall);
         }
       }
       return;
     }
     if (ts.isFunctionLike(node)) {
-      if (!callbackProven || node.body === undefined) return;
-      const callbackScope = functionScope(node, scope);
-      visit(node.body, callbackScope, state, insideCall, false);
       return;
     }
     if (ts.isCallExpression(node)) {
       const assertion = assertionCallInfo(node, scope);
       if (state === "active" && assertion.assertion) hasAssertion = true;
-      const callbacksExecute = callbackProven
-        || assertion.executesCallback
-        || trustedCallbackCall(node, scope);
-      visit(node.expression, scope, state, true, callbacksExecute);
+      visit(node.expression, scope, state, true);
       for (const argument of node.arguments) {
-        visit(argument, scope, state, true, callbacksExecute);
+        visit(argument, scope, state, true);
+      }
+      for (const callback of trustedCallbackArguments(node, scope)) {
+        if (callback.body === undefined) continue;
+        const callbackScope = functionScope(callback, scope);
+        visit(callback.body, callbackScope, state, true);
       }
       return;
     }
     ts.forEachChild(node, (child) =>
-      visit(child, scope, state, insideCall, callbackProven)
+      visit(child, scope, state, insideCall)
     );
   };
   if (ts.isBlock(handler.body)) {

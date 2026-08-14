@@ -55,6 +55,8 @@ describe("durable job repository", () => {
     const claimed = [...left, ...right];
 
     expect(claimed).toHaveLength(10);
+    expect(claimed[0]?.claimGeneration).toBe(1);
+    expect(claimed.at(-1)?.claimGeneration).toBe(1);
     expect(new Set(claimed.map(({ id }) => id)).size).toBe(10);
     expect(claimed.map(({ claimGeneration }) => claimGeneration))
       .toEqual(Array.from({ length: 10 }, () => 1));
