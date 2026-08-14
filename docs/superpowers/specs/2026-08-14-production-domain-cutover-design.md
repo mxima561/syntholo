@@ -1,6 +1,6 @@
 # Syntholo Production Domain Cutover
 
-**Status:** Implemented; final reviewed-SHA deployment pending
+**Status:** Implemented and production-verified
 **Date:** 2026-08-14
 **Canonical web origin:** `https://app.syntholo.com`
 

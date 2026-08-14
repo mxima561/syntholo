@@ -33,7 +33,7 @@
 - Consumes: Vercel project `prj_4KSSshgT0VZelpiyAeni2uyJ6PHt` and DNS for `app.syntholo.com`.
 - Produces: verified Vercel DNS/TLS attachment before any identity-provider change.
 
-- [ ] **Step 1: Verify DNS points to Vercel**
+- [x] **Step 1: Verify DNS points to Vercel**
 
 ```bash
 dig +short CNAME app.syntholo.com
@@ -42,7 +42,7 @@ dig +short A app.syntholo.com
 
 Expected: a Vercel DNS target is returned and the hostname resolves.
 
-- [ ] **Step 2: Verify Vercel owns the alias and TLS is ready**
+- [x] **Step 2: Verify Vercel owns the alias and TLS is ready**
 
 ```bash
 npx vercel domains inspect app.syntholo.com --scope karim-7393s-projects
@@ -51,7 +51,7 @@ curl -fsSI https://app.syntholo.com
 
 Expected: Vercel reports the domain and curl completes with a valid TLS chain. A redirect to the old hostname is acceptable only before `WEB_ORIGIN` changes.
 
-- [ ] **Step 3: Run the canonical-host unit tests**
+- [x] **Step 3: Run the canonical-host unit tests**
 
 ```bash
 npm test -w @syntholo/web -- src/lib/config/canonical-host.test.ts
@@ -71,7 +71,7 @@ Expected: PASS; redirect behavior derives from the configured fixed `WEB_ORIGIN`
 - Consumes: Railway `CLERK_SECRET_KEY` without printing it and Clerk domain API.
 - Produces: verified Clerk Frontend API, DKIM, and mail DNS records for `app.syntholo.com`, with `proxy_url=null`; no Account Portal record is inferred.
 
-- [ ] **Step 1: Read the current Clerk domain object without printing credentials**
+- [x] **Step 1: Read the current Clerk domain object without printing credentials**
 
 ```bash
 railway_vars=$(npx @railway/cli variable list --service API --environment production --project 7d964d5c-632d-4205-9f85-8e00b3038885 --json)
@@ -84,7 +84,7 @@ curl -fsS https://api.clerk.com/v1/domains \
 
 Expected: the primary domain ID matches the documented ID and the current temporary proxy configuration is visible.
 
-- [ ] **Step 2: Request the owned primary domain in DNS mode**
+- [x] **Step 2: Request the owned primary domain in DNS mode**
 
 ```bash
 curl -fsS -X PATCH \
@@ -100,11 +100,11 @@ Expected: Clerk returns DNS targets for the new domain and no proxy URL. If the
 PATCH is rejected, stop before changing WorkOS or either runtime origin and
 record Clerk's exact response for a revised provider-specific plan.
 
-- [ ] **Step 3: Add only the exact Clerk-returned CNAME records in GoDaddy**
+- [x] **Step 3: Add only the exact Clerk-returned CNAME records in GoDaddy**
 
 Use the returned `cname_targets`; do not infer hostnames. Preserve the existing `app` Vercel CNAME and all unrelated apex/mail records.
 
-- [ ] **Step 4: Verify Clerk DNS and endpoints**
+- [x] **Step 4: Verify Clerk DNS and endpoints**
 
 ```bash
 dig +short CNAME clerk.app.syntholo.com
@@ -119,7 +119,7 @@ least one key. Re-read the Clerk domain object and require `proxy_url=null`, the
 exact new domain name, and the returned CNAME targets before continuing. Clerk
 did not return an Account Portal CNAME for this instance; do not invent one.
 
-- [ ] **Step 5: Replace platform keys only if Clerk rotates them**
+- [x] **Step 5: Replace platform keys only if Clerk rotates them**
 
 If Clerk returns a new publishable or secret key, copy it directly into the same existing Vercel/Railway variables without displaying it. If keys remain stable, make no credential change.
 
@@ -139,7 +139,7 @@ If Clerk returns a new publishable or secret key, copy it directly into the same
 - Consumes: verified Clerk DNS from Task 2.
 - Produces: one canonical hostname for web redirect, embedded Clerk routes, API CORS/cookie decisions, and WorkOS callback.
 
-- [ ] **Step 1: Update WorkOS redirect URI first**
+- [x] **Step 1: Update WorkOS redirect URI first**
 
 Set the application homepage, initiate-login URI, and production callback to:
 
@@ -151,7 +151,7 @@ https://app.syntholo.com/v1/staff/auth/callback
 
 Keep only the exact production callback after live verification.
 
-- [ ] **Step 2: Keep Clerk navigation on local embedded routes**
+- [x] **Step 2: Keep Clerk navigation on local embedded routes**
 
 ```text
 /sign-in
@@ -161,7 +161,7 @@ Keep only the exact production callback after live verification.
 Configure Clerk path routing explicitly and test that each form links to the
 other local route. Do not depend on `accounts.app.syntholo.com`.
 
-- [ ] **Step 3: Update Vercel production origin**
+- [x] **Step 3: Update Vercel production origin**
 
 ```bash
 printf '%s' 'https://app.syntholo.com' \
@@ -171,7 +171,7 @@ printf '%s' 'https://app.syntholo.com' \
 
 Expected: Vercel confirms the production variable was replaced.
 
-- [ ] **Step 4: Update Railway API origin without triggering an intermediate deploy**
+- [x] **Step 4: Update Railway API origin without triggering an intermediate deploy**
 
 ```bash
 printf '%s' 'https://app.syntholo.com' \
@@ -182,7 +182,7 @@ printf '%s' 'https://app.syntholo.com' \
 
 Expected: Railway confirms only the API variable was changed.
 
-- [ ] **Step 5: Confirm Vercel remains free of backend credentials**
+- [x] **Step 5: Confirm Vercel remains free of backend credentials**
 
 Pull production variables to an ignored file and report only key names. Fail if `CLERK_SECRET_KEY`, `WORKOS_API_KEY`, database URLs, or another forbidden server credential is present.
 
@@ -196,7 +196,7 @@ Pull production variables to an ignored file and report only key names. Fail if 
 - Consumes: provider state from Tasks 1-3.
 - Produces: live web/API deployments on the canonical hostname with validated identity flows.
 
-- [ ] **Step 1: Redeploy Railway API**
+- [x] **Step 1: Redeploy Railway API**
 
 ```bash
 npx @railway/cli redeploy --service API --environment production \
@@ -205,11 +205,11 @@ npx @railway/cli redeploy --service API --environment production \
 
 Poll until the latest API deployment is `SUCCESS`; stop on `FAILED` or `CRASHED` and inspect logs.
 
-- [ ] **Step 2: Redeploy Vercel production**
+- [x] **Step 2: Redeploy Vercel production**
 
 Redeploy the accepted production deployment with target `production`, preserving the required webpack build command and accepted Git metadata. Poll until `readyState=READY`.
 
-- [ ] **Step 3: Verify canonical routing and release identity**
+- [x] **Step 3: Verify canonical routing and release identity**
 
 ```bash
 curl -fsS https://app.syntholo.com/api/health | jq -e '.status == "ok"'
@@ -219,7 +219,7 @@ curl -fsSI https://syntholo.vercel.app/launch-check?source=alias
 
 Expected: both health responses report the deployed Git SHA; the old alias redirects to `https://app.syntholo.com/launch-check?source=alias`.
 
-- [ ] **Step 4: Verify member identity**
+- [x] **Step 4: Verify member identity**
 
 Open `https://app.syntholo.com/sign-in`; verify ClerkJS loads from the verified
 production Frontend API, there are no DNS/proxy errors, its sign-up action stays
@@ -227,7 +227,7 @@ on `https://app.syntholo.com/sign-up`, and an unauthenticated protected member
 request returns the documented 401 rather than 500. Repeat the reciprocal link
 check from `/sign-up`.
 
-- [ ] **Step 5: Verify staff identity**
+- [x] **Step 5: Verify staff identity**
 
 ```bash
 curl -fsSI https://app.syntholo.com/v1/staff/auth/sign-in
@@ -235,7 +235,7 @@ curl -fsSI https://app.syntholo.com/v1/staff/auth/sign-in
 
 Expected: redirect uses the existing WorkOS client/organization and exact `app.syntholo.com` callback. The login cookie remains `Secure`, `HttpOnly`, `SameSite=Lax`, host-only, and `Path=/`.
 
-- [ ] **Step 6: Run local regression gates**
+- [x] **Step 6: Run local regression gates**
 
 ```bash
 npm run typecheck
@@ -257,11 +257,11 @@ Expected: all locally executable checks pass.
 - Consumes: exact provider/deployment evidence from Task 4.
 - Produces: durable canonical-host documentation and a clean pushed branch.
 
-- [ ] **Step 1: Replace temporary-host documentation with the verified canonical values**
+- [x] **Step 1: Replace temporary-host documentation with the verified canonical values**
 
 Record `app.syntholo.com`, the exact WorkOS callback, Clerk DNS mode, Vercel/Railway service boundaries, deployment IDs, and verification timestamps. Do not record credentials.
 
-- [ ] **Step 2: Run documentation and repository checks**
+- [x] **Step 2: Run documentation and repository checks**
 
 ```bash
 rg -n 'syntholo\.vercel\.app/__clerk|syntholo\.vercel\.app/v1/staff/auth/callback' docs .env.example
@@ -271,7 +271,7 @@ git status --short
 
 Expected: no stale production identity endpoint remains in tracked documentation; only intended documentation changes are present.
 
-- [ ] **Step 3: Commit and push**
+- [x] **Step 3: Commit and push**
 
 ```bash
 git add docs/architecture/identity-and-sessions.md \
@@ -281,7 +281,7 @@ git commit -m "docs: record production domain cutover"
 git push origin codex/production-platform
 ```
 
-- [ ] **Step 4: Confirm final state**
+- [x] **Step 4: Confirm final state**
 
 ```bash
 git status --short --branch

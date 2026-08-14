@@ -702,4 +702,29 @@ origin `https://app.syntholo.com` before the embedded-auth follow-up release.
 
 No credential value is recorded in this report.
 
+### Embedded-auth follow-up release
+
+Commit `0fea17e6402e5c49ed2622d5d23005759955221a` deployed successfully as:
+
+- Vercel `dpl_4qBosJejSZuvW9uoHVfngcyi2k7X`;
+- Railway migrate `9e2e6473-ca19-43ca-af6e-e691a62e9bc2`;
+- Railway API `51cf14cd-0404-4d0c-8d21-435010ff78f9`;
+- Railway worker `3f69f062-a7cc-4503-96ea-da146ae8dbb4`;
+- Railway cron `f08f3eeb-aa30-420a-900a-df72f45a8281`.
+
+All five providers reported the exact commit and a successful terminal state.
+Live `/api/health` and `/v1/health/ready` reported that SHA; both database
+dependencies were healthy; unauthenticated member access returned the typed
+401; the old alias returned a path/query-preserving 308; Clerk JWKS returned
+one key; and WorkOS returned a 302 with the exact canonical callback. A real
+browser rendered the two embedded Clerk forms and proved their reciprocal links
+remain on `https://app.syntholo.com/sign-in` and
+`https://app.syntholo.com/sign-up`.
+
+The pre-release local gate passed 55 files / 746 tests, all eight workspace
+typechecks and lint checks, `git diff --check`, production builds, the migration
+artifact build, and Node syntax checks. The evidence-only documentation commit
+that contains this section is subsequently deployed under its own exact SHA;
+no code or provider configuration changes are folded into that commit.
+
 DONE
