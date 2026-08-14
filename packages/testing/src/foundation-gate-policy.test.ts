@@ -575,9 +575,15 @@ describe("gate report trust boundary", () => {
     ["a skipped suite", "describe.skip('suite', () => { it('required contract', () => { expect(runContract()).toBe(true) }) })"],
     ["a conditional suite", "describe.runIf(enabled)('suite', () => { it('required contract', () => { expect(runContract()).toBe(true) }) })"],
     ["a conditionally registered test", "if (enabled) { it('required contract', () => { expect(runContract()).toBe(true) }) }"],
+    ["an && short-circuit registration", "enabled && it('required contract', () => { expect(runContract()).toBe(true) })"],
+    ["an || short-circuit registration", "enabled || it('required contract', () => { expect(runContract()).toBe(true) })"],
+    ["a ?? short-circuit registration", "enabled ?? it('required contract', () => { expect(runContract()).toBe(true) })"],
     ["an assertion-free behavior call", "it('required contract', () => { runContract() })"],
     ["a non-executing token reference", "it('required contract', () => { void runContract; expect(true).toBe(true) })"],
     ["an uncalled helper body", "it('required contract', () => { function fake() { expect(runContract()).toBe(true) }; expect(true).toBe(true) })"],
+    ["an assert.log lookalike", "import assert from 'node:assert/strict'; it('required contract', () => { assert.log(runContract()) })"],
+    ["an expect.soft lookalike", "it('required contract', () => { expect.soft(runContract()) })"],
+    ["an expect.extend matcher definition", "it('required contract', () => { expect.extend({ toPass() { runContract(); return { pass: true, message: () => '' } } }) })"],
   ])("does not accept %s as an executable required contract", (_case, source) => {
     expect(() => validateExecutableTestCases(
       source,
@@ -591,6 +597,15 @@ describe("gate report trust boundary", () => {
     expect(() => validateExecutableTestCases(
       "it('required contract', () => { expect(runContract()).toBe(true) })",
       ["required contract"],
+      { "required contract": ["runContract"] },
+    )).not.toThrow();
+  });
+
+  it("accepts an imported node:assert assertion invocation", () => {
+    expect(() => validateExecutableTestCases(
+      "import assert from 'node:assert/strict'; it('required contract', () => { assert.equal(runContract(), true) })",
+      ["required contract"],
+      { "required contract": ["runContract"] },
     )).not.toThrow();
   });
 

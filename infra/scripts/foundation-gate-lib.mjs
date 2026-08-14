@@ -870,28 +870,97 @@ function functionHandler(call) {
   );
 }
 
-function rootExpressionIdentifier(expression) {
-  if (ts.isIdentifier(expression)) return expression.text;
-  if (ts.isCallExpression(expression)) return rootExpressionIdentifier(expression.expression);
-  if (ts.isPropertyAccessExpression(expression) || ts.isElementAccessExpression(expression)) {
-    return rootExpressionIdentifier(expression.expression);
+const nodeAssertMethods = new Set([
+  "deepEqual",
+  "deepStrictEqual",
+  "doesNotMatch",
+  "doesNotReject",
+  "doesNotThrow",
+  "equal",
+  "fail",
+  "ifError",
+  "match",
+  "notDeepEqual",
+  "notDeepStrictEqual",
+  "notEqual",
+  "notStrictEqual",
+  "ok",
+  "partialDeepStrictEqual",
+  "rejects",
+  "strictEqual",
+  "throws",
+]);
+
+function nodeAssertBindings(source) {
+  const functions = new Set();
+  const namespaces = new Set();
+  for (const statement of source.statements) {
+    if (
+      !ts.isImportDeclaration(statement)
+      || !ts.isStringLiteral(statement.moduleSpecifier)
+      || !["node:assert", "node:assert/strict"].includes(statement.moduleSpecifier.text)
+      || statement.importClause?.isTypeOnly === true
+    ) continue;
+    const importClause = statement.importClause;
+    if (importClause?.name !== undefined) namespaces.add(importClause.name.text);
+    const bindings = importClause?.namedBindings;
+    if (bindings === undefined) continue;
+    if (ts.isNamespaceImport(bindings)) {
+      namespaces.add(bindings.name.text);
+      continue;
+    }
+    for (const element of bindings.elements) {
+      if (element.isTypeOnly) continue;
+      const imported = element.propertyName?.text ?? element.name.text;
+      if (imported === "strict") namespaces.add(element.name.text);
+      if (nodeAssertMethods.has(imported)) functions.add(element.name.text);
+    }
   }
-  return undefined;
+  return { functions, namespaces };
 }
 
-function isAssertionCall(call) {
-  const root = rootExpressionIdentifier(call.expression);
-  if (root === "assert") return true;
+function isExpectMatcherCall(call) {
+  if (!ts.isPropertyAccessExpression(call.expression)) return false;
+  let subject = call.expression.expression;
+  while (
+    ts.isPropertyAccessExpression(subject)
+    && ["not", "rejects", "resolves"].includes(subject.name.text)
+  ) {
+    subject = subject.expression;
+  }
+  return ts.isCallExpression(subject)
+    && ts.isIdentifier(subject.expression)
+    && subject.expression.text === "expect";
+}
+
+function isNodeAssertCall(call, bindings) {
+  if (ts.isIdentifier(call.expression)) {
+    return bindings.functions.has(call.expression.text)
+      || bindings.namespaces.has(call.expression.text);
+  }
+  if (!ts.isPropertyAccessExpression(call.expression)) return false;
+  const receiver = call.expression.expression;
   if (
-    root === "fc"
-    && ts.isPropertyAccessExpression(call.expression)
-    && call.expression.name.text === "assert"
+    ts.isIdentifier(receiver)
+    && bindings.namespaces.has(receiver.text)
+    && nodeAssertMethods.has(call.expression.name.text)
   ) return true;
-  return root === "expect"
-    && !(ts.isIdentifier(call.expression) && call.expression.text === "expect");
+  return ts.isPropertyAccessExpression(receiver)
+    && receiver.name.text === "strict"
+    && ts.isIdentifier(receiver.expression)
+    && bindings.namespaces.has(receiver.expression.text)
+    && nodeAssertMethods.has(call.expression.name.text);
 }
 
-function testHandlerEvidence(handler) {
+function isAssertionCall(call, assertBindings) {
+  if (isExpectMatcherCall(call) || isNodeAssertCall(call, assertBindings)) return true;
+  return ts.isPropertyAccessExpression(call.expression)
+    && ts.isIdentifier(call.expression.expression)
+    && call.expression.expression.text === "fc"
+    && call.expression.name.text === "assert";
+}
+
+function testHandlerEvidence(handler, assertBindings) {
   const evidenceTokens = new Set();
   let hasAssertion = false;
   const collectTokens = (node) => {
@@ -903,7 +972,7 @@ function testHandlerEvidence(handler) {
   const visit = (node) => {
     if (ts.isFunctionLike(node)) return;
     if (ts.isCallExpression(node)) {
-      if (isAssertionCall(node)) hasAssertion = true;
+      if (isAssertionCall(node, assertBindings)) hasAssertion = true;
       collectTokens(node);
     }
     ts.forEachChild(node, visit);
@@ -924,6 +993,14 @@ function isConditionalRegistrationContainer(node) {
     || ts.isTryStatement(node);
 }
 
+function isShortCircuitExpression(node) {
+  return ts.isBinaryExpression(node) && [
+    ts.SyntaxKind.AmpersandAmpersandToken,
+    ts.SyntaxKind.BarBarToken,
+    ts.SyntaxKind.QuestionQuestionToken,
+  ].includes(node.operatorToken.kind);
+}
+
 export function validateExecutableTestCases(contents, requiredTitles, requiredSyntax = {}) {
   const source = ts.createSourceFile(
     "required-contract.test.ts",
@@ -932,23 +1009,35 @@ export function validateExecutableTestCases(contents, requiredTitles, requiredSy
     true,
     ts.ScriptKind.TS,
   );
+  const assertBindings = nodeAssertBindings(source);
   const activeTests = new Map();
-  const visitRegistrations = (node) => {
-    if (isConditionalRegistrationContainer(node)) return;
+  const visitRegistrations = (node, state = "active") => {
     if (ts.isFunctionLike(node)) return;
+    if (isShortCircuitExpression(node)) {
+      visitRegistrations(node.left, state);
+      visitRegistrations(node.right, state === "active" ? "conditional" : state);
+      return;
+    }
+    if (isConditionalRegistrationContainer(node)) {
+      ts.forEachChild(node, (child) =>
+        visitRegistrations(child, state === "active" ? "conditional" : state)
+      );
+      return;
+    }
     if (ts.isCallExpression(node)) {
       const suiteKind = suiteCallKind(node.expression);
       if (suiteKind !== undefined) {
         const handler = functionHandler(node);
-        if (suiteKind === "active" && handler !== undefined) {
-          ts.forEachChild(handler.body, visitRegistrations);
+        if (handler !== undefined) {
+          const suiteState = suiteKind === "active" ? state : suiteKind;
+          ts.forEachChild(handler.body, (child) => visitRegistrations(child, suiteState));
         }
         return;
       }
       const kind = testCallKind(node.expression);
-      if (kind !== "active") {
+      if (kind !== "active" || state !== "active") {
         if (kind !== undefined) return;
-        ts.forEachChild(node, visitRegistrations);
+        ts.forEachChild(node, (child) => visitRegistrations(child, state));
         return;
       }
       const title = node.arguments[0];
@@ -959,12 +1048,12 @@ export function validateExecutableTestCases(contents, requiredTitles, requiredSy
         && handler !== undefined
       ) {
         const tests = activeTests.get(title.text) ?? [];
-        tests.push(testHandlerEvidence(handler));
+        tests.push(testHandlerEvidence(handler, assertBindings));
         activeTests.set(title.text, tests);
       }
       return;
     }
-    ts.forEachChild(node, visitRegistrations);
+    ts.forEachChild(node, (child) => visitRegistrations(child, state));
   };
   if (source.parseDiagnostics.length > 0) throw new Error("REQUIRED_CONTRACT_MISSING");
   ts.forEachChild(source, visitRegistrations);
