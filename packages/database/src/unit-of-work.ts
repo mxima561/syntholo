@@ -6,6 +6,7 @@ import { registerTrustedActorAuthentication } from
 import type { Database } from "./client.js";
 import { AuditRepository } from "./repositories/audit.js";
 import type { TrustedTransactionMetadata } from "./repositories/context.js";
+import { TransactionCommerceRepository } from "./repositories/commerce.js";
 import { OutboxRepository } from "./repositories/outbox.js";
 import { TransactionAccountRepository } from "./repositories/transaction-accounts.js";
 import {
@@ -30,6 +31,7 @@ export type DatabaseTransaction = Parameters<
 export interface TransactionContext {
   readonly accounts: TransactionAccountRepository;
   readonly audit: AuditRepository;
+  readonly commerce: TransactionCommerceRepository;
   readonly outbox: OutboxRepository;
   readonly entitlements: TransactionEntitlementRepository;
 }
@@ -136,6 +138,11 @@ class PostgresUnitOfWork implements UnitOfWork {
           guard,
         ),
         audit: new AuditRepository(databaseTransaction, transactionMetadata, guard),
+        commerce: new TransactionCommerceRepository(
+          databaseTransaction,
+          transactionMetadata,
+          guard,
+        ),
         outbox: new OutboxRepository(databaseTransaction, transactionMetadata, guard),
         entitlements: new TransactionEntitlementRepository(
           databaseTransaction,

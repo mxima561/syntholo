@@ -61,6 +61,27 @@ describe("database readiness projection", () => {
     table_ready: true,
     upstream_ready: true,
   } as const;
+  const commerceReady = {
+    catalog_ready: true,
+    certificates_migration_hash: "878a759f41c44e0cbb9cf7492889bdf4d6f0ab087f0e9d7b26865f988fbe1bd9",
+    cleanup_disabled: true,
+    contract_version: "0014_commerce_catalog.v1",
+    function_acl_ready: true,
+    function_ready: true,
+    implementation_completion_is_authority: false,
+    implementation_migration_hash: "dabb54d9842c3e06c67e1ef5b17f42312011ffb133275b4dd346afd2465939a9",
+    immutability_ready: true,
+    independence_ready: true,
+    migration_created_at: "1787029200000",
+    migration_hash: "4bc124a641e6912d84fc6675133476f92e52e8fa89151079d05433d31deba8d4",
+    policy_ready: true,
+    public_execute_denied: true,
+    rls_ready: true,
+    structure_ready: true,
+    table_acl_ready: true,
+    table_ready: true,
+    upstream_ready: true,
+  } as const;
 
   function readyBeforeCertificates() {
     return [{
@@ -215,6 +236,9 @@ describe("database readiness projection", () => {
       })
       .mockResolvedValueOnce({
         rows: [certificatesReady],
+      })
+      .mockResolvedValueOnce({
+        rows: [commerceReady],
       });
 
     await expect(checkDatabaseReadiness(
@@ -242,6 +266,42 @@ describe("database readiness projection", () => {
     expect(query).toHaveBeenNthCalledWith(6,
       "select contract_version, migration_created_at, migration_hash, implementation_migration_hash, implementation_completion_is_authority, font_manifest_hash, table_ready, structure_ready, immutability_ready, rls_ready, policy_ready, table_acl_ready, function_ready, function_acl_ready, public_execute_denied, receipt_binding_ready, upstream_ready, independence_ready from public.syntholo_certificates_readiness_v1()",
     );
+    expect(query).toHaveBeenNthCalledWith(7,
+      "select contract_version, migration_created_at, migration_hash, implementation_migration_hash, certificates_migration_hash, implementation_completion_is_authority, table_ready, structure_ready, immutability_ready, rls_ready, policy_ready, table_acl_ready, function_ready, function_acl_ready, public_execute_denied, upstream_ready, catalog_ready, cleanup_disabled, independence_ready from public.syntholo_commerce_catalog_readiness_v1()",
+    );
+  });
+
+  it.each([
+    { contract_version: "0014_commerce_catalog.v0" },
+    { migration_created_at: "1787029199999" },
+    { migration_hash: "f".repeat(64) },
+    { implementation_migration_hash: "f".repeat(64) },
+    { certificates_migration_hash: "f".repeat(64) },
+    { implementation_completion_is_authority: true },
+    { table_ready: false },
+    { structure_ready: false },
+    { immutability_ready: false },
+    { rls_ready: false },
+    { policy_ready: false },
+    { table_acl_ready: false },
+    { function_ready: false },
+    { function_acl_ready: false },
+    { public_execute_denied: false },
+    { upstream_ready: false },
+    { catalog_ready: false },
+    { cleanup_disabled: false },
+    { independence_ready: false },
+  ])("fails a stale or weakened Commerce readiness projection closed", async (override) => {
+    const query = vi.fn();
+    for (const row of readyBeforeCertificates()) {
+      query.mockResolvedValueOnce({ rows: [row] });
+    }
+    query.mockResolvedValueOnce({ rows: [certificatesReady] });
+    query.mockResolvedValueOnce({ rows: [{ ...commerceReady, ...override }] });
+    await expect(checkDatabaseReadiness(
+      { pool: { query } },
+      "syntholo_member_api",
+    )).rejects.toThrow("DATABASE_NOT_READY");
   });
 
   it.each([

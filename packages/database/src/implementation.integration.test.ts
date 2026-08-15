@@ -271,7 +271,7 @@ describe.sequential("implementation workspace database authority", () => {
         [ids.access, ids.courseVersion, ids.accountA, ids.course],
       );
       expect(backfilled.rows).toEqual([{ count: 5, access_count: 5, version_count: 5 }]);
-      expect((await upgrade.pool.query("select count(*)::integer count from drizzle.__drizzle_migrations")).rows).toEqual([{ count: 13 }]);
+      expect((await upgrade.pool.query("select count(*)::integer count from drizzle.__drizzle_migrations")).rows).toEqual([{ count: 14 }]);
     } finally {
       await upgrade?.close();
       await maintenance.query(`drop database if exists "${databaseName}" with (force)`).catch(() => undefined);

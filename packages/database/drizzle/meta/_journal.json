@@ -92,6 +92,13 @@
       "when": 1786942800000,
       "tag": "0013_certificates",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1787029200000,
+      "tag": "0014_commerce_catalog",
+      "breakpoints": true
     }
   ]
 }

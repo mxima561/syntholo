@@ -30,6 +30,7 @@ export const accountCourseAccesses = pgTable("account_course_accesses", {
   foreignKey({ columns: [table.entitlementSourceId, table.accountId], foreignColumns: [entitlementSources.id, entitlementSources.accountId], name: "account_course_accesses_source_account_fk" }).onDelete("restrict").onUpdate("restrict"),
   foreignKey({ columns: [table.courseVersionId, table.courseId], foreignColumns: [courseVersions.id, courseVersions.courseId], name: "account_course_accesses_version_course_fk" }).onDelete("restrict").onUpdate("restrict"),
   unique("account_course_accesses_exact_unique").on(table.id, table.accountId, table.courseId, table.courseVersionId),
+  uniqueIndex("account_course_accesses_active_source_course_unique").on(table.accountId, table.entitlementSourceId, table.courseId).where(sql`${table.status}='active'`),
   uniqueIndex("account_course_accesses_active_source_version_unique").on(table.accountId, table.entitlementSourceId, table.courseId, table.courseVersionId).where(sql`${table.status}='active'`),
   check("account_course_accesses_status_check", sql`${table.status} in ('active','revoked')`),
 ]);

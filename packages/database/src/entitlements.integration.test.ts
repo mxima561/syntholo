@@ -455,7 +455,7 @@ describe.sequential("entitlement authority database", () => {
       `select hash,created_at::text created_at
        from drizzle.__drizzle_migrations order by id`,
     );
-    expect(journal.rowCount).toBe(13);
+    expect(journal.rowCount).toBe(14);
     expect(journal.rows.slice(3, 5)).toEqual([
       {
         created_at: "1786640400000",
@@ -620,7 +620,9 @@ describe.sequential("entitlement authority database", () => {
          reason_code,incident_kind,target_source_registry_id,status,
          review_due_at,created_at,updated_at)
        values($1,$2,'business_os_setup_paid','purchase',$3,$4,
-         'BUSINESS_OS_SETUP_RECONCILIATION_REQUIRED',$5,$6,'open',
+         case when $5='provider_source_collision'
+           then 'SOURCE_RECONCILIATION_REQUIRED'
+           else 'BUSINESS_OS_SETUP_RECONCILIATION_REQUIRED' end,$5,$6,'open',
          $7::timestamptz+interval '48 hours',$7,$7)`,
       [id, accountId, `provider-${id}`, fingerprint, incidentKind, target, now],
     );
@@ -750,7 +752,7 @@ describe.sequential("entitlement authority database", () => {
         from accounts where id='30000000-0000-4000-8000-000000000003'
       `);
       expect(upgraded.rows).toEqual([{
-        journal_count: 13,
+        journal_count: 14,
         owner_established_at: "2026-01-02T03:04:05.123Z",
       }]);
       const afterUpgrade = await upgrade.pool.query<{

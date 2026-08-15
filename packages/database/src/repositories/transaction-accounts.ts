@@ -21,7 +21,10 @@ export class TransactionAccountRepository {
         throw new Error("ACCOUNT_MUTATION_INVALID");
       }
       const canonicalName = canonicalizeAccountName(name);
-      const rows = await transaction.update(accounts).set({ name: canonicalName })
+      const rows = await transaction.update(accounts).set({
+        name: canonicalName,
+        nameStatus: "confirmed",
+      })
         .where(eq(accounts.id, metadata.accountId))
         .returning({ name: accounts.name });
       if (rows.length !== 1) throw new Error("ACCOUNT_NOT_FOUND");

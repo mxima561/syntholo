@@ -49,12 +49,13 @@ export class AccountRepository {
       const result = await query<{
         id: string;
         name: string;
+        name_status: string;
         status: string;
         owner_established_at: Date | null;
         created_at: Date;
         updated_at: Date;
       }>(
-        `select id, name, status, owner_established_at, created_at, updated_at
+        `select id, name, name_status, status, owner_established_at, created_at, updated_at
          from accounts
          where id = $1 and id = $2
          limit 1`,
@@ -66,6 +67,7 @@ export class AccountRepository {
       return row === undefined ? null : {
         id: row.id,
         name: row.name,
+        nameStatus: row.name_status,
         status: row.status,
         ownerEstablishedAt: row.owner_established_at,
         createdAt: row.created_at,

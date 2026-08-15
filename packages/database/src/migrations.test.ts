@@ -28,11 +28,11 @@ afterEach(async () => {
 });
 
 describe("published migration inventory", () => {
-  it("reserves 0013 as journal index twelve after the immutable implementation migration", () => {
+  it("reserves 0014 as journal index thirteen after the immutable certificate migration", () => {
     expect(PUBLISHED_MIGRATIONS.at(-1)).toMatchObject({
-      idx: 12,
-      when: 1786942800000,
-      tag: "0013_certificates",
+      idx: 13,
+      when: 1787029200000,
+      tag: "0014_commerce_catalog",
     });
   });
 
@@ -64,15 +64,15 @@ describe("published migration inventory", () => {
 
     expect(queries[0]).toBe("select pg_advisory_lock($1::integer,$2::integer)");
     expect(queries.at(-1)).toBe("select pg_advisory_unlock($1::integer,$2::integer)");
-    expect(queries.filter((query) => query === "begin")).toHaveLength(7);
-    expect(queries.filter((query) => query === "commit")).toHaveLength(7);
+    expect(queries.filter((query) => query === "begin")).toHaveLength(8);
+    expect(queries.filter((query) => query === "commit")).toHaveLength(8);
     expect(queries.filter((query) => query === "set constraints all immediate"))
       .toHaveLength(1);
     const immediate = queries.indexOf("set constraints all immediate");
     expect(queries[immediate - 1]).toBe("begin");
     expect(queries.filter((query) => query.startsWith(
       "insert into drizzle.__drizzle_migrations",
-    ))).toHaveLength(6);
+    ))).toHaveLength(7);
     expect(released).toBe(true);
   });
 
@@ -404,6 +404,7 @@ describe("published migration inventory", () => {
       { idx: 10, when: 1786770000000, tag: "0011_learning", hash: "2e37ec9d4bfeee1ad0319ae81172fac4107a87c798bd2f0eed79eb75ee0e2ccf" },
       { idx: 11, when: 1786856400000, tag: "0012_implementation", hash: "dabb54d9842c3e06c67e1ef5b17f42312011ffb133275b4dd346afd2465939a9" },
       { idx: 12, when: 1786942800000, tag: "0013_certificates", hash: "878a759f41c44e0cbb9cf7492889bdf4d6f0ab087f0e9d7b26865f988fbe1bd9" },
+      { idx: 13, when: 1787029200000, tag: "0014_commerce_catalog", hash: "4bc124a641e6912d84fc6675133476f92e52e8fa89151079d05433d31deba8d4" },
     ]);
   });
 

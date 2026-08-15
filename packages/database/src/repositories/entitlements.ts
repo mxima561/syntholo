@@ -302,6 +302,15 @@ export type CommerceReconciliationRecord = Readonly<{
   createdAt: Date;
 }>;
 
+export const publicBusinessOsReconciliationReasons = Object.freeze([
+  "STRIPE_CUSTOMER_OWNERSHIP_COLLISION",
+  "PAID_CLAIM_IDENTITY_CONFLICT",
+  "PAID_IDENTITY_STATE_STALE",
+  "PAID_SEMANTIC_CONFLICT",
+] as const);
+export type PublicBusinessOsReconciliationReason =
+  (typeof publicBusinessOsReconciliationReasons)[number];
+
 export type SystemDatabase = import("../client.js").Database & {
   readonly __systemDatabase: unique symbol;
 };
@@ -597,6 +606,52 @@ export class TransactionEntitlementRepository {
         });
       }
       throw new Error("ENTITLEMENT_COMMAND_RESULT_INVALID");
+    });
+  }
+
+  recordPublicBusinessOsSetupReconciliation(input: Readonly<{
+    commandId: string;
+    sourceId: string;
+    purchasedAt: Date;
+    reconciliationReason: PublicBusinessOsReconciliationReason;
+  }>): Promise<EntitlementCommandOutcome<Readonly<{
+    setupKind: "provider_collision" | "parked_receipt";
+    sourceRegistryId: string;
+    reconciliationId: string;
+    receiptStatus: "paid_reconciliation";
+  }>>> {
+    const { guard, metadata, transaction } = state.get(this)!;
+    return guard.run(async () => {
+      guard.assertActive();
+      if (metadata.actor.kind !== "system" || metadata.accountId === null) {
+        throw new Error("SYSTEM_AUTHORITY_REQUIRED");
+      }
+      if (!publicBusinessOsReconciliationReasons.includes(
+        input.reconciliationReason,
+      )) throw new Error("PUBLIC_BUSINESS_OS_RECONCILIATION_INVALID");
+      const purchasedAt = exactInstant(input.purchasedAt);
+      const inputHash = hashCommandInput({
+        purchasedAt: purchasedAt.toISOString(),
+        reconciliationReason: input.reconciliationReason,
+        sourceId: input.sourceId,
+      });
+      const query = await transaction.execute(sql`
+        select * from syntholo_record_public_business_os_setup_reconciliation(
+          ${metadata.accountId},${input.commandId},${inputHash},${input.sourceId},
+          ${purchasedAt},${input.reconciliationReason},${metadata.clock.now()})`);
+      const row = commandRow(query.rows[0]);
+      if (row.outcome === "denied") return commandDenied(row);
+      const setupKind = commandResultText(row.result, "setupKind");
+      if ((setupKind !== "provider_collision" && setupKind !== "parked_receipt")
+        || commandResultText(row.result, "receiptStatus") !== "paid_reconciliation") {
+        throw new Error("ENTITLEMENT_COMMAND_RESULT_INVALID");
+      }
+      return commandApplied(row, {
+        setupKind,
+        sourceRegistryId: commandResultText(row.result, "sourceRegistryId"),
+        reconciliationId: commandResultText(row.result, "reconciliationId"),
+        receiptStatus: "paid_reconciliation",
+      });
     });
   }
 

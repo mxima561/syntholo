@@ -18,7 +18,7 @@ describe("TransactionAccountRepository account names", () => {
     );
 
     await expect(repository.rename("  Cafe\u0301  ")).resolves.toBe("Café");
-    expect(set).toHaveBeenCalledWith({ name: "Café" });
+    expect(set).toHaveBeenCalledWith({ name: "Café", nameStatus: "confirmed" });
   });
 
   it.each(["\t", "\u00a0", "\u200b", "\ufdd0", "a".repeat(256)])(

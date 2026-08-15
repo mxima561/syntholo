@@ -19,6 +19,7 @@ export const accounts = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
+    nameStatus: text("name_status").notNull().default("confirmed"),
     status: text("status").notNull().default("active"),
     ownerEstablishedAt: timestamp("owner_established_at", {
       precision: 3,
@@ -31,6 +32,10 @@ export const accounts = pgTable(
     check(
       "accounts_status_check",
       sql`${table.status} in ('active', 'suspended', 'deleted')`,
+    ),
+    check(
+      "accounts_name_status_check",
+      sql`${table.nameStatus} in ('provisional', 'confirmed')`,
     ),
     check(
       "accounts_name_canonical_check",

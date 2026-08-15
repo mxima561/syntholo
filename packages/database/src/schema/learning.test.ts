@@ -45,4 +45,9 @@ describe("learning schema", () => {
     expect(getTableConfig(courseCompletions).checks.map(({ name }) => name))
       .toEqual(["course_completions_hash_check"]);
   });
+
+  it("allows only one active pinned access for each source and course", () => {
+    expect(getTableConfig(accountCourseAccesses).indexes.map(({ config }) => config.name))
+      .toContain("account_course_accesses_active_source_course_unique");
+  });
 });

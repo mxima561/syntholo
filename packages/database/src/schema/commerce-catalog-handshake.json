@@ -1,0 +1,141 @@
+{
+  "schemaVersion": 1,
+  "migration": {
+    "index": 13,
+    "timestamp": 1787029200000,
+    "tag": "0014_commerce_catalog",
+    "sha256": "4bc124a641e6912d84fc6675133476f92e52e8fa89151079d05433d31deba8d4"
+  },
+  "upstreamAuthority": {
+    "implementation": {
+      "index": 11,
+      "tag": "0012_implementation",
+      "sha256": "dabb54d9842c3e06c67e1ef5b17f42312011ffb133275b4dd346afd2465939a9"
+    },
+    "certificates": {
+      "index": 12,
+      "tag": "0013_certificates",
+      "sha256": "878a759f41c44e0cbb9cf7492889bdf4d6f0ab087f0e9d7b26865f988fbe1bd9",
+      "commerceIsAuthority": false,
+      "commerceMayRevokeOrMutate": false
+    }
+  },
+  "catalog": {
+    "offerTable": "offers",
+    "offerPrimaryKey": ["id"],
+    "offerCodeUnique": ["code"],
+    "offerOwnerKey": ["id", "code"],
+    "currentVersionForeignKey": ["current_catalog_version_id", "id", "code"],
+    "currentVersionReferencedKey": ["id", "offer_id", "offer_code"],
+    "versionTable": "offer_catalog_versions",
+    "versionPrimaryKey": ["id"],
+    "versionScopeUnique": ["offer_id", "version"],
+    "versionExactKey": ["id", "offer_id", "offer_code", "version"],
+    "bindingTable": "offer_price_bindings",
+    "bindingPrimaryKey": ["id"],
+    "bindingExactKey": ["id", "offer_id", "catalog_version_id", "environment"],
+    "providerPriceUnique": ["environment", "stripe_account_id", "stripe_price_id"],
+    "ordinaryValues": [
+      { "code": "scorecard", "family": "scorecard", "purchaseModel": "free", "unitAmount": 0, "recurringUnitAmount": null, "state": "paused", "readinessPolicy": "scorecard.v1" },
+      { "code": "self_paced", "family": "academy", "purchaseModel": "one_time", "unitAmount": 39900, "recurringUnitAmount": null, "state": "paused", "readinessPolicy": "academy-content.v1" },
+      { "code": "guided_pilot", "family": "academy", "purchaseModel": "one_time", "unitAmount": 75000, "recurringUnitAmount": null, "state": "paused", "readinessPolicy": "pilot-authorization.v1" },
+      { "code": "operator_club_monthly", "family": "operator_club", "purchaseModel": "recurring", "unitAmount": 5900, "recurringUnitAmount": null, "state": "paused", "readinessPolicy": "academy-eligibility.v1" },
+      { "code": "operator_club_annual", "family": "operator_club", "purchaseModel": "recurring", "unitAmount": 59000, "recurringUnitAmount": null, "state": "paused", "readinessPolicy": "academy-eligibility.v1" },
+      { "code": "business_os", "family": "business_os", "purchaseModel": "two_stage", "unitAmount": 99900, "recurringUnitAmount": 19900, "state": "paused", "readinessPolicy": "business-os-readiness.v1" }
+    ],
+    "currency": "usd",
+    "priceRoles": ["self_paced_once", "guided_pilot_once", "operator_club_monthly", "operator_club_annual", "business_os_setup", "business_os_monthly", "gate5_validation"]
+  },
+  "checkout": {
+    "authorizationTable": "checkout_authorizations",
+    "authorizationPrimaryKey": ["id"],
+    "authorizationSourceReceiptUnique": ["source_command_receipt_id"],
+    "authorizationProviderKey": ["id", "environment", "receiver_stripe_account_id"],
+    "authorizationPurchaseKey": ["id", "offer_code", "environment", "receiver_stripe_account_id"],
+    "sessionTable": "checkout_sessions",
+    "sessionAuthorizationUnique": ["authorization_id"],
+    "sessionProviderUnique": ["environment", "receiver_stripe_account_id", "provider_session_id"],
+    "sessionResultKey": ["authorization_id", "environment", "receiver_stripe_account_id", "provider_session_id"],
+    "actionTable": "checkout_provider_actions",
+    "actionScopeUnique": ["authorization_id", "action_kind"],
+    "actionProviderKeyUnique": ["provider_idempotency_key"],
+    "actionExactKey": ["id", "authorization_id", "account_id", "environment", "receiver_stripe_account_id"]
+  },
+  "businessOs": {
+    "publicIntentTable": "public_business_os_setup_intents",
+    "publicIntentExactKey": ["id", "environment", "receiver_stripe_account_id"],
+    "publicGuardUnique": ["environment", "purchaser_guard_hmac", "family"],
+    "publicGuardPredicate": "blocking_states_only",
+    "setupEpochTable": "business_os_setup_epochs",
+    "setupEpochScopeUnique": ["account_id", "ordinal"],
+    "setupEpochBlockingUnique": ["account_id"],
+    "recurringIntentTable": "recurring_purchase_intents",
+    "recurringScopeUnique": ["account_id", "family"],
+    "cleanupEnabled": false,
+    "cleanupSignature": "public.syntholo_cleanup_public_bos_intents_v1(uuid,text,integer,integer,uuid,uuid,integer,integer,uuid,integer)"
+  },
+  "financialAuthority": {
+    "customerTable": "stripe_customers",
+    "customerAccountEnvironmentUnique": ["account_id", "environment"],
+    "customerProviderUnique": ["environment", "receiver_stripe_account_id", "provider_customer_id"],
+    "purchaseTable": "purchases",
+    "purchaseProviderPaymentUnique": ["environment", "receiver_stripe_account_id", "provider_payment_intent_id"],
+    "purchaseAuthorizationUnique": ["authorization_id"],
+    "purchaseAccountKey": ["id", "account_id"],
+    "allocationTable": "purchase_payment_allocations",
+    "subscriptionTable": "subscriptions",
+    "scheduleTable": "subscription_schedules",
+    "invoiceTable": "invoices",
+    "invoiceAllocationTable": "invoice_line_allocations",
+    "controlledPaymentTable": "controlled_payment_authorizations"
+  },
+  "claimAndOnboarding": {
+    "claimTable": "claim_tokens",
+    "claimHashUnique": ["token_hash"],
+    "claimPurchaseUnique": ["purchase_id"],
+    "claimExactKey": ["id", "account_id", "purchase_id"],
+    "pendingSessionTable": "pending_claim_sessions",
+    "pendingSessionHandleUnique": ["session_handle_hash"],
+    "pendingSessionClaimUnique": ["claim_token_id"],
+    "deliveryTable": "secure_link_deliveries",
+    "onboardingTable": "account_onboarding",
+    "onboardingPrimaryKey": ["account_id"],
+    "onboardingVersionKey": ["account_id", "version"],
+    "priorityTable": "account_onboarding_priorities",
+    "priorityPrimaryKey": ["account_id", "onboarding_version", "ordinal"]
+  },
+  "providerReceipts": {
+    "rootTable": "provider_event_receipts",
+    "ownerKey": ["id", "provider", "receiver_stripe_account_id"],
+    "processingTable": "provider_event_processing",
+    "processingPrimaryKey": ["receipt_id"],
+    "processingFenceKey": ["receipt_id", "provider", "receiver_stripe_account_id"],
+    "attemptTable": "provider_event_attempts",
+    "attemptPrimaryKey": ["receipt_id", "attempt", "lease_generation"],
+    "attemptTokenUnique": ["lease_token"],
+    "effectTable": "provider_event_effects",
+    "effectReceiptUnique": ["provider_receipt_id", "effect_kind", "target_object_id"],
+    "effectDomainUnique": ["provider", "receiver_stripe_account_id", "effect_kind", "target_object_id"],
+    "effectCommandUnique": ["command_id"],
+    "rawPayloadRetention": "empty_json_only"
+  },
+  "closedCommands": {
+    "task8GrantSignature": "public.syntholo_fulfill_product(uuid,uuid,text,text,text,text,uuid,timestamp with time zone,timestamp with time zone,timestamp with time zone)",
+    "task8OwnerSignature": "public.syntholo_establish_owner(uuid,uuid,text,text,text,timestamp with time zone)",
+    "workspaceSeedSignature": "public.syntholo_implementation_seed_workspace_v1(uuid)",
+    "paidPurchaseSignature": "public.syntholo_commerce_record_paid_purchase_v1(uuid,text,uuid,integer,uuid,text,text,integer,integer,timestamp with time zone,uuid,timestamp with time zone)",
+    "publicSelfPacedPaidSignature": "public.syntholo_commerce_record_public_self_paced_paid_v1(uuid,text,uuid,integer,uuid,text,text,integer,integer,timestamp with time zone,uuid,text,text,bytea,bytea,bytea,text,timestamp with time zone)",
+    "publicBusinessOsPaidSignature": "public.syntholo_commerce_record_public_bos_setup_paid_v1(uuid,text,uuid,integer,uuid,uuid,text,text,text,integer,integer,timestamp with time zone,uuid,text,text,bytea,bytea,bytea,text,text,timestamp with time zone)"
+  },
+  "events": {
+    "emitted": [
+      { "type": "identity.account_claim_ready.v1", "schemaVersion": 1 },
+      { "type": "identity.account_claimed.v1", "schemaVersion": 1 },
+      { "type": "onboarding.completed.v1", "schemaVersion": 1 }
+    ]
+  },
+  "downstreamConsumers": {
+    "migration0015": ["offers", "offer_catalog_versions", "offer_price_bindings", "controlled_payment_authorizations", "secure_link_deliveries"],
+    "migration0016": ["checkout_authorizations", "checkout_sessions", "checkout_provider_actions", "public_business_os_setup_intents", "business_os_setup_epochs", "recurring_purchase_intents", "provider_event_processing", "provider_event_attempts", "provider_event_effects", "purchases", "subscriptions", "invoices"]
+  }
+}

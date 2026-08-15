@@ -38,6 +38,7 @@ const expectedColumns = {
   accounts: [
     "id",
     "name",
+    "name_status",
     "status",
     "owner_established_at",
     "created_at",
@@ -253,6 +254,16 @@ const expectedColumns = {
     "id",
     "provider",
     "provider_event_id",
+    "event_type",
+    "livemode",
+    "api_version",
+    "provider_created_at",
+    "data_object_type",
+    "data_object_id",
+    "receiver_stripe_account_id",
+    "event_account",
+    "event_context",
+    "raw_body_sha256",
     "status",
     "payload",
     "received_at",
@@ -356,7 +367,7 @@ describe("foundation Drizzle schema", () => {
       Object.hasOwn(expectedColumns, tableName)
     ));
 
-    expect(actual).toHaveLength(71);
+    expect(actual).toHaveLength(98);
     expect(foundationAndAuthentication).toEqual(Object.entries(expectedColumns));
   });
 });

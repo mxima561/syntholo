@@ -39,6 +39,9 @@ type ReadinessDatabase = Readonly<{
         asset_table_ready?: boolean;
         binding_ready?: boolean;
         capability?: string | null;
+        catalog_ready?: boolean;
+        certificates_migration_hash?: string;
+        cleanup_disabled?: boolean;
         constraint_ready?: boolean;
         contract_version?: string;
         empty_catalog?: boolean;
@@ -247,6 +250,37 @@ export async function checkDatabaseReadiness(
       || certificatesRow.upstream_ready !== true
       || certificatesRow.independence_ready !== true
     ) throw new Error("certificates projection mismatch");
+    const commerce = await database.pool.query(
+      "select contract_version, migration_created_at, migration_hash, implementation_migration_hash, certificates_migration_hash, implementation_completion_is_authority, table_ready, structure_ready, immutability_ready, rls_ready, policy_ready, table_acl_ready, function_ready, function_acl_ready, public_execute_denied, upstream_ready, catalog_ready, cleanup_disabled, independence_ready from public.syntholo_commerce_catalog_readiness_v1()",
+    );
+    const commerceRow = commerce.rows[0];
+    const commerceMigration = PUBLISHED_MIGRATIONS[13];
+    if (
+      commerce.rows.length !== 1
+      || commerceRow === undefined
+      || commerceMigration === undefined
+      || commerceRow.contract_version !== "0014_commerce_catalog.v1"
+      || commerceRow.migration_created_at !== String(commerceMigration.when)
+      || commerceRow.migration_hash !== commerceMigration.hash
+      || commerceRow.implementation_migration_hash
+        !== "dabb54d9842c3e06c67e1ef5b17f42312011ffb133275b4dd346afd2465939a9"
+      || commerceRow.certificates_migration_hash
+        !== "878a759f41c44e0cbb9cf7492889bdf4d6f0ab087f0e9d7b26865f988fbe1bd9"
+      || commerceRow.implementation_completion_is_authority !== false
+      || commerceRow.table_ready !== true
+      || commerceRow.structure_ready !== true
+      || commerceRow.immutability_ready !== true
+      || commerceRow.rls_ready !== true
+      || commerceRow.policy_ready !== true
+      || commerceRow.table_acl_ready !== true
+      || commerceRow.function_ready !== true
+      || commerceRow.function_acl_ready !== true
+      || commerceRow.public_execute_denied !== true
+      || commerceRow.upstream_ready !== true
+      || commerceRow.catalog_ready !== true
+      || commerceRow.cleanup_disabled !== true
+      || commerceRow.independence_ready !== true
+    ) throw new Error("Commerce projection mismatch");
     return { latencyMs: Date.now() - started, status: "ok" };
   } catch {
     throw new Error("DATABASE_NOT_READY");

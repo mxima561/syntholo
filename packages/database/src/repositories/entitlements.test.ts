@@ -1,6 +1,11 @@
 import type { EntitlementEvaluationInput } from "@syntholo/domain";
-import { describe, expect, it } from "vitest";
-import { canonicalEntitlementSnapshotHashV1 } from "./entitlements.js";
+import { PgDialect } from "drizzle-orm/pg-core";
+import { describe, expect, it, vi } from "vitest";
+import {
+  canonicalEntitlementSnapshotHashV1,
+  publicBusinessOsReconciliationReasons,
+  TransactionEntitlementRepository,
+} from "./entitlements.js";
 
 const accountId = "10000000-0000-4000-8000-000000000001";
 const startsAt = new Date("2026-01-01T12:00:00.123Z");
@@ -235,5 +240,62 @@ describe("canonicalEntitlementSnapshotHashV1", () => {
         ? { ...hold, accountId: "20000000-0000-4000-8000-000000000002" }
         : hold),
     })).toThrow("ENTITLEMENT_INPUT_INVALID");
+  });
+});
+
+describe("public Business OS reconciliation repository", () => {
+  it("calls only the closed Task 8 extension and validates its exact result", async () => {
+    const execute = vi.fn(async (query: Parameters<PgDialect["sqlToQuery"]>[0]) => {
+      expect(new PgDialect().sqlToQuery(query).sql).toContain(
+        "syntholo_record_public_business_os_setup_reconciliation",
+      );
+      return { rows: [{
+        outcome: "applied",
+        replayed: false,
+        result: {
+          reconciliationId: "10000000-0000-4000-8000-000000000502",
+          receiptStatus: "paid_reconciliation",
+          setupKind: "parked_receipt",
+          sourceRegistryId: "10000000-0000-4000-8000-000000000501",
+        },
+      }] };
+    });
+    const repository = new TransactionEntitlementRepository(
+      { execute } as never,
+      {
+        accountId,
+        actor: { actorId: "commerce-fulfillment.v1", kind: "system" },
+        clock: { now: () => new Date("2026-08-15T12:00:00.123Z") },
+        correlationId: "10000000-0000-4000-8000-000000000503",
+      },
+      {
+        assertActive: vi.fn(),
+        assertSettled: vi.fn(),
+        run: async (operation) => operation(),
+      },
+    );
+
+    await expect(repository.recordPublicBusinessOsSetupReconciliation({
+      commandId: "10000000-0000-4000-8000-000000000504",
+      purchasedAt: new Date("2026-08-15T11:00:00.123Z"),
+      reconciliationReason: "PAID_SEMANTIC_CONFLICT",
+      sourceId: "pi_public_bos_paid",
+    })).resolves.toMatchObject({
+      status: "applied",
+      value: {
+        receiptStatus: "paid_reconciliation",
+        setupKind: "parked_receipt",
+      },
+    });
+    expect(execute).toHaveBeenCalledOnce();
+  });
+
+  it("freezes exactly four public reconciliation reasons", () => {
+    expect(publicBusinessOsReconciliationReasons).toEqual([
+      "STRIPE_CUSTOMER_OWNERSHIP_COLLISION",
+      "PAID_CLAIM_IDENTITY_CONFLICT",
+      "PAID_IDENTITY_STATE_STALE",
+      "PAID_SEMANTIC_CONFLICT",
+    ]);
   });
 });

@@ -8,11 +8,11 @@ describe("createDatabase", () => {
   it("keeps the TypeScript system capability allowlist identical to the SQL attestation", async () => {
     const [clientSource, migration] = await Promise.all([
       readFile(new URL("./client.ts", import.meta.url), "utf8"),
-      readFile(new URL("../drizzle/0013_certificates.sql", import.meta.url), "utf8"),
+      readFile(new URL("../drizzle/0014_commerce_catalog.sql", import.meta.url), "utf8"),
     ]);
     const sqlStart = migration.indexOf("CREATE OR REPLACE FUNCTION public.syntholo_attest_runtime_capability");
     const sqlEnd = migration.indexOf(
-      "CREATE OR REPLACE FUNCTION public.syntholo_implementation_readiness_v1",
+      "CREATE OR REPLACE FUNCTION public.syntholo_certificates_readiness_v1",
       sqlStart,
     );
     const clientStart = clientSource.indexOf("p.oid::regprocedure::text not in (");
@@ -25,7 +25,29 @@ describe("createDatabase", () => {
 
     expect(sqlStart).toBeGreaterThanOrEqual(0);
     expect(clientStart).toBeGreaterThanOrEqual(0);
-    expect(sqlAllowlist).toHaveLength(28);
+    expect(sqlAllowlist).toHaveLength(50);
+    expect(sqlAllowlist).toEqual(expect.arrayContaining([
+      "syntholo_commerce_claim_provider_event_v1(text,integer,timestamp with time zone)",
+      "syntholo_commerce_initiate_claim_v1(text,text,timestamp with time zone)",
+      "syntholo_commerce_redeem_claim_v1(text,uuid,text,text,text,bytea,timestamp with time zone)",
+      "syntholo_commerce_begin_checkout_action_v1(uuid,text,timestamp with time zone)",
+      "syntholo_commerce_finish_checkout_action_v1(uuid,text,integer,text,text,timestamp with time zone)",
+      "syntholo_commerce_finish_provider_event_v1(uuid,text,uuid,integer,text,text,timestamp with time zone)",
+      "syntholo_commerce_record_provider_event_v1(text,text,boolean,text,timestamp with time zone,text,text,boolean,text,text,text,text,boolean,text,text,timestamp with time zone)",
+      "syntholo_commerce_publish_catalog_version_v1(uuid,text,text,timestamp with time zone)",
+      "syntholo_commerce_record_checkout_session_v1(uuid,text,integer,text,text,text,text,bytea,bytea,bytea,text,timestamp with time zone,timestamp with time zone)",
+      "syntholo_commerce_stage_checkout_action_v1(uuid,text,timestamp with time zone)",
+      "syntholo_commerce_stage_catalog_version_v1(text,text,jsonb,text,text,timestamp with time zone)",
+      "syntholo_commerce_stage_price_binding_v1(uuid,text,text,text,text,text,text,text,text,integer,text,integer,text,text,timestamp with time zone,timestamp with time zone)",
+      "syntholo_commerce_record_provider_effect_v1(uuid,text,text,uuid,integer,uuid,text,uuid,uuid,timestamp with time zone)",
+      "syntholo_commerce_record_paid_purchase_v1(uuid,text,uuid,integer,uuid,text,text,integer,integer,timestamp with time zone,uuid,timestamp with time zone)",
+      "syntholo_commerce_record_public_bos_setup_paid_v1(uuid,text,uuid,integer,uuid,uuid,text,text,text,integer,integer,timestamp with time zone,uuid,text,text,bytea,bytea,bytea,text,text,timestamp with time zone)",
+      "syntholo_commerce_record_public_self_paced_paid_v1(uuid,text,uuid,integer,uuid,text,text,integer,integer,timestamp with time zone,uuid,text,text,bytea,bytea,bytea,text,timestamp with time zone)",
+      "syntholo_commerce_reserve_existing_bos_setup_v1(uuid,uuid,text,text,text,uuid,uuid,text,text,jsonb,timestamp with time zone,timestamp with time zone)",
+      "syntholo_commerce_reserve_recurring_purchase_v1(uuid,uuid,text,text,text,text,text,uuid,uuid,uuid,uuid,uuid,timestamp with time zone,timestamp with time zone)",
+      "syntholo_commerce_reserve_public_bos_setup_v1(text,text,text,text,uuid,uuid,bytea,bytea,text,text,bytea,bytea,bytea,text,bytea,bytea,bytea,text,text,text,text,text,jsonb,timestamp with time zone,timestamp with time zone)",
+      "syntholo_commerce_reserve_public_self_paced_v1(text,text,text,text,uuid,uuid,bytea,bytea,bytea,bytea,text,bytea,bytea,bytea,text,text,text,text,text,jsonb,timestamp with time zone,timestamp with time zone)",
+    ]));
     expect(clientAllowlist).toEqual(sqlAllowlist);
   });
 

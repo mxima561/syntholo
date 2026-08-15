@@ -158,7 +158,7 @@ describe("foundation migration", () => {
       );
 
       expect(first.stderr).toBe("");
-      expect(migratedTables.rows[0]?.count).toBe("71");
+      expect(migratedTables.rows[0]?.count).toBe("98");
       expect(firstJournal.rows).toEqual([
         { created_at: "1786618800000", hash: "bf3b66561107047f8c317d81bb561e9a29dc6207a14469a3ce588ec1f8ddc60c" },
         { created_at: "1786626000000", hash: "6508044b65dcce22b5d9a25b954a40768b813d84f943247e59f6c6391cec60a4" },
@@ -173,6 +173,7 @@ describe("foundation migration", () => {
         { created_at: "1786770000000", hash: "2e37ec9d4bfeee1ad0319ae81172fac4107a87c798bd2f0eed79eb75ee0e2ccf" },
         { created_at: "1786856400000", hash: "dabb54d9842c3e06c67e1ef5b17f42312011ffb133275b4dd346afd2465939a9" },
         { created_at: "1786942800000", hash: "878a759f41c44e0cbb9cf7492889bdf4d6f0ab087f0e9d7b26865f988fbe1bd9" },
+        { created_at: "1787029200000", hash: "4bc124a641e6912d84fc6675133476f92e52e8fa89151079d05433d31deba8d4" },
       ]);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
@@ -296,7 +297,7 @@ describe("foundation migration", () => {
         boundary: true,
         canonical: true,
         constraint_validated: true,
-        journal_count: 13,
+        journal_count: 14,
         member_execute: true,
         public_execute: false,
         staff_execute: false,
@@ -434,7 +435,7 @@ describe("foundation migration", () => {
       "select schema_version, migration_count, migration_hashes, required_objects, runtime_role, capability from public.syntholo_runtime_readiness()",
     );
 
-    expect(journal.rows).toEqual([{ count: 13 }]);
+    expect(journal.rows).toEqual([{ count: 14 }]);
     expect(result.rows).toEqual([{
       capability: "syntholo_migrator",
       migration_count: 7,

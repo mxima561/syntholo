@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
   integer,
@@ -268,6 +269,16 @@ export const providerEventReceipts = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     provider: text("provider").notNull(),
     providerEventId: text("provider_event_id").notNull(),
+    eventType: text("event_type"),
+    livemode: boolean("livemode"),
+    apiVersion: text("api_version"),
+    providerCreatedAt: timestamp("provider_created_at", { precision: 3, withTimezone: true }),
+    dataObjectType: text("data_object_type"),
+    dataObjectId: text("data_object_id"),
+    receiverStripeAccountId: text("receiver_stripe_account_id"),
+    eventAccount: text("event_account"),
+    eventContext: text("event_context"),
+    rawBodySha256: text("raw_body_sha256"),
     status: text("status").notNull().default("received"),
     payload: jsonb("payload")
       .$type<Record<string, unknown>>()
@@ -282,6 +293,11 @@ export const providerEventReceipts = pgTable(
       table.provider,
       table.providerEventId,
     ),
+    unique("provider_event_receipts_fulfillment_owner_unique").on(
+      table.id,
+      table.provider,
+      table.receiverStripeAccountId,
+    ),
     check(
       "provider_event_receipts_status_check",
       sql`${table.status} in ('received', 'processing', 'processed', 'failed')`,
@@ -289,6 +305,10 @@ export const providerEventReceipts = pgTable(
     check(
       "provider_event_receipts_payload_object_check",
       sql`jsonb_typeof(${table.payload}) = 'object'`,
+    ),
+    check(
+      "provider_event_receipts_stripe_envelope_check",
+      sql`${table.provider}<>'stripe' or (${table.eventType} is not null and octet_length(${table.eventType}) between 1 and 128 and ${table.livemode} is not null and (${table.apiVersion} is null or octet_length(${table.apiVersion}) between 1 and 64) and ${table.providerCreatedAt} is not null and ${table.providerCreatedAt}=date_trunc('milliseconds',${table.providerCreatedAt}) and ${table.dataObjectType} is not null and octet_length(${table.dataObjectType}) between 1 and 128 and ${table.dataObjectId} is not null and octet_length(${table.dataObjectId}) between 1 and 255 and ${table.receiverStripeAccountId} is not null and octet_length(${table.receiverStripeAccountId}) between 1 and 255 and (${table.eventAccount} is null or octet_length(${table.eventAccount}) between 1 and 255) and (${table.eventContext} is null or octet_length(${table.eventContext}) between 1 and 255) and ${table.rawBodySha256}~'^[0-9a-f]{64}$' and ${table.status}='received' and ${table.payload}='{}'::jsonb)`,
     ),
     index("provider_event_receipts_status_received_idx").on(
       table.status,

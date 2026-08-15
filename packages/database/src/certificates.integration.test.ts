@@ -923,8 +923,8 @@ describeDatabase("certificate PostgreSQL authority", () => {
     const journal = await harness.database.pool.query<{ created_at: string; hash: string }>(
       "select created_at::text,hash from drizzle.__drizzle_migrations order by created_at,id",
     );
-    expect(journal.rows).toHaveLength(13);
-    expect(journal.rows.at(-1)).toEqual({
+    expect(journal.rows).toHaveLength(14);
+    expect(journal.rows[12]).toEqual({
       created_at: String(certificateMigrationWhen),
       hash: sha256(migration),
     });

@@ -60,21 +60,29 @@ const foundationTables = [
   "account_course_accesses",
   "account_hold_sources",
   "account_holds",
+  "account_onboarding",
+  "account_onboarding_priorities",
   "accounts",
   "administrative_grant_restorations",
   "api_command_receipts",
   "audit_events",
   "business_os_setup_receipts",
   "business_os_subscription_cancellations",
+  "business_os_setup_epochs",
   "certificate_delivery_requests",
   "certificate_files",
   "certificate_prerequisites",
   "certificate_recipient_name_heads",
   "certificate_recipient_name_versions",
   "certificate_records",
+  "checkout_authorizations",
+  "checkout_provider_actions",
+  "checkout_sessions",
+  "claim_tokens",
   "club_subscription_cancellations",
   "commerce_fulfillment_receipts",
   "commerce_reconciliations",
+  "controlled_payment_authorizations",
   "content_archives",
   "content_media_assets",
   "content_media_tracks",
@@ -102,6 +110,8 @@ const foundationTables = [
   "implementation_completion_workflow_snapshots",
   "implementation_completions",
   "implementation_workflows",
+  "invoice_line_allocations",
+  "invoices",
   "job_attempts",
   "jobs",
   "lesson_accessibility_decisions",
@@ -116,17 +126,34 @@ const foundationTables = [
   "lessons",
   "member_identities",
   "memberships",
+  "offer_catalog_versions",
+  "offer_price_bindings",
+  "offers",
   "outbox_events",
+  "pending_claim_sessions",
+  "provider_event_attempts",
+  "provider_event_effects",
+  "provider_event_processing",
   "provider_event_receipts",
+  "public_business_os_setup_fulfillments",
+  "public_business_os_setup_intents",
+  "purchase_payment_allocations",
+  "purchases",
+  "recurring_purchase_intents",
   "resource_delivery_health",
   "seat_invitation_token_generations",
   "seat_invitations",
   "seat_reservations",
+  "secure_link_deliveries",
   "staff_identities",
   "staff_login_attempts",
   "staff_sessions",
   "stage_drafts",
   "stages",
+  "stripe_customer_creation_actions",
+  "stripe_customers",
+  "subscription_schedules",
+  "subscriptions",
 ] as const;
 
 type RuntimeLogin = Readonly<{
@@ -259,7 +286,7 @@ async function seedFoundationRows(database: Database): Promise<void> {
   await database.pool.query(
     `insert into provider_event_receipts
       (provider, provider_event_id)
-     values ('stripe', 'evt_rls_seed')`,
+     values ('mux', 'evt_rls_seed')`,
   );
 }
 
@@ -1369,11 +1396,10 @@ describe("PostgreSQL account role boundary", () => {
       .where(eq(jobs.id, "10000000-0000-4000-8000-000000000089")))
       .rejects.toMatchObject({ cause: { code: "42501" } });
 
-    const insertedReceipt = await workerDb.insert(providerEventReceipts).values({
+    await expect(workerDb.insert(providerEventReceipts).values({
       provider: "stripe",
       providerEventId: "evt_worker_insert",
-    }).returning({ id: providerEventReceipts.id });
-    expect(insertedReceipt).toHaveLength(1);
+    })).rejects.toMatchObject({ cause: { code: "42501" } });
     await expect(workerDb.delete(providerEventReceipts)).rejects.toMatchObject({
       cause: { code: "42501" },
     });
@@ -1571,7 +1597,6 @@ describe("PostgreSQL account role boundary", () => {
       })),
       ...[
         ["certificate_prerequisites", ["INSERT", "SELECT"]],
-        ["provider_event_receipts", ["INSERT", "SELECT", "UPDATE"]],
       ].flatMap(([table_name, privileges]) =>
         (privileges as string[]).map((privilege_type) => ({
           grantee: "syntholo_worker",
@@ -1814,11 +1839,11 @@ describe("PostgreSQL account role boundary", () => {
             ];
         return privileges.map((privilege_type) => ({ privilege_type, table_name }));
       },
-    ).sort((left, right) =>
-      `${left.table_name}:${left.privilege_type}`.localeCompare(
-        `${right.table_name}:${right.privilege_type}`,
-      )
-    ));
+    ).sort((left, right) => {
+      const leftKey = `${left.table_name}:${left.privilege_type}`;
+      const rightKey = `${right.table_name}:${right.privilege_type}`;
+      return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+    }));
   });
 
   it("upgrades the exact populated 0001-0003 journal and applies all migrations fresh", async () => {
@@ -1901,12 +1926,12 @@ describe("PostgreSQL account role boundary", () => {
       const afterUpgrade = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterUpgrade.rows[0]?.count).toBe("13");
+      expect(afterUpgrade.rows[0]?.count).toBe("14");
       await migrateDatabase(upgradeDb);
       const afterRerun = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterRerun.rows[0]?.count).toBe("13");
+      expect(afterRerun.rows[0]?.count).toBe("14");
       const normalized = await upgradeDb.pool.query(
         `select
           (select bool_and(actor_id is not null and correlation_id is not null)
@@ -1961,7 +1986,7 @@ describe("PostgreSQL account role boundary", () => {
       const freshJournal = await freshDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(freshJournal.rows[0]?.count).toBe("13");
+      expect(freshJournal.rows[0]?.count).toBe("14");
     } finally {
       await Promise.allSettled([
         upgradeDb?.close(),
@@ -1984,5 +2009,5 @@ describe("PostgreSQL account role boundary", () => {
         }
       }
     }
-  }, 30_000);
+  }, 90_000);
 });

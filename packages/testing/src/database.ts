@@ -80,13 +80,26 @@ export const databaseFactories = {
     input: Readonly<{ provider?: string; eventId?: string }> = {},
   ): Promise<string> {
     const id = nextUuid();
+    const provider = input.provider ?? "stripe";
+    if (provider === "stripe") {
+      await database.pool.query(
+        `insert into provider_event_receipts
+          (id,provider,provider_event_id,event_type,livemode,api_version,
+           provider_created_at,data_object_type,data_object_id,
+           receiver_stripe_account_id,raw_body_sha256)
+         values($1,'stripe',$2,'test.event',false,'2026-08-15',
+           '2026-08-15T00:00:00.000Z','test.object',$3,'acct_test_syntholo',$4)`,
+        [id, input.eventId ?? `event_${id}`, `object_${id}`, "a".repeat(64)],
+      );
+      return id;
+    }
     await database.pool.query(
       `insert into provider_event_receipts
         (id, provider, provider_event_id)
        values ($1, $2, $3)`,
       [
         id,
-        input.provider ?? "stripe",
+        provider,
         input.eventId ?? `event_${id}`,
       ],
     );
@@ -97,6 +110,28 @@ export const databaseFactories = {
 export type DatabaseFactories = typeof databaseFactories;
 
 export async function resetTestDatabase(database: Database): Promise<void> {
+  await database.pool.query(`
+    do $reset_commerce$
+    declare relation_name text;
+    begin
+      foreach relation_name in array array[
+        'provider_event_receipts',
+        'offers','offer_catalog_versions','offer_price_bindings',
+        'checkout_authorizations','checkout_sessions','checkout_provider_actions',
+        'public_business_os_setup_intents','stripe_customer_creation_actions',
+        'business_os_setup_epochs','recurring_purchase_intents','stripe_customers',
+        'purchases','public_business_os_setup_fulfillments',
+        'purchase_payment_allocations','subscriptions','subscription_schedules',
+        'invoices','invoice_line_allocations','controlled_payment_authorizations',
+        'claim_tokens','pending_claim_sessions','secure_link_deliveries',
+        'account_onboarding','account_onboarding_priorities',
+        'provider_event_processing','provider_event_attempts','provider_event_effects'
+      ] loop
+        execute format('alter table public.%I disable trigger user',relation_name);
+      end loop;
+    end
+    $reset_commerce$;
+  `);
   await database.pool.query(`
     alter table audit_events disable trigger audit_events_append_only_rows;
     alter table audit_events disable trigger audit_events_append_only_truncate;
@@ -128,6 +163,32 @@ export async function resetTestDatabase(database: Database): Promise<void> {
   try {
   await database.pool.query(`
     truncate table
+      provider_event_effects,
+      provider_event_attempts,
+      provider_event_processing,
+      account_onboarding_priorities,
+      account_onboarding,
+      secure_link_deliveries,
+      pending_claim_sessions,
+      claim_tokens,
+      controlled_payment_authorizations,
+      invoice_line_allocations,
+      invoices,
+      subscription_schedules,
+      subscriptions,
+      purchase_payment_allocations,
+      public_business_os_setup_fulfillments,
+      purchases,
+      stripe_customers,
+      recurring_purchase_intents,
+      business_os_setup_epochs,
+      stripe_customer_creation_actions,
+      public_business_os_setup_intents,
+      checkout_provider_actions,
+      checkout_sessions,
+      checkout_authorizations,
+      offer_price_bindings,
+      offer_catalog_versions,
       content_readiness_approvals,
       content_readiness_evaluations,
       content_archives,
@@ -211,6 +272,28 @@ export async function resetTestDatabase(database: Database): Promise<void> {
       ; alter table commerce_reconciliations enable always trigger commerce_reconciliations_append_only_delete
       ; alter table administrative_grant_restorations enable always trigger administrative_grant_restorations_append_only_rows
       ; alter table administrative_grant_restorations enable always trigger administrative_grant_restorations_append_only_truncate
+    `);
+    await database.pool.query(`
+      do $reset_commerce$
+      declare relation_name text;
+      begin
+        foreach relation_name in array array[
+          'provider_event_receipts',
+          'offers','offer_catalog_versions','offer_price_bindings',
+          'checkout_authorizations','checkout_sessions','checkout_provider_actions',
+          'public_business_os_setup_intents','stripe_customer_creation_actions',
+          'business_os_setup_epochs','recurring_purchase_intents','stripe_customers',
+          'purchases','public_business_os_setup_fulfillments',
+          'purchase_payment_allocations','subscriptions','subscription_schedules',
+          'invoices','invoice_line_allocations','controlled_payment_authorizations',
+          'claim_tokens','pending_claim_sessions','secure_link_deliveries',
+          'account_onboarding','account_onboarding_priorities',
+          'provider_event_processing','provider_event_attempts','provider_event_effects'
+        ] loop
+          execute format('alter table public.%I enable trigger user',relation_name);
+        end loop;
+      end
+      $reset_commerce$;
     `);
   }
   factorySequence = 0;
