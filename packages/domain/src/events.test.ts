@@ -155,6 +155,9 @@ describe("domain event envelope", () => {
     "entitlements.command_applied.v1",
     "entitlements.reconciliation_required.v1",
     "foundation.lock_lost.v1",
+    "content.course_published.v1",
+    "content.lesson_published.v1",
+    "content.version_archived.v1",
   ])("accepts the registered irregular past-tense event %s", (type) => {
     expect(() => createDomainEvent(
       {

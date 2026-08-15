@@ -352,7 +352,11 @@ describe("foundation Drizzle schema", () => {
         Object.values(getTableColumns(table)).map((column) => column.name),
       ] as const)
       .sort(([left], [right]) => left.localeCompare(right));
+    const foundationAndAuthentication = actual.filter(([tableName]) => (
+      Object.hasOwn(expectedColumns, tableName)
+    ));
 
-    expect(actual).toEqual(Object.entries(expectedColumns));
+    expect(actual).toHaveLength(51);
+    expect(foundationAndAuthentication).toEqual(Object.entries(expectedColumns));
   });
 });

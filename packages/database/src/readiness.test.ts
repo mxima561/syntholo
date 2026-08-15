@@ -64,6 +64,21 @@ describe("database readiness projection", () => {
           predicate_ready: true,
           writer_compatibility_ready: true,
         }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          function_acl_ready: true,
+          immutable_triggers_ready: true,
+          contract_version: "0009_content.v1",
+          empty_catalog: true,
+          migration_created_at: "1786676400000",
+          migration_hash: "2cf79d036accf426172ab2249e690e34c17a8f145c8e2afa72bb8e3994425922",
+          object_count: 24,
+          object_owner_ready: true,
+          object_type_ready: true,
+          public_execute_denied: true,
+          table_acl_ready: true,
+        }],
       });
 
     await expect(checkDatabaseReadiness(
@@ -79,6 +94,32 @@ describe("database readiness projection", () => {
     expect(query).toHaveBeenNthCalledWith(2,
       "select contract_version, migration_created_at, migration_hash, predicate_ready, constraint_ready, writer_compatibility_ready, acl_ready from public.syntholo_account_name_readiness_v1()",
     );
+    expect(query).toHaveBeenNthCalledWith(3,
+      "select contract_version, migration_created_at, migration_hash, object_count, object_owner_ready, object_type_ready, immutable_triggers_ready, table_acl_ready, function_acl_ready, public_execute_denied, empty_catalog from public.syntholo_content_readiness_v1()",
+    );
+  });
+
+  it("fails a missing or permissive additive content contract closed", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({ rows: [{
+        capability: "syntholo_staff_api", migration_count: 7,
+        migration_hashes: migrationHashes.slice(0, 7), required_objects: requiredObjects,
+        runtime_role: "syntholo_staff_api", schema_version: "0007_runtime_contract",
+      }] })
+      .mockResolvedValueOnce({ rows: [{
+        acl_ready: true, constraint_ready: true,
+        contract_version: "0008_account_name.v1", migration_created_at: "1786669200000",
+        migration_hash: migrationHashes[7], predicate_ready: true, writer_compatibility_ready: true,
+      }] })
+      .mockResolvedValueOnce({ rows: [{
+        function_acl_ready: true, immutable_triggers_ready: true,
+        contract_version: "0009_content.v1", empty_catalog: true,
+        migration_created_at: "1786676400000", migration_hash: "2cf79d036accf426172ab2249e690e34c17a8f145c8e2afa72bb8e3994425922",
+        object_count: 24, object_owner_ready: true, object_type_ready: true,
+        public_execute_denied: true, table_acl_ready: false,
+      }] });
+    await expect(checkDatabaseReadiness({ pool: { query } }, "syntholo_staff_api"))
+      .rejects.toThrow("DATABASE_NOT_READY");
   });
 
   it.each([

@@ -137,36 +137,7 @@ describe("foundation migration", () => {
         `select count(*)::text as count
          from information_schema.tables
          where table_schema = 'public'
-           and table_name = any($1::text[])`,
-        [[
-          "access_decision_audit",
-          "account_hold_sources",
-          "account_holds",
-          "accounts",
-          "administrative_grant_restorations",
-          "audit_events",
-          "business_os_setup_receipts",
-          "business_os_subscription_cancellations",
-          "club_subscription_cancellations",
-          "commerce_fulfillment_receipts",
-          "commerce_reconciliations",
-          "entitlement_commands",
-          "entitlement_grants",
-          "entitlement_sources",
-          "event_handler_receipts",
-          "job_attempts",
-          "jobs",
-          "member_identities",
-          "memberships",
-          "outbox_events",
-          "provider_event_receipts",
-          "seat_invitation_token_generations",
-          "seat_invitations",
-          "seat_reservations",
-          "staff_identities",
-          "staff_login_attempts",
-          "staff_sessions",
-        ]],
+           and table_type = 'BASE TABLE'`,
       );
       const firstJournal = await targetPool.query<{
         hash: string;
@@ -184,7 +155,7 @@ describe("foundation migration", () => {
       );
 
       expect(first.stderr).toBe("");
-      expect(migratedTables.rows[0]?.count).toBe("27");
+      expect(migratedTables.rows[0]?.count).toBe("51");
       expect(firstJournal.rows).toEqual([
         { created_at: "1786618800000", hash: "bf3b66561107047f8c317d81bb561e9a29dc6207a14469a3ce588ec1f8ddc60c" },
         { created_at: "1786626000000", hash: "6508044b65dcce22b5d9a25b954a40768b813d84f943247e59f6c6391cec60a4" },
@@ -194,6 +165,7 @@ describe("foundation migration", () => {
         { created_at: "1786654800000", hash: "6b465ae711125f441115f83dfbfe9bf63e92a74edd57190e357c10268adeafb5" },
         { created_at: "1786662000000", hash: "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002" },
         { created_at: "1786669200000", hash: "505693d0977b3cf51b156ac792605be7bf6e4a5c89c5ead8d4c728d1c298f513" },
+        { created_at: "1786676400000", hash: "2cf79d036accf426172ab2249e690e34c17a8f145c8e2afa72bb8e3994425922" },
       ]);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
@@ -317,7 +289,7 @@ describe("foundation migration", () => {
         boundary: true,
         canonical: true,
         constraint_validated: true,
-        journal_count: 8,
+        journal_count: 9,
         member_execute: true,
         public_execute: false,
         staff_execute: false,

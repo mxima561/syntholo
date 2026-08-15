@@ -15,7 +15,7 @@ describe("authentication migration and ACLs", () => {
   beforeEach(async () => harness.reset());
   afterAll(async () => harness?.close());
 
-  it("creates bounded secret-bearing tables and the third journal entry", async () => {
+  it("creates bounded secret-bearing tables within the complete published journal", async () => {
     const tables = await harness.database.pool.query<{ table_name: string }>(
       `select table_name from information_schema.tables
        where table_schema = 'public'
@@ -29,7 +29,7 @@ describe("authentication migration and ACLs", () => {
       "staff_login_attempts",
       "staff_sessions",
     ]);
-    expect(journal.rows[0]?.count).toBe("8");
+    expect(journal.rows[0]?.count).toBe("9");
   });
 
   it("rejects malformed cryptographic field lengths", async () => {

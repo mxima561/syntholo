@@ -9,6 +9,7 @@ import {
 import type { AuthRouteDependencies } from "./types.js";
 import { memberAccessRoutes } from "../routes/member/access.js";
 import { memberDashboardRoutes } from "../routes/member/dashboard.js";
+import { staffContentRoutes } from "../routes/staff/content.js";
 
 export const authRoutes: FastifyPluginAsync<AuthRouteDependencies> = async (
   app,
@@ -16,6 +17,12 @@ export const authRoutes: FastifyPluginAsync<AuthRouteDependencies> = async (
 ) => {
   await app.register(memberAccessRoutes, { member: dependencies.member });
   await app.register(memberDashboardRoutes, { member: dependencies.member });
+  if (dependencies.staff.content !== undefined) {
+    await app.register(staffContentRoutes, {
+      staff: dependencies.staff,
+      content: dependencies.staff.content,
+    });
+  }
 
   app.get("/member/whoami", { exposeHeadRoute: false }, async (request, reply) => {
     void reply.header("cache-control", "no-store");

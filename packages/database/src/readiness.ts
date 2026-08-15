@@ -39,14 +39,22 @@ type ReadinessDatabase = Readonly<{
         capability?: string | null;
         constraint_ready?: boolean;
         contract_version?: string;
+        empty_catalog?: boolean;
+        function_acl_ready?: boolean;
+        immutable_triggers_ready?: boolean;
         migration_count?: number;
         migration_created_at?: string;
         migration_hash?: string;
         migration_hashes?: string[];
+        object_count?: number;
+        object_owner_ready?: boolean;
+        object_type_ready?: boolean;
         predicate_ready?: boolean;
         required_objects?: string[];
         runtime_role?: string;
         schema_version?: string;
+        table_acl_ready?: boolean;
+        public_execute_denied?: boolean;
         writer_compatibility_ready?: boolean;
       }>;
     }>>;
@@ -97,6 +105,29 @@ export async function checkDatabaseReadiness(
       || accountNameRow.acl_ready !== true
     ) {
       throw new Error("account-name projection mismatch");
+    }
+    const content = await database.pool.query(
+      "select contract_version, migration_created_at, migration_hash, object_count, object_owner_ready, object_type_ready, immutable_triggers_ready, table_acl_ready, function_acl_ready, public_execute_denied, empty_catalog from public.syntholo_content_readiness_v1()",
+    );
+    const contentRow = content.rows[0];
+    const contentMigration = PUBLISHED_MIGRATIONS[8];
+    if (
+      content.rows.length !== 1
+      || contentRow === undefined
+      || contentMigration === undefined
+      || contentRow.contract_version !== "0009_content.v1"
+      || contentRow.migration_created_at !== String(contentMigration.when)
+      || contentRow.migration_hash !== contentMigration.hash
+      || contentRow.object_count !== 24
+      || contentRow.object_owner_ready !== true
+      || contentRow.object_type_ready !== true
+      || contentRow.immutable_triggers_ready !== true
+      || contentRow.table_acl_ready !== true
+      || contentRow.function_acl_ready !== true
+      || contentRow.public_execute_denied !== true
+      || typeof contentRow.empty_catalog !== "boolean"
+    ) {
+      throw new Error("content projection mismatch");
     }
     return { latencyMs: Date.now() - started, status: "ok" };
   } catch {

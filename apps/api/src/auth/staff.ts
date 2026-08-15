@@ -513,7 +513,7 @@ export async function completeStaffSignIn(
   return reply.redirect(attempt.returnTo, 302);
 }
 
-function requireUnsafeBrowserRequest(
+export function requireUnsafeStaffRequest(
   request: FastifyRequest,
   dependencies: StaffDependencies,
 ): void {
@@ -537,7 +537,7 @@ export async function signOutStaff(
   reply: FastifyReply,
   dependencies: StaffDependencies,
 ): Promise<FastifyReply> {
-  requireUnsafeBrowserRequest(request, dependencies);
+  requireUnsafeStaffRequest(request, dependencies);
   const names = staffCookieNames(dependencies.config.environment);
   const rawSession = oneCookie(request, names.session, false);
   void reply.header(

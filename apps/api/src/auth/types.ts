@@ -1,4 +1,5 @@
-import type { MemberActor } from "@syntholo/domain";
+import type { MemberActor, StaffActor } from "@syntholo/domain";
+import type { ContentPublicationIssue } from "@syntholo/contracts/content";
 import type { EncryptedValue, StaffSessionCrypto } from "./session-crypto.js";
 
 export type AuthEnvironment = "local" | "test" | "staging" | "production";
@@ -174,6 +175,37 @@ export interface AuthRouteDependencies {
       revokeSession(input: { sessionId: string }): Promise<void>;
     };
     sleep(milliseconds: number): Promise<void>;
+    content?: {
+      materializePreview(input: Readonly<{
+        actor: StaffActor;
+        correlationId: string;
+        courseId: string;
+        expectedVersion: number;
+        reason: string;
+      }>): Promise<Readonly<{
+        previewId: string;
+        manifestHash: string;
+        manifest: Readonly<Record<string, unknown>>;
+        publicationIssues: readonly ContentPublicationIssue[];
+        createdAt: string;
+      }>>;
+      publishCourse(input: Readonly<{
+        actor: StaffActor;
+        correlationId: string;
+        courseId: string;
+        previewId: string;
+        expectedManifestHash: string;
+        expectedHeadRevision: number;
+        reason: string;
+      }>): Promise<Readonly<{
+        id: string;
+        courseId: string;
+        version: number;
+        manifestHash: string;
+        headRevision: number;
+        publishedAt: string;
+      }>>;
+    };
   };
 }
 

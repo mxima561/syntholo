@@ -707,7 +707,7 @@ describe.sequential("entitlement authority database", () => {
         from accounts where id='30000000-0000-4000-8000-000000000003'
       `);
       expect(upgraded.rows).toEqual([{
-        journal_count: 8,
+        journal_count: 9,
         owner_established_at: "2026-01-02T03:04:05.123Z",
       }]);
       const afterUpgrade = await upgrade.pool.query<{

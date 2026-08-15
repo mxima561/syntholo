@@ -61,28 +61,52 @@ const foundationTables = [
   "account_holds",
   "accounts",
   "administrative_grant_restorations",
+  "api_command_receipts",
   "audit_events",
   "business_os_setup_receipts",
   "business_os_subscription_cancellations",
   "club_subscription_cancellations",
   "commerce_fulfillment_receipts",
   "commerce_reconciliations",
+  "content_archives",
+  "content_previews",
+  "content_readiness_approvals",
+  "content_readiness_evaluations",
+  "content_resource_drafts",
+  "content_schedules",
+  "course_draft_manifest_entries",
+  "course_drafts",
+  "course_heads",
+  "course_version_lessons",
+  "course_versions",
+  "courses",
   "entitlement_commands",
   "entitlement_grants",
   "entitlement_sources",
   "event_handler_receipts",
   "job_attempts",
   "jobs",
+  "lesson_accessibility_decisions",
+  "lesson_accessibility_review_heads",
+  "lesson_disclosure_decisions",
+  "lesson_disclosure_review_heads",
+  "lesson_drafts",
+  "lesson_version_resources",
+  "lesson_versions",
+  "lessons",
   "member_identities",
   "memberships",
   "outbox_events",
   "provider_event_receipts",
+  "resource_delivery_health",
   "seat_invitation_token_generations",
   "seat_invitations",
   "seat_reservations",
   "staff_identities",
   "staff_login_attempts",
   "staff_sessions",
+  "stage_drafts",
+  "stages",
 ] as const;
 
 type RuntimeLogin = Readonly<{
@@ -1401,14 +1425,37 @@ describe("PostgreSQL account role boundary", () => {
       ...[
         "accounts",
         "audit_events",
+        "content_archives",
+        "content_previews",
+        "content_readiness_approvals",
+        "content_readiness_evaluations",
+        "content_resource_drafts",
+        "content_schedules",
+        "course_draft_manifest_entries",
+        "course_drafts",
+        "course_heads",
+        "course_version_lessons",
+        "course_versions",
+        "courses",
         "event_handler_receipts",
         "job_attempts",
         "jobs",
+        "lesson_accessibility_decisions",
+        "lesson_accessibility_review_heads",
+        "lesson_disclosure_decisions",
+        "lesson_disclosure_review_heads",
+        "lesson_drafts",
+        "lesson_version_resources",
+        "lesson_versions",
+        "lessons",
         "member_identities",
         "memberships",
         "outbox_events",
+        "resource_delivery_health",
         "staff_identities",
         "staff_sessions",
+        "stage_drafts",
+        "stages",
       ].map((table_name) => ({
         grantee: "syntholo_staff_api",
         privilege_type: "SELECT",
@@ -1417,10 +1464,27 @@ describe("PostgreSQL account role boundary", () => {
       ...[
         "access_decision_audit",
         "audit_events",
+        "content_resource_drafts",
+        "course_drafts",
+        "courses",
+        "lesson_drafts",
+        "lessons",
         "outbox_events",
+        "stage_drafts",
+        "stages",
       ].map((table_name) => ({
         grantee: "syntholo_staff_api",
         privilege_type: "INSERT",
+        table_name,
+      })),
+      ...[
+        "content_resource_drafts",
+        "course_drafts",
+        "lesson_drafts",
+        "stage_drafts",
+      ].map((table_name) => ({
+        grantee: "syntholo_staff_api",
+        privilege_type: "UPDATE",
         table_name,
       })),
       ...["audit_events", "outbox_events"].map((table_name) => ({
@@ -1748,12 +1812,12 @@ describe("PostgreSQL account role boundary", () => {
       const afterUpgrade = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterUpgrade.rows[0]?.count).toBe("8");
+      expect(afterUpgrade.rows[0]?.count).toBe("9");
       await migrateDatabase(upgradeDb);
       const afterRerun = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterRerun.rows[0]?.count).toBe("8");
+      expect(afterRerun.rows[0]?.count).toBe("9");
       const normalized = await upgradeDb.pool.query(
         `select
           (select bool_and(actor_id is not null and correlation_id is not null)
@@ -1801,7 +1865,7 @@ describe("PostgreSQL account role boundary", () => {
       const freshJournal = await freshDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(freshJournal.rows[0]?.count).toBe("8");
+      expect(freshJournal.rows[0]?.count).toBe("9");
     } finally {
       await Promise.allSettled([
         upgradeDb?.close(),

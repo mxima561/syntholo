@@ -26,6 +26,69 @@ afterEach(async () => {
 });
 
 describe("published migration inventory", () => {
+  it("fails the content preview command closed until authoritative publication derivation exists", async () => {
+    const sql = await readFile(join(migrationsFolder, "0009_content.sql"), "utf8");
+    const functionStart = sql.indexOf("CREATE FUNCTION public.syntholo_content_create_preview_v1");
+    const functionEnd = sql.indexOf(
+      "REVOKE ALL ON FUNCTION public.syntholo_content_create_preview_v1",
+      functionStart,
+    );
+    const previewCommand = sql.slice(functionStart, functionEnd);
+
+    expect(functionStart).toBeGreaterThanOrEqual(0);
+    expect(functionEnd).toBeGreaterThan(functionStart);
+    expect(previewCommand).toContain("RAISE EXCEPTION 'CONTENT_PUBLICATION_PIPELINE_INCOMPLETE'");
+    expect(previewCommand.indexOf("CONTENT_PUBLICATION_PIPELINE_INCOMPLETE"))
+      .toBeLessThan(previewCommand.indexOf("INSERT INTO public.content_previews"));
+  });
+
+  it("does not widen migrator grants on pre-0009 protected tables", async () => {
+    const sql = await readFile(join(migrationsFolder, "0009_content.sql"), "utf8");
+
+    expect(sql).not.toContain("GRANT ALL ON ALL TABLES IN SCHEMA public TO syntholo_migrator");
+    expect(sql).toContain(
+      "GRANT ALL ON public.courses,public.course_drafts,public.stages,public.stage_drafts,public.lessons,public.lesson_drafts",
+    );
+    expect(sql).not.toMatch(/GRANT ALL ON [^;]*public\.audit_events/u);
+  });
+
+  it("attests exact content object, immutability, table, and function authority", async () => {
+    const sql = await readFile(join(migrationsFolder, "0009_content.sql"), "utf8");
+
+    expect(sql).toContain(
+      "GRANT SELECT,INSERT ON public.courses,public.stages,public.lessons TO syntholo_staff_api",
+    );
+    expect(sql).not.toMatch(/GRANT SELECT,INSERT,UPDATE ON [^;]*public\.courses/u);
+    expect(sql).toContain("object_owner_ready boolean");
+    expect(sql).toContain("object_type_ready boolean");
+    expect(sql).toContain("immutable_triggers_ready boolean");
+    expect(sql).toContain("table_acl_ready boolean");
+    expect(sql).toContain("function_acl_ready boolean");
+    expect(sql).toContain("public_execute_denied boolean");
+    expect(sql).toContain("aclexplode(coalesce(c.relacl,'{}'::aclitem[]))");
+    expect(sql).toContain("'TRIGGER','MAINTAIN']::text[]");
+    expect(sql).toContain("aclexplode(coalesce(p.proacl,'{}'::aclitem[]))");
+    expect(sql).toContain("t.tgtype<>27");
+    expect(sql).toContain("p.proconfig<>ARRAY['search_path=pg_catalog, pg_temp']::text[]");
+    expect(sql).toContain("a.grantee=0");
+  });
+
+  it("enforces one exact closed release-rule union on every persisted authority", async () => {
+    const sql = await readFile(join(migrationsFolder, "0009_content.sql"), "utf8");
+
+    for (const constraint of [
+      "lesson_drafts_release_rule_check",
+      "lesson_versions_release_rule_check",
+      "course_draft_manifest_release_rule_check",
+      "course_version_lessons_release_rule_check",
+    ]) expect(sql).toContain(`CONSTRAINT ${constraint}`);
+    expect(sql).not.toContain("jsonb_object_length");
+    expect(sql.match(/release_rule - ARRAY\['kind','days'\]::text\[\] = '\{\}'::jsonb/g)).toHaveLength(4);
+    expect(sql.match(/release_rule - ARRAY\['kind','at'\]::text\[\] = '\{\}'::jsonb/g)).toHaveLength(4);
+    expect(sql.match(/isfinite\(\(release_rule->>'at'\)::timestamptz\)/g)).toHaveLength(4);
+    expect(sql.match(/release_rule = '\{"kind":"immediate"\}'::jsonb/g)).toHaveLength(4);
+  });
+
   it("keeps the canonical-name predicate executable only by its runtime writer and migrator", async () => {
     const sql = await readFile(join(migrationsFolder, "0008_account_name.sql"), "utf8");
     expect(sql).toContain(
@@ -58,6 +121,7 @@ describe("published migration inventory", () => {
       { idx: 5, when: 1786654800000, tag: "0006_runtime_readiness", hash: "6b465ae711125f441115f83dfbfe9bf63e92a74edd57190e357c10268adeafb5" },
       { idx: 6, when: 1786662000000, tag: "0007_runtime_contract", hash: "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002" },
       { idx: 7, when: 1786669200000, tag: "0008_account_name", hash: "505693d0977b3cf51b156ac792605be7bf6e4a5c89c5ead8d4c728d1c298f513" },
+      { idx: 8, when: 1786676400000, tag: "0009_content", hash: "2cf79d036accf426172ab2249e690e34c17a8f145c8e2afa72bb8e3994425922" },
     ]);
   });
 

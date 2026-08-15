@@ -8,7 +8,8 @@
     "./entitlements": "./src/entitlements/index.ts",
     "./entitlements/internal": "./src/entitlements/internal.ts",
     "./events": "./src/events.ts",
-    "./identity/actor": "./src/identity/actor.ts"
+    "./identity/actor": "./src/identity/actor.ts",
+    "./content": "./src/content/index.ts"
   },
   "scripts": {
     "lint": "eslint --config ../../eslint.config.mjs src",

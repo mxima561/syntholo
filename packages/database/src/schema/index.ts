@@ -30,3 +30,4 @@ export {
   seatInvitations,
   seatReservations,
 } from "./entitlements.js";
+export * from "./content.js";

@@ -33,6 +33,9 @@ const boundedIdentifierPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$/u;
 const prototypeKeys = new Set(["__proto__", "constructor", "prototype"]);
 const registeredDomainEventTypes = new Set([
   "commerce.payment_paid.v1",
+  "content.course_published.v1",
+  "content.lesson_published.v1",
+  "content.version_archived.v1",
   "entitlements.command_applied.v1",
   "entitlements.reconciliation_required.v1",
   "foundation.account_name_changed.v1",

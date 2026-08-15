@@ -1,0 +1,178 @@
+import { staffActor } from "@syntholo/testing";
+import { ContentCommandConflictError } from "@syntholo/database";
+import Fastify from "fastify";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { requestContextPlugin } from "../../plugins/context.js";
+import { safeErrorHandler } from "../../plugins/error-handler.js";
+import { projectStaffActor } from "../../auth/authorize.js";
+
+const actor = staffActor({
+  actorId: "10000000-0000-4000-8000-000000000001",
+  staffId: "10000000-0000-4000-8000-000000000001",
+  role: "admin",
+  permissions: ["content:read", "content:publish"],
+  authenticatedAt: new Date("2026-08-14T16:00:00.000Z"),
+});
+const trustedActor = projectStaffActor(actor, new Date("2026-08-14T16:00:00.000Z"));
+
+vi.mock("../../auth/staff.js", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../auth/staff.js")>();
+  return { ...original, authenticateStaff: vi.fn(async () => trustedActor) };
+});
+
+describe("staff content publication routes", () => {
+  const materializePreview = vi.fn();
+  const publishCourse = vi.fn();
+
+  beforeEach(() => {
+    materializePreview.mockReset().mockResolvedValue({
+      previewId: "10000000-0000-4000-8000-000000000011",
+      manifestHash: "a".repeat(64), manifest: { schemaVersion: 1, course: {}, stages: [] },
+      publicationIssues: [], createdAt: "2026-08-14T16:00:00.000Z",
+    });
+    publishCourse.mockReset().mockResolvedValue({
+      id: "10000000-0000-4000-8000-000000000012",
+      courseId: "10000000-0000-4000-8000-000000000010", version: 1,
+      manifestHash: "a".repeat(64), headRevision: 1,
+      publishedAt: "2026-08-14T16:00:00.000Z",
+    });
+  });
+
+  async function app() {
+    const instance = Fastify({ logger: false, genReqId: () => "40000000-0000-4000-8000-000000000001" });
+    await instance.register(requestContextPlugin);
+    instance.setErrorHandler(safeErrorHandler);
+    const { staffContentRoutes } = await import("./content.js");
+    await instance.register(staffContentRoutes, {
+      staff: {
+        config: { environment: "test", webOrigin: "https://app.syntholo.test" },
+        clock: { now: () => new Date("2026-08-14T16:02:00.000Z") },
+      },
+      content: { materializePreview, publishCourse },
+    } as never);
+    return instance;
+  }
+
+  it("materializes an exact preview only after staff permission, recent auth, and CSRF", async () => {
+    const instance = await app();
+    const response = await instance.inject({
+      method: "POST",
+      url: "/staff/content/courses/10000000-0000-4000-8000-000000000010/previews",
+      headers: {
+        cookie: "syntholo_local_staff_session=test", origin: "https://app.syntholo.test",
+        "x-syntholo-csrf": "1", "content-type": "application/json",
+        "idempotency-key": "preview-intent-0001",
+      },
+      payload: { expectedVersion: 2, reason: "Curriculum review" },
+    });
+    expect(response.statusCode, response.payload).toBe(201);
+    expect(response.headers["cache-control"]).toBe("no-store");
+    expect(response.headers.vary).toBe("Cookie");
+    expect(materializePreview).toHaveBeenCalledWith(expect.objectContaining({
+      actor: trustedActor, courseId: "10000000-0000-4000-8000-000000000010",
+      expectedVersion: 2,
+    }));
+    expect(materializePreview.mock.calls[0]?.[0]).not.toHaveProperty("idempotencyKey");
+    await instance.close();
+  });
+
+  it("rejects missing CSRF before the repository and rejects unknown body authority", async () => {
+    const instance = await app();
+    const csrf = await instance.inject({
+      method: "POST", url: "/staff/content/courses/10000000-0000-4000-8000-000000000010/previews",
+      headers: { cookie: "syntholo_local_staff_session=test", "content-type": "application/json", "idempotency-key": "preview-intent-0002" },
+      payload: { expectedVersion: 2, reason: "Review" },
+    });
+    expect(csrf.statusCode).toBe(403);
+    const unknown = await instance.inject({
+      method: "POST", url: "/staff/content/courses/10000000-0000-4000-8000-000000000010/previews",
+      headers: { cookie: "syntholo_local_staff_session=test", origin: "https://app.syntholo.test", "x-syntholo-csrf": "1", "content-type": "application/json", "idempotency-key": "preview-intent-0003" },
+      payload: { expectedVersion: 2, reason: "Review", reviewerStaffId: actor.staffId },
+    });
+    expect(unknown.statusCode).toBe(400);
+    expect(materializePreview).not.toHaveBeenCalled();
+    await instance.close();
+  });
+
+  it("publishes only the exact preview/hash/head tuple", async () => {
+    const instance = await app();
+    const response = await instance.inject({
+      method: "POST", url: "/staff/content/courses/10000000-0000-4000-8000-000000000010/publications",
+      headers: { cookie: "syntholo_local_staff_session=test", origin: "https://app.syntholo.test", "x-syntholo-csrf": "1", "content-type": "application/json", "idempotency-key": "publish-intent-0001" },
+      payload: { previewId: "10000000-0000-4000-8000-000000000011", expectedManifestHash: "a".repeat(64), expectedHeadRevision: 0, reason: "Approved" },
+    });
+    expect(response.statusCode, response.payload).toBe(201);
+    expect(publishCourse).toHaveBeenCalledWith(expect.objectContaining({
+      previewId: "10000000-0000-4000-8000-000000000011",
+      expectedManifestHash: "a".repeat(64), expectedHeadRevision: 0,
+    }));
+    await instance.close();
+  });
+
+  it("fails closed when the content port returns an extra private field", async () => {
+    materializePreview.mockResolvedValueOnce({
+      previewId: "10000000-0000-4000-8000-000000000011", manifestHash: "a".repeat(64),
+      manifest: { schemaVersion: 1, course: {}, stages: [] }, publicationIssues: [],
+      createdAt: "2026-08-14T16:00:00.000Z", privateObjectKey: "secret/transcript.json",
+    });
+    const instance = await app();
+    const response = await instance.inject({
+      method: "POST", url: "/staff/content/courses/10000000-0000-4000-8000-000000000010/previews",
+      headers: { cookie: "syntholo_local_staff_session=test", origin: "https://app.syntholo.test", "x-syntholo-csrf": "1", "content-type": "application/json", "idempotency-key": "preview-intent-0004" },
+      payload: { expectedVersion: 2, reason: "Review" },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(response.payload).not.toContain("secret/transcript.json");
+    await instance.close();
+  });
+
+  it("fails closed when a publication issue contains an extra private field", async () => {
+    materializePreview.mockResolvedValueOnce({
+      previewId: "10000000-0000-4000-8000-000000000011", manifestHash: "a".repeat(64),
+      manifest: { schemaVersion: 1, course: {}, stages: [] },
+      publicationIssues: [{
+        code: "VIDEO_NOT_READY", field: "mediaAssetId", lessonId: null,
+        providerError: "private provider detail",
+      }],
+      createdAt: "2026-08-14T16:00:00.000Z",
+    });
+    const instance = await app();
+    const response = await instance.inject({
+      method: "POST", url: "/staff/content/courses/10000000-0000-4000-8000-000000000010/previews",
+      headers: { cookie: "syntholo_local_staff_session=test", origin: "https://app.syntholo.test", "x-syntholo-csrf": "1", "content-type": "application/json" },
+      payload: { expectedVersion: 2, reason: "Review" },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(response.payload).not.toContain("private provider detail");
+    await instance.close();
+  });
+
+  it.each(["CONTENT_NOT_READY", "MANIFEST_CHANGED", "COURSE_HEAD_CHANGED"] as const)(
+    "maps the typed %s database conflict to an exact safe 409",
+    async (code) => {
+      publishCourse.mockRejectedValueOnce(new ContentCommandConflictError(code));
+      const instance = await app();
+      const response = await instance.inject({
+        method: "POST", url: "/staff/content/courses/10000000-0000-4000-8000-000000000010/publications",
+        headers: { cookie: "syntholo_local_staff_session=test", origin: "https://app.syntholo.test", "x-syntholo-csrf": "1", "content-type": "application/json" },
+        payload: { previewId: "10000000-0000-4000-8000-000000000011", expectedManifestHash: "a".repeat(64), expectedHeadRevision: 0, reason: "Approved" },
+      });
+      expect(response.statusCode).toBe(409);
+      expect(response.json()).toMatchObject({ error: { code } });
+      await instance.close();
+    },
+  );
+
+  it("keeps an unexpected content failure a safe 500", async () => {
+    publishCourse.mockRejectedValueOnce(new Error("postgres://private-content-secret"));
+    const instance = await app();
+    const response = await instance.inject({
+      method: "POST", url: "/staff/content/courses/10000000-0000-4000-8000-000000000010/publications",
+      headers: { cookie: "syntholo_local_staff_session=test", origin: "https://app.syntholo.test", "x-syntholo-csrf": "1", "content-type": "application/json" },
+      payload: { previewId: "10000000-0000-4000-8000-000000000011", expectedManifestHash: "a".repeat(64), expectedHeadRevision: 0, reason: "Approved" },
+    });
+    expect(response.statusCode).toBe(500);
+    expect(response.payload).not.toContain("private-content-secret");
+    await instance.close();
+  });
+});
