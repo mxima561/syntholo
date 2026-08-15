@@ -79,6 +79,21 @@ describe("database readiness projection", () => {
           public_execute_denied: true,
           table_acl_ready: true,
         }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          asset_table_ready: true,
+          binding_ready: true,
+          contract_version: "0010_content_assets.v1",
+          empty_catalog: true,
+          function_acl_ready: true,
+          migration_created_at: "1786683600000",
+          migration_hash: "65e621c5754cb490c50dff009854433815dae8ee3fd3a6410de9dea6080fcb43",
+          public_execute_denied: true,
+          receipt_constraint_ready: true,
+          table_acl_ready: true,
+          track_table_ready: true,
+        }],
       });
 
     await expect(checkDatabaseReadiness(
@@ -96,6 +111,9 @@ describe("database readiness projection", () => {
     );
     expect(query).toHaveBeenNthCalledWith(3,
       "select contract_version, migration_created_at, migration_hash, object_count, object_owner_ready, object_type_ready, immutable_triggers_ready, table_acl_ready, function_acl_ready, public_execute_denied, empty_catalog from public.syntholo_content_readiness_v1()",
+    );
+    expect(query).toHaveBeenNthCalledWith(4,
+      "select contract_version, migration_created_at, migration_hash, asset_table_ready, track_table_ready, binding_ready, receipt_constraint_ready, table_acl_ready, function_acl_ready, public_execute_denied, empty_catalog from public.syntholo_content_assets_readiness_v1()",
     );
   });
 

@@ -64,6 +64,13 @@
       "when": 1786676400000,
       "tag": "0009_content",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786683600000,
+      "tag": "0010_content_assets",
+      "breakpoints": true
     }
   ]
 }

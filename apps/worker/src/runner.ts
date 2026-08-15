@@ -9,10 +9,12 @@ import {
   JobRepository,
   OutboxProcessorRepository,
   PermanentOutboxDispatchError,
+  WorkerContentMediaRepository,
   type ClassifiedJobFailure,
   type ClaimedJob,
   type HandlerReceiptClaim,
 } from "@syntholo/database";
+import { createMuxAssetManagementClient } from "@syntholo/integrations";
 import {
   parseWorkerConfig,
   type RuntimeEnvironment,
@@ -25,6 +27,8 @@ import {
   type JobHandler,
 } from "./handlers/index.js";
 import { emitWorkerHealth, type WorkerHealthStatus } from "./health.js";
+import { createMuxReconcileJobHandler } from "./handlers/content/mux.js";
+import { createContentReadinessRecomputeHandler } from "./handlers/content/readiness-recompute.js";
 
 export type WorkerJob = Readonly<{
   id: string;
@@ -53,19 +57,33 @@ export type HandlerReceiptPort = Readonly<{
   ): Promise<Readonly<{ kind: "completed" | "stale_claim" }>>;
 }>;
 
+const canonicalUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
+
 export function createDomainEventJobHandler(
   receipts: HandlerReceiptPort,
   clock: Readonly<{ now(): Date }>,
+  domainEventHandlers: Readonly<Record<string, (
+    event: Readonly<{ eventId: string; handlerName: string }>,
+    signal: AbortSignal,
+  ) => Promise<void>>> = Object.freeze({
+    foundation_audit_projection: async () => undefined,
+    entitlement_reconciliation_queue: async () => undefined,
+  }),
 ): JobHandler {
-  return async (job) => {
+  return async (job, signal) => {
     const eventId = job.payload.eventId;
     const handlerName = job.payload.handlerName;
     if (
       typeof eventId !== "string"
+      || !canonicalUuid.test(eventId)
       || typeof handlerName !== "string"
-      || !["foundation_audit_projection", "entitlement_reconciliation_queue"]
-        .includes(handlerName)
+      || Object.keys(job.payload).sort().join(",") !== "eventId,handlerName"
+      || domainEventHandlers[handlerName] === undefined
     ) {
+      throw new HandlerFailure({ code: "JOB_INPUT_INVALID", permanent: true });
+    }
+    const domainHandler = domainEventHandlers[handlerName];
+    if (domainHandler === undefined) {
       throw new HandlerFailure({ code: "JOB_INPUT_INVALID", permanent: true });
     }
     let receipt;
@@ -83,6 +101,7 @@ export function createDomainEventJobHandler(
       });
     }
     try {
+      await domainHandler({ eventId, handlerName }, signal);
       const completed = await receipts.complete(receipt, clock.now());
       if (completed.kind !== "completed") throw new FatalWorkerConsistencyError();
     } catch (error) {
@@ -247,6 +266,12 @@ export async function runWorker<TJob extends WorkerJob>(
     RELEASE_SHA: dependencies.config.releaseSha,
     WORKER_CONCURRENCY: String(dependencies.config.concurrency),
     WORKER_IDLE_DELAY_MS: String(dependencies.config.idleDelayMs),
+    MUX_CONTENT_ENABLED: String(dependencies.config.mux?.enabled ?? false),
+    ...(dependencies.config.mux?.tokenId === undefined ? {} : {
+      MUX_ENVIRONMENT_ID: dependencies.config.mux.environmentId,
+      MUX_RECONCILE_TOKEN_ID: dependencies.config.mux.tokenId,
+      MUX_RECONCILE_TOKEN_SECRET: dependencies.config.mux.tokenSecret,
+    }),
   });
   const wait = dependencies.wait ?? abortableDelay;
 
@@ -327,6 +352,13 @@ export function handlersForOutboxEvent(
       return Object.freeze(["foundation_audit_projection"]);
     case "entitlements.reconciliation_required.v1":
       return Object.freeze(["entitlement_reconciliation_queue"]);
+    case "content.lesson_published.v1":
+    case "content.course_published.v1":
+    case "content.version_archived.v1":
+    case "content.media_state_changed.v1":
+    case "content.resource_state_changed.v1":
+    case "content.readiness_approved.v1":
+      return Object.freeze(["content.readiness_recompute"]);
     default:
       throw new HandlerFailure({ code: "JOB_INPUT_INVALID", permanent: true });
   }
@@ -498,8 +530,27 @@ async function main(): Promise<void> {
     const workerId = createWorkerId(hostname(), process.pid);
     const clock = { now: () => new Date() };
     const receipts = new HandlerReceiptRepository(database, { leaseMs: 60_000 });
+    const content = new WorkerContentMediaRepository(database);
+    const mux = config.mux?.enabled === true;
+    if (mux && (config.mux.environmentId === undefined
+      || config.mux.tokenId === undefined || config.mux.tokenSecret === undefined)) {
+      throw new Error("WORKER_CONFIG_INVALID");
+    }
+    const management = mux ? createMuxAssetManagementClient({
+      environmentId: config.mux?.environmentId ?? "",
+      tokenId: config.mux?.tokenId ?? "",
+      tokenSecret: config.mux?.tokenSecret ?? "",
+    }) : null;
+    const muxHandler = mux && management !== null
+      ? createMuxReconcileJobHandler({ enabled: true, management, repository: content })
+      : createMuxReconcileJobHandler({ enabled: false, management: null, repository: content });
     const handlers = createHandlerRegistry({
-      "foundation.domain_event_handler.v1": createDomainEventJobHandler(receipts, clock),
+      "foundation.domain_event_handler.v1": createDomainEventJobHandler(receipts, clock, {
+        foundation_audit_projection: async () => undefined,
+        entitlement_reconciliation_queue: async () => undefined,
+        "content.readiness_recompute": createContentReadinessRecomputeHandler(content),
+      }),
+      "content.mux_reconcile.v1": muxHandler,
     });
     const jobs = new JobRepository(database, { leaseMs: 60_000 });
     const outbox = new OutboxProcessorRepository(database, { leaseMs: 60_000 });

@@ -277,8 +277,14 @@ export async function assertDatabaseCapability(
                 join pg_namespace n on n.oid = p.pronamespace
                 where cap.rolname = 'syntholo_system_api'
                   and n.nspname <> 'information_schema' and n.nspname !~ '^pg_'
-                  and has_function_privilege(cap.rolname, p.oid, 'EXECUTE')
+                  and ((has_function_privilege(cap.rolname, p.oid, 'EXECUTE')
+                  and not exists (
+                    select 1
+                    from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+                    where acl.grantee = 0 and acl.privilege_type = 'EXECUTE'
+                  )
                   and (n.nspname <> 'public' or p.oid::regprocedure::text not in (
+                    'syntholo_account_name_readiness_v1()',
                     'syntholo_business_os_cancelled(uuid,uuid,text,uuid,timestamp with time zone,timestamp with time zone)',
                     'syntholo_business_os_payment_failed(uuid,uuid,text,uuid,timestamp with time zone,timestamp with time zone)',
                     'syntholo_business_os_payment_recovered(uuid,uuid,text,uuid,timestamp with time zone,timestamp with time zone)',
@@ -286,6 +292,8 @@ export async function assertDatabaseCapability(
                     'syntholo_club_cancelled(uuid,uuid,text,uuid,timestamp with time zone,timestamp with time zone)',
                     'syntholo_club_payment_failed(uuid,uuid,text,uuid,timestamp with time zone,timestamp with time zone)',
                     'syntholo_club_payment_recovered(uuid,uuid,text,uuid,timestamp with time zone,timestamp with time zone)',
+                    'syntholo_content_assets_readiness_v1()',
+                    'syntholo_content_readiness_v1()',
                     'syntholo_establish_owner(uuid,uuid,text,text,text,timestamp with time zone)',
                     'syntholo_expire_business_os(uuid,uuid,text,uuid,timestamp with time zone)',
                     'syntholo_expire_club(uuid,uuid,text,uuid,timestamp with time zone)',
@@ -293,6 +301,7 @@ export async function assertDatabaseCapability(
                     'syntholo_expire_invitation(uuid,uuid,text,uuid,timestamp with time zone)',
                     'syntholo_fulfill_product(uuid,uuid,text,text,text,text,uuid,timestamp with time zone,timestamp with time zone,timestamp with time zone)',
                     'syntholo_lock_scoped_system_account(uuid)',
+                    'syntholo_mux_apply_event_v1(text,text,text,text,timestamp with time zone,text,text,text,bigint,text,text,text,text,text,boolean,text,text)',
                     'syntholo_open_dispute(uuid,uuid,text,text,uuid,timestamp with time zone)',
                     'syntholo_record_business_os_setup_purchase(uuid,uuid,text,text,timestamp with time zone,timestamp with time zone)',
                     'syntholo_record_access_decision(uuid,uuid,text,boolean,text,uuid[],integer,text,timestamp with time zone)',
@@ -300,7 +309,13 @@ export async function assertDatabaseCapability(
                     'syntholo_refund_product(uuid,uuid,text,uuid,text,timestamp with time zone)',
                     'syntholo_resolve_dispute(uuid,uuid,text,uuid,text,timestamp with time zone)',
                     'syntholo_runtime_readiness()'
-                  ))) as forbidden_system_routine_privileges
+                  ))) or (n.nspname = 'public' and p.proname ~ '^syntholo_'
+                    and exists (
+                      select 1
+                      from aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) acl
+                      where acl.grantee = 0 and acl.privilege_type = 'EXECUTE'
+                    ))))
+                as forbidden_system_routine_privileges
        from pg_roles r cross join expected_capability cap
        where r.rolname = session_user`,
       [expectedCapability],

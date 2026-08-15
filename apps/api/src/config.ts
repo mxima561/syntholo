@@ -33,6 +33,7 @@ const ApiEnvironmentSchema = z.object({
   DATABASE_URL: optionalNonemptyString,
   MEMBER_DATABASE_URL: optionalNonemptyString,
   STAFF_DATABASE_URL: optionalNonemptyString,
+  SYSTEM_DATABASE_URL: optionalNonemptyString,
   RELEASE_SHA: z.string().trim().regex(/^[0-9a-f]{40}$/u).optional(),
   WEB_ORIGIN: optionalNonemptyString,
   CLERK_SECRET_KEY: optionalNonemptyString,
@@ -44,6 +45,9 @@ const ApiEnvironmentSchema = z.object({
   WORKOS_ISSUER: optionalNonemptyString,
   WORKOS_JWKS_URL: optionalNonemptyString,
   STAFF_SESSION_ENCRYPTION_KEYS: optionalNonemptyString,
+  MUX_CONTENT_ENABLED: z.enum(["true", "false"]).default("false"),
+  MUX_ENVIRONMENT_ID: optionalNonemptyString,
+  MUX_WEBHOOK_SECRET: optionalNonemptyString,
 });
 
 export type ApiConfig = Readonly<{
@@ -52,6 +56,7 @@ export type ApiConfig = Readonly<{
   port: number;
   memberDatabaseUrl: string;
   staffDatabaseUrl: string;
+  systemDatabaseUrl: string;
   releaseSha: string;
   webOrigin: string;
   clerkSecretKey: string;
@@ -63,6 +68,11 @@ export type ApiConfig = Readonly<{
   workosIssuer: string;
   workosJwksUrl: string;
   sessionEncryptionKeys: string;
+  mux: Readonly<{ kind: "disabled" }> | Readonly<{
+    kind: "configured";
+    environmentId: string;
+    webhookSecret: string;
+  }>;
 }>;
 
 export function parseApiConfig(
@@ -80,6 +90,7 @@ export function parseApiConfig(
         result.NODE_ENV === "production"
           ? result.STAFF_DATABASE_URL
           : result.STAFF_DATABASE_URL ?? result.DATABASE_URL,
+      systemDatabaseUrl: result.SYSTEM_DATABASE_URL,
       releaseSha: result.RELEASE_SHA,
       webOrigin: result.WEB_ORIGIN,
       clerkSecretKey: result.CLERK_SECRET_KEY,
@@ -102,8 +113,24 @@ export function parseApiConfig(
     ) {
       throw new Error("release mismatch");
     }
-    if (required.memberDatabaseUrl === required.staffDatabaseUrl) {
+    if (new Set([
+      required.memberDatabaseUrl,
+      required.staffDatabaseUrl,
+      required.systemDatabaseUrl,
+    ]).size !== 3) {
       throw new Error("database capabilities must use distinct credentials");
+    }
+    const muxEnabled = result.MUX_CONTENT_ENABLED === "true";
+    const muxValues = [
+      result.MUX_ENVIRONMENT_ID,
+      result.MUX_WEBHOOK_SECRET,
+    ];
+    if ((!muxEnabled && muxValues.some((value) => value !== undefined))
+      || (muxEnabled && muxValues.some((value) => value === undefined))
+      || (result.MUX_ENVIRONMENT_ID !== undefined
+        && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$/u.test(result.MUX_ENVIRONMENT_ID))
+      || (result.MUX_WEBHOOK_SECRET !== undefined && result.MUX_WEBHOOK_SECRET.length < 16)) {
+      throw new Error("Mux configuration invalid");
     }
     parseStaffSessionKeyRing(required.sessionEncryptionKeys as string);
     const webOrigin = exactUrl(required.webOrigin as string, "origin");
@@ -119,6 +146,7 @@ export function parseApiConfig(
       port: result.PORT,
       memberDatabaseUrl: required.memberDatabaseUrl as string,
       staffDatabaseUrl: required.staffDatabaseUrl as string,
+      systemDatabaseUrl: required.systemDatabaseUrl as string,
       releaseSha: required.releaseSha as string,
       clerkSecretKey: required.clerkSecretKey as string,
       clerkPublishableKey: required.clerkPublishableKey as string,
@@ -130,6 +158,11 @@ export function parseApiConfig(
       webOrigin,
       workosIssuer,
       workosJwksUrl,
+      mux: muxEnabled ? Object.freeze({
+        kind: "configured" as const,
+        environmentId: result.MUX_ENVIRONMENT_ID as string,
+        webhookSecret: result.MUX_WEBHOOK_SECRET as string,
+      }) : Object.freeze({ kind: "disabled" as const }),
     });
   } catch {
     throw new Error("API_CONFIG_INVALID");

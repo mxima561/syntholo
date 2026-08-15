@@ -1,19 +1,77 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { assertDatabaseCapability, createDatabase } from "./client.js";
+import { assertDatabaseCapability, createDatabase, type Database } from "./client.js";
 import {
   createTestDatabaseHarness,
   type TestDatabaseHarness,
 } from "../../testing/src/database.js";
 
+function loginUrl(baseUrl: string, roleName: string, password: string): string {
+  const url = new URL(baseUrl);
+  url.username = roleName;
+  url.password = password;
+  url.search = "";
+  return url.toString();
+}
+
+async function roleSql(
+  database: Database,
+  template: string,
+  values: readonly string[],
+): Promise<string> {
+  const parameters = values.map((_, index) => `$${index + 1}::text`).join(",");
+  const result = await database.pool.query<{ statement: string }>(
+    `select format($fmt$${template}$fmt$,${parameters}) statement`,
+    [...values],
+  );
+  const statement = result.rows[0]?.statement;
+  if (statement === undefined) throw new Error("TEST_ROLE_SQL_FORMAT_FAILED");
+  return statement;
+}
+
 describe("authentication migration and ACLs", () => {
   let harness: TestDatabaseHarness;
+  let staff: Database;
+  const staffRole = `syntholo_auth_staff_${randomUUID().replaceAll("-", "")}`;
 
   beforeAll(async () => {
     harness = await createTestDatabaseHarness();
+    const baseUrl = process.env.TEST_DATABASE_URL;
+    if (baseUrl === undefined) throw new Error("TEST_DATABASE_URL_REQUIRED");
+    const password = randomUUID();
+    await harness.database.pool.query(await roleSql(
+      harness.database,
+      "create role %I login password %L nosuperuser nocreatedb nocreaterole noreplication nobypassrls",
+      [staffRole, password],
+    ));
+    await harness.database.pool.query(await roleSql(
+      harness.database,
+      "grant syntholo_staff_api to %I with inherit true,set false,admin false",
+      [staffRole],
+    ));
+    staff = createDatabase({
+      applicationName: "syntholo-auth-staff-login-test",
+      url: loginUrl(baseUrl, staffRole, password),
+    });
+    await assertDatabaseCapability(staff, "syntholo_staff_api");
   });
   beforeEach(async () => harness.reset());
-  afterAll(async () => harness?.close());
+  afterAll(async () => {
+    await staff?.close();
+    if (harness !== undefined) {
+      await harness.database.pool.query(await roleSql(
+        harness.database,
+        "revoke syntholo_staff_api from %I",
+        [staffRole],
+      ));
+      await harness.database.pool.query(await roleSql(
+        harness.database,
+        "drop role if exists %I",
+        [staffRole],
+      ));
+      await harness.close();
+    }
+  });
 
   it("creates bounded secret-bearing tables within the complete published journal", async () => {
     const tables = await harness.database.pool.query<{ table_name: string }>(
@@ -29,7 +87,7 @@ describe("authentication migration and ACLs", () => {
       "staff_login_attempts",
       "staff_sessions",
     ]);
-    expect(journal.rows[0]?.count).toBe("9");
+    expect(journal.rows[0]?.count).toBe("10");
   });
 
   it("rejects malformed cryptographic field lengths", async () => {
@@ -99,9 +157,8 @@ describe("authentication migration and ACLs", () => {
                1,now()+interval '5 minutes',now()+interval '1 hour',now())`,
       [sessionHash, staffIdentityId, randomBytes(64), randomBytes(12), randomBytes(16)],
     );
-    const client = await harness.database.pool.connect();
+    const client = await staff.pool.connect();
     try {
-      await client.query("set role syntholo_staff_api");
       await expect(
         client.query(
           "update staff_sessions set revoked_at=null, hard_expires_at=now()+interval '1 year' where session_hash=$1",
@@ -114,7 +171,6 @@ describe("authentication migration and ACLs", () => {
       );
       expect(revoked.rows).toEqual([{ workos_session_id: "session_acl" }]);
     } finally {
-      await client.query("reset role");
       client.release();
     }
     const row = await harness.database.pool.query<{ revoked: boolean }>(
@@ -152,9 +208,8 @@ describe("authentication migration and ACLs", () => {
       );
       return result.rows[0]?.staff_rotate_session;
     };
-    const client = await harness.database.pool.connect();
+    const client = await staff.pool.connect();
     try {
-      await client.query("set role syntholo_staff_api");
       const sameHash = await client.query<{ staff_rotate_session: boolean }>(
         `select staff_rotate_session(
           $1,$1,$2,'workos_rotate','session_old','org_rotate',array['admin'],array[]::text[],
@@ -170,7 +225,6 @@ describe("authentication migration and ACLs", () => {
       );
       expect(excessive.rows[0]?.staff_rotate_session).toBe(false);
     } finally {
-      await client.query("reset role");
       client.release();
     }
     expect(await rotate(oldHash, newHash, "now()+interval '8 hours'")).toBe(true);
@@ -215,9 +269,8 @@ describe("authentication migration and ACLs", () => {
     await insert(secondHash, "refresh_second");
     await insert(slowHash, "refresh_slow");
 
-    const client = await harness.database.pool.connect();
+    const client = await staff.pool.connect();
     try {
-      await client.query("set role syntholo_staff_api");
       expect((await client.query(
         "select session_hash from staff_acquire_refresh($1,0,'lease-a',10)",
         [firstHash],
@@ -274,7 +327,6 @@ describe("authentication migration and ACLs", () => {
         [slowHash, randomBytes(64), randomBytes(12), randomBytes(16)],
       )).rowCount).toBe(0);
     } finally {
-      await client.query("reset role");
       client.release();
     }
   });
@@ -308,6 +360,9 @@ describe("authentication migration and ACLs", () => {
       await expect(
         assertDatabaseCapability(database, "syntholo_staff_api"),
       ).resolves.toBeUndefined();
+      await expect(database.pool.query(
+        "select capability from public.syntholo_runtime_readiness()",
+      )).resolves.toMatchObject({ rows: [{ capability: "syntholo_staff_api" }] });
       await expect(
         assertDatabaseCapability(database, "syntholo_member_api"),
       ).rejects.toThrow("DATABASE_CAPABILITY_INVALID");
@@ -324,6 +379,9 @@ describe("authentication migration and ACLs", () => {
       await expect(
         assertDatabaseCapability(database, "syntholo_staff_api"),
       ).rejects.toThrow("DATABASE_CAPABILITY_INVALID");
+      await expect(database.pool.query(
+        "select capability from public.syntholo_runtime_readiness()",
+      )).resolves.toMatchObject({ rows: [] });
       await harness.database.pool.query(`revoke "${extra}" from "${role}"`);
 
       await harness.database.pool.query(`revoke syntholo_staff_api from "${role}"`);
@@ -372,52 +430,109 @@ describe("authentication migration and ACLs", () => {
     }
   });
 
-  it("independently attests the expected capability role as inert", async () => {
-    const base = process.env.TEST_DATABASE_URL;
-    if (!base) throw new Error("TEST_DATABASE_URL_REQUIRED");
-    const role = `syntholo_task6_cap_${process.pid}`;
+  it("independently proves the expected capability role is inert", async () => {
+    const state = await harness.database.pool.query<{
+      database_settings: number;
+      outbound_memberships: number;
+      rolbypassrls: boolean;
+      rolcanlogin: boolean;
+      rolconfig: string[] | null;
+      rolcreatedb: boolean;
+      rolcreaterole: boolean;
+      rolreplication: boolean;
+      rolsuper: boolean;
+    }>(
+      `select capability.rolcanlogin,capability.rolsuper,capability.rolcreatedb,
+              capability.rolcreaterole,capability.rolreplication,
+              capability.rolbypassrls,capability.rolconfig,
+              (select count(*)::int from pg_db_role_setting setting
+               where setting.setrole=capability.oid) database_settings,
+              (select count(*)::int from pg_auth_members membership
+               where membership.member=capability.oid) outbound_memberships
+       from pg_roles capability where capability.rolname='syntholo_staff_api'`,
+    );
+    expect(state.rows).toEqual([{
+      database_settings: 0,
+      outbound_memberships: 0,
+      rolbypassrls: false,
+      rolcanlogin: false,
+      rolconfig: null,
+      rolcreatedb: false,
+      rolcreaterole: false,
+      rolreplication: false,
+      rolsuper: false,
+    }]);
+    await expect(assertDatabaseCapability(staff, "syntholo_staff_api"))
+      .resolves.toBeUndefined();
+  });
+
+  it.skipIf(process.env.TEST_DATABASE_SUPERUSER_URL === undefined)(
+    "rejects every hostile capability-role shape through a privileged fixture",
+    async () => {
+    const privilegedUrl = process.env.TEST_DATABASE_SUPERUSER_URL;
+    if (privilegedUrl === undefined) throw new Error("TEST_DATABASE_SUPERUSER_URL_REQUIRED");
     const direct = `syntholo_task6_cap_direct_${process.pid}`;
     const transitive = `syntholo_task6_cap_transitive_${process.pid}`;
-    const password = `task6-cap-${process.pid}-password`;
-    if (![role, direct, transitive].every((name) => /^[a-z0-9_]+$/u.test(name))) {
+    if (![direct, transitive].every((name) => /^[a-z0-9_]+$/u.test(name))) {
       throw new Error("TEST_ROLE_INVALID");
     }
-    await harness.database.pool.query(
-      `create role "${role}" login password '${password}' nosuperuser nocreatedb nocreaterole noreplication nobypassrls`,
-    );
-    await harness.database.pool.query(`create role "${direct}" nologin`);
-    await harness.database.pool.query(`create role "${transitive}" nologin`);
-    await harness.database.pool.query(
-      `grant syntholo_staff_api to "${role}" with inherit true, set false, admin false`,
-    );
-    const url = new URL(base);
-    url.username = role;
-    url.password = password;
-    const database = createDatabase({
-      url: url.toString(),
-      applicationName: "syntholo-capability-attestation-test",
+    const authority = createDatabase({
+      url: privilegedUrl,
+      applicationName: "syntholo-capability-mutation-authority-test",
     });
+    let ownerRole: string | undefined;
     const expectInvalid = async () => {
       await expect(
-        assertDatabaseCapability(database, "syntholo_staff_api"),
+        assertDatabaseCapability(staff, "syntholo_staff_api"),
       ).rejects.toThrow("DATABASE_CAPABILITY_INVALID");
     };
     const mutate = async (unsafe: string, restore: string) => {
-      await harness.database.pool.query(unsafe);
+      await authority.pool.query(unsafe);
       try {
         await expectInvalid();
       } finally {
-        await harness.database.pool.query(restore);
+        await authority.pool.query(restore);
       }
       await expect(
-        assertDatabaseCapability(database, "syntholo_staff_api"),
+        assertDatabaseCapability(staff, "syntholo_staff_api"),
       ).resolves.toBeUndefined();
+    };
+    const rejectUnsafeLogin = async (unsafe: string, restore: string) => {
+      await authority.pool.query(unsafe);
+      try {
+        await expect(
+          assertDatabaseCapability(staff, "syntholo_staff_api"),
+        ).rejects.toThrow("DATABASE_CAPABILITY_INVALID");
+        await expect(staff.pool.query(
+          "select capability from public.syntholo_runtime_readiness()",
+        )).resolves.toMatchObject({ rows: [] });
+      } finally {
+        await authority.pool.query(restore);
+      }
+      await expect(assertDatabaseCapability(staff, "syntholo_staff_api"))
+        .resolves.toBeUndefined();
     };
 
     try {
-      await expect(
-        assertDatabaseCapability(database, "syntholo_staff_api"),
-      ).resolves.toBeUndefined();
+      await authority.pool.query(`create role "${direct}" nologin`);
+      await authority.pool.query(`create role "${transitive}" nologin`);
+      await rejectUnsafeLogin(
+        await roleSql(authority, "alter role %I superuser", [staffRole]),
+        await roleSql(authority, "alter role %I nosuperuser", [staffRole]),
+      );
+      const readinessOwner = await authority.pool.query<{ rolname: string }>(
+        `select owner.rolname from pg_proc procedure
+         join pg_roles owner on owner.oid=procedure.proowner
+         where procedure.oid='public.syntholo_runtime_readiness()'::regprocedure`,
+      );
+      ownerRole = readinessOwner.rows[0]?.rolname;
+      if (ownerRole === undefined) throw new Error("READINESS_OWNER_MISSING");
+      await rejectUnsafeLogin(
+        await roleSql(authority,
+          "grant %I to %I with inherit true,set false,admin false",
+          [ownerRole, staffRole]),
+        await roleSql(authority, "revoke %I from %I", [ownerRole, staffRole]),
+      );
       await mutate(
         "alter role syntholo_staff_api login",
         "alter role syntholo_staff_api nologin",
@@ -446,7 +561,7 @@ describe("authentication migration and ACLs", () => {
         "alter role syntholo_staff_api set statement_timeout = '5s'",
         "alter role syntholo_staff_api reset statement_timeout",
       );
-      const currentDatabase = await harness.database.pool.query<{ name: string }>(
+      const currentDatabase = await authority.pool.query<{ name: string }>(
         "select current_database() as name",
       );
       const databaseName = currentDatabase.rows[0]?.name;
@@ -461,7 +576,7 @@ describe("authentication migration and ACLs", () => {
         `grant "${direct}" to syntholo_staff_api with inherit true, set false, admin false`,
         `revoke "${direct}" from syntholo_staff_api`,
       );
-      await harness.database.pool.query(
+      await authority.pool.query(
         `grant "${transitive}" to "${direct}" with inherit true, set false, admin false`,
       );
       try {
@@ -470,35 +585,45 @@ describe("authentication migration and ACLs", () => {
           `revoke "${direct}" from syntholo_staff_api`,
         );
       } finally {
-        await harness.database.pool.query(`revoke "${transitive}" from "${direct}"`);
+        await authority.pool.query(`revoke "${transitive}" from "${direct}"`);
       }
     } finally {
-      await database.close();
-      await harness.database.pool.query(
+      await authority.pool.query(await roleSql(
+        authority,
+        "alter role %I nosuperuser",
+        [staffRole],
+      )).catch(() => undefined);
+      if (ownerRole !== undefined) {
+        await authority.pool.query(await roleSql(
+          authority,
+          "revoke %I from %I",
+          [ownerRole, staffRole],
+        )).catch(() => undefined);
+      }
+      await authority.pool.query(
         "alter role syntholo_staff_api nologin nosuperuser nocreatedb nocreaterole noreplication nobypassrls",
-      );
-      await harness.database.pool.query(
+      ).catch(() => undefined);
+      await authority.pool.query(
         "alter role syntholo_staff_api reset statement_timeout",
-      );
-      const currentDatabase = await harness.database.pool.query<{ name: string }>(
+      ).catch(() => undefined);
+      const currentDatabase = await authority.pool.query<{ name: string }>(
         "select current_database() as name",
       );
       const databaseName = currentDatabase.rows[0]?.name;
       if (databaseName && /^[a-zA-Z0-9_]+$/u.test(databaseName)) {
-        await harness.database.pool.query(
+        await authority.pool.query(
           `alter role syntholo_staff_api in database "${databaseName}" reset statement_timeout`,
-        );
+        ).catch(() => undefined);
       }
-      await harness.database.pool.query(
+      await authority.pool.query(
         `revoke "${direct}" from syntholo_staff_api`,
-      );
-      await harness.database.pool.query(
+      ).catch(() => undefined);
+      await authority.pool.query(
         `revoke "${transitive}" from "${direct}"`,
-      );
-      await harness.database.pool.query(`revoke syntholo_staff_api from "${role}"`);
-      await harness.database.pool.query(`drop role "${role}"`);
-      await harness.database.pool.query(`drop role "${direct}"`);
-      await harness.database.pool.query(`drop role "${transitive}"`);
+      ).catch(() => undefined);
+      await authority.pool.query(`drop role if exists "${direct}"`).catch(() => undefined);
+      await authority.pool.query(`drop role if exists "${transitive}"`).catch(() => undefined);
+      await authority.close();
     }
   });
 

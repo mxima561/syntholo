@@ -69,6 +69,8 @@ const foundationTables = [
   "commerce_fulfillment_receipts",
   "commerce_reconciliations",
   "content_archives",
+  "content_media_assets",
+  "content_media_tracks",
   "content_previews",
   "content_readiness_approvals",
   "content_readiness_evaluations",
@@ -325,6 +327,7 @@ describe.sequential("capability role provisioning migration", () => {
   } as const;
   let baseUrl: string;
   let maintenance: Pool;
+  let nestedDatabaseAuthorityAvailable = false;
   const preservedCapabilityRoles = new Map<string, string>();
 
   beforeAll(async () => {
@@ -338,6 +341,18 @@ describe.sequential("capability role provisioning migration", () => {
       max: 1,
       options: "-c row_security=on -c app.account_id=",
     });
+    const createActor = await formatSql(
+      maintenance,
+      "create role %I login password %L createrole nosuperuser nocreatedb noreplication nobypassrls",
+      [actorName, actorPassword],
+    );
+    await maintenance.query(createActor);
+    const authority = await maintenance.query<{ can_set_role: boolean }>(
+      "select pg_has_role(session_user,$1,'SET') as can_set_role",
+      [actorName],
+    );
+    if (authority.rows[0]?.can_set_role !== true) return;
+    nestedDatabaseAuthorityAvailable = true;
     for (const capability of capabilityRoles) {
       const exists = await maintenance.query<{ exists: boolean }>(
         "select exists(select 1 from pg_roles where rolname = $1) as exists",
@@ -354,12 +369,6 @@ describe.sequential("capability role provisioning migration", () => {
         preservedCapabilityRoles.set(capability, preserved);
       }
     }
-    const createActor = await formatSql(
-      maintenance,
-      "create role %I login password %L createrole nosuperuser nocreatedb noreplication nobypassrls",
-      [actorName, actorPassword],
-    );
-    await maintenance.query(createActor);
     for (const name of Object.values(databaseNames)) {
       await dropDatabase(maintenance, name);
       const createDatabaseStatement = await formatSql(
@@ -433,7 +442,10 @@ describe.sequential("capability role provisioning migration", () => {
     await maintenance.end();
   });
 
-  it("applies fresh, reuses safe cluster roles in a second owned database, and reruns as a non-superuser CREATEROLE actor", async () => {
+  it("applies fresh, reuses safe cluster roles in a second owned database, and reruns as a non-superuser CREATEROLE actor", async ({ skip }) => {
+    if (!nestedDatabaseAuthorityAvailable) {
+      skip("maintenance login cannot SET ROLE to a nested database owner");
+    }
     const actorState = await maintenance.query<{
       rolbypassrls: boolean;
       rolcanlogin: boolean;
@@ -489,7 +501,7 @@ describe.sequential("capability role provisioning migration", () => {
           "select count(*)::text as count from drizzle.__drizzle_migrations",
         )
       ));
-      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["8", "8"]);
+      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["10", "10"]);
       const passwords = await maintenance.query<{
         rolname: string;
         rolpasswordisnull: boolean;
@@ -509,7 +521,10 @@ describe.sequential("capability role provisioning migration", () => {
     }
   }, 30_000);
 
-  it("fails closed on an existing LOGIN/password capability collision", async () => {
+  it("fails closed on an existing LOGIN/password capability collision", async ({ skip }) => {
+    if (!nestedDatabaseAuthorityAvailable) {
+      skip("maintenance login cannot SET ROLE to a nested database owner");
+    }
     const makeUnsafe = await formatSql(
       maintenance,
       "alter role %I login password %L",
@@ -538,7 +553,10 @@ describe.sequential("capability role provisioning migration", () => {
     }
   }, 20_000);
 
-  it("fails closed on outbound privileged membership", async () => {
+  it("fails closed on outbound privileged membership", async ({ skip }) => {
+    if (!nestedDatabaseAuthorityAvailable) {
+      skip("maintenance login cannot SET ROLE to a nested database owner");
+    }
     const createPrivileged = await formatSql(
       maintenance,
       "create role %I nologin bypassrls",
@@ -579,7 +597,10 @@ describe.sequential("capability role provisioning migration", () => {
     }
   }, 20_000);
 
-  it("fails closed on a database-specific capability role setting", async () => {
+  it("fails closed on a database-specific capability role setting", async ({ skip }) => {
+    if (!nestedDatabaseAuthorityAvailable) {
+      skip("maintenance login cannot SET ROLE to a nested database owner");
+    }
     const setConfig = await formatSql(
       maintenance,
       "alter role %I in database %I set application_name = 'unsafe-capability-default'",
@@ -1426,6 +1447,8 @@ describe("PostgreSQL account role boundary", () => {
         "accounts",
         "audit_events",
         "content_archives",
+        "content_media_assets",
+        "content_media_tracks",
         "content_previews",
         "content_readiness_approvals",
         "content_readiness_evaluations",
@@ -1749,6 +1772,7 @@ describe("PostgreSQL account role boundary", () => {
     const temporaryMigrations = await mkdtemp(join(tmpdir(), "syntholo-0003-"));
     let upgradeDb: Database | undefined;
     let freshDb: Database | undefined;
+    let concurrentFreshDb: Database | undefined;
     let incompatibleDb: Database | undefined;
 
     try {
@@ -1812,12 +1836,12 @@ describe("PostgreSQL account role boundary", () => {
       const afterUpgrade = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterUpgrade.rows[0]?.count).toBe("9");
+      expect(afterUpgrade.rows[0]?.count).toBe("10");
       await migrateDatabase(upgradeDb);
       const afterRerun = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterRerun.rows[0]?.count).toBe("9");
+      expect(afterRerun.rows[0]?.count).toBe("10");
       const normalized = await upgradeDb.pool.query(
         `select
           (select bool_and(actor_id is not null and correlation_id is not null)
@@ -1861,15 +1885,23 @@ describe("PostgreSQL account role boundary", () => {
         applicationName: "syntholo-rls-fresh-test",
         url: databaseUrl(baseUrl, freshName),
       });
-      await migrateDatabase(freshDb);
+      concurrentFreshDb = createDatabase({
+        applicationName: "syntholo-rls-concurrent-fresh-test",
+        url: databaseUrl(baseUrl, freshName),
+      });
+      await Promise.all([
+        migrateDatabase(freshDb),
+        migrateDatabase(concurrentFreshDb),
+      ]);
       const freshJournal = await freshDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(freshJournal.rows[0]?.count).toBe("9");
+      expect(freshJournal.rows[0]?.count).toBe("10");
     } finally {
       await Promise.allSettled([
         upgradeDb?.close(),
         freshDb?.close(),
+        concurrentFreshDb?.close(),
         incompatibleDb?.close(),
       ]);
       try {

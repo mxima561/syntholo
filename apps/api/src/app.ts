@@ -9,6 +9,7 @@ import {
   healthRoutes,
   type ReadinessDependency,
 } from "./routes/health.js";
+import { muxWebhookRoutes, type MuxWebhookRouteHandler } from "./routes/webhooks/mux.js";
 
 export type ApiDependencies = Readonly<{
   releaseSha: string;
@@ -17,6 +18,10 @@ export type ApiDependencies = Readonly<{
     dependencies: readonly ReadinessDependency[];
   }>;
   auth: AuthComposition;
+  mux?: Readonly<{ kind: "disabled" }> | Readonly<{
+    kind: "enabled";
+    handler: MuxWebhookRouteHandler;
+  }>;
   close?: () => Promise<void>;
 }>;
 
@@ -49,6 +54,13 @@ const ApiDependenciesSchema = z
         })
         .strict(),
     ]),
+    mux: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("disabled") }).strict(),
+      z.object({
+        kind: z.literal("enabled"),
+        handler: z.custom<MuxWebhookRouteHandler>((value) => typeof value === "function"),
+      }).strict(),
+    ]).optional().default({ kind: "disabled" }),
     close: z.custom<() => Promise<void>>((value) => typeof value === "function").optional(),
   })
   .strict();
@@ -80,6 +92,12 @@ export async function buildApp(
     releaseSha: parsedDependencies.data.releaseSha,
     dependencies: parsedDependencies.data.health.dependencies,
   });
+  if (parsedDependencies.data.mux.kind === "enabled") {
+    await app.register(muxWebhookRoutes, {
+      prefix: "/v1/webhooks/mux",
+      handler: parsedDependencies.data.mux.handler,
+    });
+  }
   if (parsedDependencies.data.auth.kind === "enabled") {
     await app.register(authRoutes, {
       prefix: "/v1",

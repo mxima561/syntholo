@@ -303,6 +303,49 @@ function deferred(): Readonly<{ promise: Promise<void>; resolve(): void }> {
   return Object.freeze({ promise, resolve });
 }
 
+async function waitForSignal(
+  promise: Promise<void>,
+  label: string,
+  timeoutMs = 1_000,
+): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`SIGNAL_TIMEOUT:${label}`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
+function memberReadPollingDatabase(
+  database: Database,
+  polling: Readonly<{ resolve(): void }>,
+): Database {
+  return {
+    pool: {
+      connect: async () => {
+        const client = await database.pool.connect();
+        return new Proxy(client, {
+          get(target, property, receiver) {
+            if (property === "query") {
+              return (text: string, ...parameters: unknown[]) => {
+                if (text.includes("pg_try_advisory_lock_shared")) polling.resolve();
+                return Reflect.apply(target.query, target, [text, ...parameters]);
+              };
+            }
+            const value = Reflect.get(target, property, receiver) as unknown;
+            return typeof value === "function" ? value.bind(target) : value;
+          },
+        });
+      },
+    },
+  } as unknown as Database;
+}
+
 describe.sequential("entitlement authority database", () => {
   let harness: TestDatabaseHarness;
   let member: RuntimeLogin;
@@ -413,8 +456,8 @@ describe.sequential("entitlement authority database", () => {
       `select hash,created_at::text created_at
        from drizzle.__drizzle_migrations order by id`,
     );
-    expect(journal.rowCount).toBe(6);
-    expect(journal.rows.slice(-3, -1)).toEqual([
+    expect(journal.rowCount).toBe(10);
+    expect(journal.rows.slice(3, 5)).toEqual([
       {
         created_at: "1786640400000",
         hash: "717c39300253771cbd09070c2b75297c0bfd788290c522877bbbf7293c4a7ea1",
@@ -707,7 +750,7 @@ describe.sequential("entitlement authority database", () => {
         from accounts where id='30000000-0000-4000-8000-000000000003'
       `);
       expect(upgraded.rows).toEqual([{
-        journal_count: 9,
+        journal_count: 10,
         owner_established_at: "2026-01-02T03:04:05.123Z",
       }]);
       const afterUpgrade = await upgrade.pool.query<{
@@ -787,41 +830,55 @@ describe.sequential("entitlement authority database", () => {
     )).rejects.toMatchObject({ code: "42501" });
   });
 
-  it("refuses to brand a system login or capability with ownership or extra ACL", async () => {
+  it.skipIf(process.env.TEST_DATABASE_SUPERUSER_URL === undefined)(
+    "refuses system login or capability object ownership through a privileged fixture",
+    async () => {
+    const privilegedUrl = process.env.TEST_DATABASE_SUPERUSER_URL;
+    if (privilegedUrl === undefined) throw new Error("TEST_DATABASE_SUPERUSER_URL_REQUIRED");
+    const authority = createDatabase({
+      applicationName: "syntholo-task8-system-ownership-authority",
+      url: privilegedUrl,
+    });
     const assertBrandRejected = async (): Promise<void> => {
       await expect(attestSystemDatabase(system.database))
         .rejects.toThrow("DATABASE_CAPABILITY_INVALID");
     };
-    await harness.database.pool.query(
-      "create table syntholo_task8_system_capability_owned(id integer)",
-    );
     try {
-      await harness.database.pool.query(
+      await authority.pool.query(
+        "create table syntholo_task8_system_capability_owned(id integer)",
+      );
+      await authority.pool.query(
         "alter table syntholo_task8_system_capability_owned owner to syntholo_system_api",
       );
       await assertBrandRejected();
-    } finally {
-      await harness.database.pool.query(
-        "drop table syntholo_task8_system_capability_owned",
-      );
-    }
+      await authority.pool.query("drop table syntholo_task8_system_capability_owned");
 
-    await harness.database.pool.query(
-      "create table syntholo_task8_system_login_owned(id integer)",
-    );
-    try {
-      await harness.database.pool.query(await formatSql(
-        harness.database.pool,
+      await authority.pool.query(
+        "create table syntholo_task8_system_login_owned(id integer)",
+      );
+      await authority.pool.query(await formatSql(
+        authority.pool,
         "alter table syntholo_task8_system_login_owned owner to %I",
         [system.roleName],
       ));
       await assertBrandRejected();
+      await authority.pool.query("drop table syntholo_task8_system_login_owned");
     } finally {
-      await harness.database.pool.query(
-        "drop table syntholo_task8_system_login_owned",
-      );
+      await authority.pool.query(
+        "drop table if exists syntholo_task8_system_capability_owned",
+      ).catch(() => undefined);
+      await authority.pool.query(
+        "drop table if exists syntholo_task8_system_login_owned",
+      ).catch(() => undefined);
+      await authority.close();
     }
+  });
 
+  it("refuses to brand a system login or capability with extra ACL", async () => {
+    const assertBrandRejected = async (): Promise<void> => {
+      await expect(attestSystemDatabase(system.database))
+        .rejects.toThrow("DATABASE_CAPABILITY_INVALID");
+    };
     await harness.database.pool.query(
       "grant select on staff_sessions to syntholo_system_api",
     );
@@ -3166,7 +3223,11 @@ describe.sequential("entitlement authority database", () => {
         email: "suspension-race@example.test",
         tokenHash: Buffer.alloc(32, 113),
       }));
-    const readPending = new MemberEntitlementReadRepository(member.database, {
+    const readPolling = deferred();
+    const readPending = new MemberEntitlementReadRepository(memberReadPollingDatabase(
+      member.database,
+      readPolling,
+    ), {
       now: () => now,
     }).getEffectiveAccess(trustedMemberActor({
       kind: "member",
@@ -3180,12 +3241,25 @@ describe.sequential("entitlement authority database", () => {
       (value) => ({ status: "fulfilled" as const, value }),
       (reason: unknown) => ({ status: "rejected" as const, reason }),
     );
-    await waitForAdvisoryKeyWaiters(
-      harness.database,
-      `syntholo-entitlement-account:${accountA}`,
-      2,
-    );
-    releaseSuspend.resolve();
+    let barrierFailed = false;
+    let barrierError: unknown;
+    try {
+      await waitForAdvisoryKeyWaiters(
+        harness.database,
+        `syntholo-entitlement-account:${accountA}`,
+        1,
+      );
+      await waitForSignal(readPolling.promise, "member-read-lock-polling");
+    } catch (error) {
+      barrierFailed = true;
+      barrierError = error;
+    } finally {
+      releaseSuspend.resolve();
+    }
+    if (barrierFailed) {
+      await Promise.allSettled([suspendPending, reservePending, readPending]);
+      throw barrierError;
+    }
     expect((await suspendPending).status).toBe("applied");
     expect(await reservePending).toMatchObject({
       status: "denied",
@@ -3240,12 +3314,22 @@ describe.sequential("entitlement authority database", () => {
         targetMembershipId: teammate.membershipId,
         reason: "Attempted transfer while staff revoked the target",
       }));
-    await waitForAdvisoryKeyWaiters(
-      harness.database,
-      `syntholo-entitlement-account:${accountA}`,
-      1,
-    );
-    releaseRevoke.resolve();
+    let revokeBarrierError: unknown;
+    try {
+      await waitForAdvisoryKeyWaiters(
+        harness.database,
+        `syntholo-entitlement-account:${accountA}`,
+        1,
+      );
+    } catch (error) {
+      revokeBarrierError = error;
+    } finally {
+      releaseRevoke.resolve();
+    }
+    if (revokeBarrierError !== undefined) {
+      await Promise.allSettled([revokePending, transferPending]);
+      throw revokeBarrierError;
+    }
     expect((await revokePending).status).toBe("applied");
     expect(await transferPending).toMatchObject({
       status: "denied",
@@ -3388,18 +3472,31 @@ describe.sequential("entitlement authority database", () => {
       return result;
     });
     await revokeReady.promise;
-    const readAfter = new MemberEntitlementReadRepository(member.database, {
+    const revokeFirstReadPolling = deferred();
+    const readAfter = new MemberEntitlementReadRepository(memberReadPollingDatabase(
+      member.database,
+      revokeFirstReadPolling,
+    ), {
       now: () => now,
     }).getEffectiveAccess(revokeFirstActor).then(
       (value) => ({ status: "fulfilled" as const, value }),
       (reason: unknown) => ({ status: "rejected" as const, reason }),
     );
-    await waitForAdvisoryKeyWaiters(
-      harness.database,
-      `syntholo-entitlement-account:${accountA}`,
-      1,
-    );
-    releaseRevoke.resolve();
+    let revokeFirstBarrierError: unknown;
+    try {
+      await waitForSignal(
+        revokeFirstReadPolling.promise,
+        "revoke-first-member-read-lock-polling",
+      );
+    } catch (error) {
+      revokeFirstBarrierError = error;
+    } finally {
+      releaseRevoke.resolve();
+    }
+    if (revokeFirstBarrierError !== undefined) {
+      await Promise.allSettled([revokeFirst, readAfter]);
+      throw revokeFirstBarrierError;
+    }
     expect((await revokeFirst).status).toBe("applied");
     const after = await readAfter;
     expect(after.status).toBe("rejected");
@@ -3894,7 +3991,11 @@ describe.sequential("entitlement authority database", () => {
       return outcome;
     });
     await writerReady.promise;
-    const readPending = new MemberEntitlementReadRepository(member.database, {
+    const writerFirstReadPolling = deferred();
+    const readPending = new MemberEntitlementReadRepository(memberReadPollingDatabase(
+      member.database,
+      writerFirstReadPolling,
+    ), {
       now: () => now,
     }).getEffectiveAccess(trustedMemberActor({
       kind: "member",
@@ -3905,12 +4006,21 @@ describe.sequential("entitlement authority database", () => {
       role: "owner",
       authenticatedAt: now,
     }));
-    await waitForAdvisoryKeyWaiters(
-      harness.database,
-      `syntholo-entitlement-account:${accountA}`,
-      1,
-    );
-    releaseWriter.resolve();
+    let writerFirstBarrierError: unknown;
+    try {
+      await waitForSignal(
+        writerFirstReadPolling.promise,
+        "writer-first-member-read-lock-polling",
+      );
+    } catch (error) {
+      writerFirstBarrierError = error;
+    } finally {
+      releaseWriter.resolve();
+    }
+    if (writerFirstBarrierError !== undefined) {
+      await Promise.allSettled([writerPending, readPending]);
+      throw writerFirstBarrierError;
+    }
     expect((await writerPending).status).toBe("applied");
     const access = await readPending;
     expect(access.capabilities.academy_course).toBe(false);

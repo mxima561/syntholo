@@ -32,6 +32,7 @@ function productionApiEnvironment(
     NODE_ENV: "production",
     MEMBER_DATABASE_URL: "postgres://member:password@example.test/db",
     STAFF_DATABASE_URL: "postgres://staff:password@example.test/db",
+    SYSTEM_DATABASE_URL: "postgres://system:password@example.test/db",
     RELEASE_SHA: releaseSha,
     WEB_ORIGIN: "https://app.syntholo.test",
     CLERK_SECRET_KEY: "sk_clerk_test",
@@ -1044,6 +1045,7 @@ describe("API configuration and startup", () => {
         PORT: "4400",
         MEMBER_DATABASE_URL: "postgres://member:password@example.test/db",
         STAFF_DATABASE_URL: "postgres://staff:password@example.test/db",
+        SYSTEM_DATABASE_URL: "postgres://system:password@example.test/db",
         RELEASE_SHA: `  ${releaseSha}  `,
         WEB_ORIGIN: "https://app.syntholo.test",
         CLERK_SECRET_KEY: "sk_clerk_test",
@@ -1062,6 +1064,7 @@ describe("API configuration and startup", () => {
       port: 4_400,
       memberDatabaseUrl: "postgres://member:password@example.test/db",
       staffDatabaseUrl: "postgres://staff:password@example.test/db",
+      systemDatabaseUrl: "postgres://system:password@example.test/db",
       releaseSha,
       webOrigin: "https://app.syntholo.test",
       clerkSecretKey: "sk_clerk_test",
@@ -1073,6 +1076,31 @@ describe("API configuration and startup", () => {
       workosIssuer: "https://api.workos.test",
       workosJwksUrl: "https://api.workos.test/sso/jwks/client_staff",
       sessionEncryptionKeys: `1:${encryptionKey}`,
+      mux: { kind: "disabled" },
+    });
+  });
+
+  it("keeps Mux uncomposed by default and rejects every partial provider configuration", () => {
+    const base = productionApiEnvironment();
+    expect(parseApiConfig(base, releaseSha).mux).toEqual({ kind: "disabled" });
+    for (const patch of [
+      { MUX_CONTENT_ENABLED: "true" },
+      { MUX_CONTENT_ENABLED: "true" },
+      { MUX_CONTENT_ENABLED: "false", MUX_ENVIRONMENT_ID: "env_staging" },
+      { MUX_WEBHOOK_SECRET: "mux-webhook-secret-value" },
+    ]) expect(() => parseApiConfig({ ...base, ...patch }, releaseSha))
+      .toThrow("API_CONFIG_INVALID");
+
+    expect(parseApiConfig({
+      ...base,
+      MUX_CONTENT_ENABLED: "true",
+      SYSTEM_DATABASE_URL: "postgres://system:password@example.test/db",
+      MUX_ENVIRONMENT_ID: "env_staging",
+      MUX_WEBHOOK_SECRET: "mux-webhook-secret-value",
+    }, releaseSha).mux).toEqual({
+      kind: "configured",
+      environmentId: "env_staging",
+      webhookSecret: "mux-webhook-secret-value",
     });
   });
 

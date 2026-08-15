@@ -1,8 +1,9 @@
 import { fileURLToPath } from "node:url";
 import { existsSync, readFileSync } from "node:fs";
 import { readMigrationFiles } from "drizzle-orm/migrator";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
 import type { Database } from "./client.js";
+
+const MIGRATION_ADVISORY_LOCK = [1937339236, 1] as const;
 
 export const PUBLISHED_MIGRATIONS = Object.freeze([
   { idx: 0, when: 1786618800000, tag: "0001_foundation", hash: "bf3b66561107047f8c317d81bb561e9a29dc6207a14469a3ce588ec1f8ddc60c" },
@@ -14,6 +15,7 @@ export const PUBLISHED_MIGRATIONS = Object.freeze([
   { idx: 6, when: 1786662000000, tag: "0007_runtime_contract", hash: "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002" },
   { idx: 7, when: 1786669200000, tag: "0008_account_name", hash: "505693d0977b3cf51b156ac792605be7bf6e4a5c89c5ead8d4c728d1c298f513" },
   { idx: 8, when: 1786676400000, tag: "0009_content", hash: "2cf79d036accf426172ab2249e690e34c17a8f145c8e2afa72bb8e3994425922" },
+  { idx: 9, when: 1786683600000, tag: "0010_content_assets", hash: "65e621c5754cb490c50dff009854433815dae8ee3fd3a6410de9dea6080fcb43" },
 ] as const);
 
 type Journal = Readonly<{
@@ -66,10 +68,72 @@ export function resolveMigrationsFolder(moduleUrl: string): string {
   return resolved;
 }
 
-export function migrateDatabase(database: Database): Promise<void> {
+export async function migrateDatabase(database: Database): Promise<void> {
   const migrationsFolder = resolveMigrationsFolder(import.meta.url);
   assertPublishedMigrationInventory(migrationsFolder);
-  return migrate(database, {
-    migrationsFolder,
-  });
+  const migrations = readMigrationFiles({ migrationsFolder });
+  const client = await database.pool.connect();
+  let transactionOpen = false;
+  try {
+    await client.query("select pg_advisory_lock($1::integer,$2::integer)", [
+      ...MIGRATION_ADVISORY_LOCK,
+    ]);
+    await client.query("begin");
+    transactionOpen = true;
+    await client.query("create schema if not exists drizzle");
+    await client.query(`create table if not exists drizzle.__drizzle_migrations (
+      id serial primary key,
+      hash text not null,
+      created_at bigint
+    )`);
+    await client.query("commit");
+    transactionOpen = false;
+
+    const journal = await client.query<{ created_at: string; hash: string }>(
+      "select hash,created_at::text created_at from drizzle.__drizzle_migrations order by created_at,id",
+    );
+    if (
+      journal.rows.length > PUBLISHED_MIGRATIONS.length
+      || journal.rows.some((row, index) => {
+        const expected = PUBLISHED_MIGRATIONS[index];
+        return expected === undefined
+          || row.hash !== expected.hash
+          || row.created_at !== String(expected.when);
+      })
+    ) throw new Error("PUBLISHED_MIGRATION_STATE_INVALID");
+
+    for (let index = journal.rows.length; index < migrations.length; index += 1) {
+      const migration = migrations[index];
+      const published = PUBLISHED_MIGRATIONS[index];
+      if (migration === undefined || published === undefined) {
+        throw new Error("PUBLISHED_MIGRATION_INVENTORY_INVALID");
+      }
+      await client.query("begin");
+      transactionOpen = true;
+      try {
+        if (published.tag === "0008_account_name") {
+          await client.query("set constraints all immediate");
+        }
+        for (const statement of migration.sql) await client.query(statement);
+        await client.query(
+          "insert into drizzle.__drizzle_migrations(hash,created_at) values($1,$2)",
+          [migration.hash, migration.folderMillis],
+        );
+        await client.query("commit");
+        transactionOpen = false;
+      } catch (error) {
+        await client.query("rollback");
+        transactionOpen = false;
+        throw error;
+      }
+    }
+  } catch (error) {
+    if (transactionOpen) await client.query("rollback").catch(() => undefined);
+    throw error;
+  } finally {
+    await client.query("select pg_advisory_unlock($1::integer,$2::integer)", [
+      ...MIGRATION_ADVISORY_LOCK,
+    ]).catch(() => undefined);
+    client.release();
+  }
 }

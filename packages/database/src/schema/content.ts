@@ -1,6 +1,7 @@
 import type { ContentPublicationIssue, ReleaseRule } from "@syntholo/contracts/content";
 import { sql, type SQLWrapper } from "drizzle-orm";
 import {
+  bigint,
   boolean,
   check,
   foreignKey,
@@ -119,6 +120,7 @@ export const lessonDrafts = pgTable("lesson_drafts", {
 }, (table) => [
   foreignKey({ columns: [table.lessonId, table.courseId], foreignColumns: [lessons.id, lessons.courseId], name: "lesson_drafts_lesson_course_fk" }).onDelete("restrict").onUpdate("restrict"),
   foreignKey({ columns: [table.stageId, table.courseId], foreignColumns: [stages.id, stages.courseId], name: "lesson_drafts_stage_course_fk" }).onDelete("restrict").onUpdate("restrict"),
+  foreignKey({ columns: [table.mediaAssetId], foreignColumns: [contentMediaAssets.id], name: "lesson_drafts_media_asset_fk" }).onDelete("restrict").onUpdate("restrict"),
   unique("lesson_drafts_course_stage_order_unique").on(table.courseId, table.stageId, table.order),
   check("lesson_drafts_revision_check", sql`${table.revision} >= 1`),
   check("lesson_drafts_order_check", sql`${table.stageOrder} >= 1 and ${table.order} >= 1`),
@@ -187,10 +189,69 @@ export const lessonVersions = pgTable("lesson_versions", {
   foreignKey({ columns: [table.lessonId, table.courseId], foreignColumns: [lessons.id, lessons.courseId], name: "lesson_versions_lesson_course_fk" }).onDelete("restrict").onUpdate("restrict"),
   foreignKey({ columns: [table.accessibilityDecisionId, table.lessonId, table.accessibilityDecisionSequence], foreignColumns: [lessonAccessibilityDecisions.id, lessonAccessibilityDecisions.lessonId, lessonAccessibilityDecisions.decisionSequence], name: "lesson_versions_accessibility_decision_fk" }).onDelete("restrict").onUpdate("restrict"),
   foreignKey({ columns: [table.disclosureDecisionId, table.lessonId, table.disclosureDecisionSequence], foreignColumns: [lessonDisclosureDecisions.id, lessonDisclosureDecisions.lessonId, lessonDisclosureDecisions.decisionSequence], name: "lesson_versions_disclosure_decision_fk" }).onDelete("restrict").onUpdate("restrict"),
+  foreignKey({ columns: [table.mediaAssetId], foreignColumns: [contentMediaAssets.id], name: "lesson_versions_media_asset_fk" }).onDelete("restrict").onUpdate("restrict"),
   unique("lesson_versions_lesson_version_unique").on(table.lessonId, table.version),
   unique("lesson_versions_id_lesson_course_unique").on(table.id, table.lessonId, table.courseId),
   check("lesson_versions_content_hash_check", sql`${table.contentHash} ~ '^[0-9a-f]{64}$'`),
   check("lesson_versions_release_rule_check", releaseRuleCheck(table.releaseRule)),
+]);
+
+export const contentMediaAssets = pgTable("content_media_assets", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  provider: text("provider").notNull().default("mux"),
+  environmentId: text("environment_id").notNull(),
+  providerAssetId: text("provider_asset_id").notNull(),
+  signedPolicyPlaybackId: text("signed_policy_playback_id"),
+  state: text("state").notNull().default("waiting"),
+  durationMilliseconds: bigint("duration_milliseconds", { mode: "number" }),
+  aspectRatio: text("aspect_ratio"),
+  safeErrorCode: text("safe_error_code"),
+  readinessRevision: integer("readiness_revision").notNull().default(0),
+  lastProviderEventAt: time("last_provider_event_at"),
+  lastProviderEventId: text("last_provider_event_id"),
+  lastReconciledAt: time("last_reconciled_at"),
+  importedAt: time("imported_at"),
+  importedByStaffId: uuid("imported_by_staff_id").references(() => staffIdentities.id, { onDelete: "restrict", onUpdate: "restrict" }),
+  createdAt: time("created_at").notNull().defaultNow(),
+  updatedAt: time("updated_at").notNull().defaultNow(),
+}, (table) => [
+  unique("content_media_assets_environment_asset_unique").on(table.environmentId, table.providerAssetId),
+  unique("content_media_assets_environment_playback_unique").on(table.environmentId, table.signedPolicyPlaybackId),
+  check("content_media_assets_provider_check", sql`${table.provider} = 'mux'`),
+  check("content_media_assets_identity_check", sql`octet_length(${table.environmentId}) between 1 and 255 and ${table.environmentId} ~ '^[A-Za-z0-9][A-Za-z0-9._:-]*$' and octet_length(${table.providerAssetId}) between 1 and 255 and ${table.providerAssetId} ~ '^[A-Za-z0-9][A-Za-z0-9._:-]*$'`),
+  check("content_media_assets_signed_playback_check", sql`${table.signedPolicyPlaybackId} is null or (octet_length(${table.signedPolicyPlaybackId}) between 1 and 255 and ${table.signedPolicyPlaybackId} ~ '^[A-Za-z0-9][A-Za-z0-9._:-]*$')`),
+  check("content_media_assets_state_check", sql`${table.state} in ('waiting','preparing','ready','errored','deleted')`),
+  check("content_media_assets_duration_check", sql`${table.durationMilliseconds} is null or ${table.durationMilliseconds} between 1 and 86400000`),
+  check("content_media_assets_aspect_ratio_check", sql`${table.aspectRatio} is null or ${table.aspectRatio} ~ '^[1-9][0-9]{0,4}:[1-9][0-9]{0,4}$'`),
+  check("content_media_assets_revision_check", sql`${table.readinessRevision} >= 0`),
+]);
+
+export const contentMediaTracks = pgTable("content_media_tracks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  mediaAssetId: uuidReference("media_asset_id"),
+  providerTrackId: text("provider_track_id").notNull(),
+  kind: text("kind").notNull().default("captions"),
+  language: text("language").notNull(),
+  label: text("label").notNull(),
+  closedCaptions: boolean("closed_captions").notNull(),
+  source: text("source").notNull(),
+  state: text("state").notNull().default("preparing"),
+  safeErrorCode: text("safe_error_code"),
+  readinessRevision: integer("readiness_revision").notNull().default(0),
+  lastProviderEventAt: time("last_provider_event_at"),
+  lastProviderEventId: text("last_provider_event_id"),
+  createdAt: time("created_at").notNull().defaultNow(),
+  updatedAt: time("updated_at").notNull().defaultNow(),
+}, (table) => [
+  foreignKey({ columns: [table.mediaAssetId], foreignColumns: [contentMediaAssets.id], name: "content_media_tracks_asset_fk" }).onDelete("restrict").onUpdate("restrict"),
+  unique("content_media_tracks_asset_provider_track_unique").on(table.mediaAssetId, table.providerTrackId),
+  check("content_media_tracks_identity_check", sql`octet_length(${table.providerTrackId}) between 1 and 255 and ${table.providerTrackId} ~ '^[A-Za-z0-9][A-Za-z0-9._:-]*$'`),
+  check("content_media_tracks_kind_check", sql`${table.kind} = 'captions'`),
+  check("content_media_tracks_language_check", sql`${table.language} ~ '^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$'`),
+  check("content_media_tracks_label_check", sql`octet_length(${table.label}) between 1 and 100`),
+  check("content_media_tracks_source_check", sql`${table.source} in ('human','mux_generated')`),
+  check("content_media_tracks_state_check", sql`${table.state} in ('preparing','ready','errored','deleted')`),
+  check("content_media_tracks_revision_check", sql`${table.readinessRevision} >= 0`),
 ]);
 
 export const courseDraftManifestEntries = pgTable("course_draft_manifest_entries", {

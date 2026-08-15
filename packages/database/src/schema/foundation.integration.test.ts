@@ -155,7 +155,7 @@ describe("foundation migration", () => {
       );
 
       expect(first.stderr).toBe("");
-      expect(migratedTables.rows[0]?.count).toBe("51");
+      expect(migratedTables.rows[0]?.count).toBe("53");
       expect(firstJournal.rows).toEqual([
         { created_at: "1786618800000", hash: "bf3b66561107047f8c317d81bb561e9a29dc6207a14469a3ce588ec1f8ddc60c" },
         { created_at: "1786626000000", hash: "6508044b65dcce22b5d9a25b954a40768b813d84f943247e59f6c6391cec60a4" },
@@ -166,6 +166,7 @@ describe("foundation migration", () => {
         { created_at: "1786662000000", hash: "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002" },
         { created_at: "1786669200000", hash: "505693d0977b3cf51b156ac792605be7bf6e4a5c89c5ead8d4c728d1c298f513" },
         { created_at: "1786676400000", hash: "2cf79d036accf426172ab2249e690e34c17a8f145c8e2afa72bb8e3994425922" },
+        { created_at: "1786683600000", hash: "65e621c5754cb490c50dff009854433815dae8ee3fd3a6410de9dea6080fcb43" },
       ]);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
@@ -289,7 +290,7 @@ describe("foundation migration", () => {
         boundary: true,
         canonical: true,
         constraint_validated: true,
-        journal_count: 9,
+        journal_count: 10,
         member_execute: true,
         public_execute: false,
         staff_execute: false,
@@ -413,6 +414,9 @@ describe("foundation migration", () => {
   });
 
   it("keeps the 0007 foundation projection stable and exposes additive 0008 readiness", async () => {
+    const journal = await harness.database.pool.query<{ count: number }>(
+      "select count(*)::int count from drizzle.__drizzle_migrations",
+    );
     const result = await harness.database.pool.query<{
       capability: string;
       migration_count: number;
@@ -424,6 +428,7 @@ describe("foundation migration", () => {
       "select schema_version, migration_count, migration_hashes, required_objects, runtime_role, capability from public.syntholo_runtime_readiness()",
     );
 
+    expect(journal.rows).toEqual([{ count: 10 }]);
     expect(result.rows).toEqual([{
       capability: "syntholo_migrator",
       migration_count: 7,
@@ -469,6 +474,36 @@ describe("foundation migration", () => {
       schema_version: "0007_runtime_contract",
     }]);
 
+    const client = await harness.database.pool.connect();
+    try {
+      await client.query("begin");
+      await client.query(
+        "insert into drizzle.__drizzle_migrations(hash,created_at) values($1,$2)",
+        ["0".repeat(64), 1786629600000],
+      );
+      await expect(client.query(
+        "select capability from public.syntholo_runtime_readiness()",
+      )).resolves.toMatchObject({ rows: [] });
+      await client.query("rollback");
+      await client.query("begin");
+      await client.query(
+        "insert into drizzle.__drizzle_migrations(hash,created_at) values($1,null)",
+        ["1".repeat(64)],
+      );
+      await expect(client.query(
+        "select capability from public.syntholo_runtime_readiness()",
+      )).resolves.toMatchObject({ rows: [] });
+      await client.query("rollback");
+    } catch (error) {
+      await client.query("rollback");
+      throw error;
+    } finally {
+      client.release();
+    }
+    await expect(harness.database.pool.query(
+      "select capability from public.syntholo_runtime_readiness()",
+    )).resolves.toMatchObject({ rows: [{ capability: "syntholo_migrator" }] });
+
     const accountName = await harness.database.pool.query(
       "select contract_version, migration_created_at::text, migration_hash, predicate_ready, constraint_ready, writer_compatibility_ready, acl_ready from public.syntholo_account_name_readiness_v1()",
     );
@@ -491,7 +526,8 @@ describe("foundation migration", () => {
                 order by conrelid::regclass::text,conname)) as hash
        from pg_constraint where conrelid in (
          'audit_events'::regclass,'outbox_events'::regclass,'jobs'::regclass,
-         'job_attempts'::regclass,'event_handler_receipts'::regclass)`,
+         'job_attempts'::regclass,'event_handler_receipts'::regclass)
+         and contype <> 'n'`,
     );
     expect(exactConstraints.rows).toEqual([{
       count: 72,

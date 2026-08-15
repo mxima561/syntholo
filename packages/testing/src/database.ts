@@ -146,6 +146,8 @@ export async function resetTestDatabase(database: Database): Promise<void> {
       lesson_disclosure_decisions,
       lesson_versions,
       lesson_drafts,
+      content_media_tracks,
+      content_media_assets,
       lessons,
       stage_drafts,
       stages,

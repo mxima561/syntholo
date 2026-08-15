@@ -36,6 +36,8 @@ type ReadinessDatabase = Readonly<{
     query(sql: string): Promise<Readonly<{
       rows: Array<{
         acl_ready?: boolean;
+        asset_table_ready?: boolean;
+        binding_ready?: boolean;
         capability?: string | null;
         constraint_ready?: boolean;
         contract_version?: string;
@@ -50,10 +52,12 @@ type ReadinessDatabase = Readonly<{
         object_owner_ready?: boolean;
         object_type_ready?: boolean;
         predicate_ready?: boolean;
+        receipt_constraint_ready?: boolean;
         required_objects?: string[];
         runtime_role?: string;
         schema_version?: string;
         table_acl_ready?: boolean;
+        track_table_ready?: boolean;
         public_execute_denied?: boolean;
         writer_compatibility_ready?: boolean;
       }>;
@@ -128,6 +132,29 @@ export async function checkDatabaseReadiness(
       || typeof contentRow.empty_catalog !== "boolean"
     ) {
       throw new Error("content projection mismatch");
+    }
+    const contentAssets = await database.pool.query(
+      "select contract_version, migration_created_at, migration_hash, asset_table_ready, track_table_ready, binding_ready, receipt_constraint_ready, table_acl_ready, function_acl_ready, public_execute_denied, empty_catalog from public.syntholo_content_assets_readiness_v1()",
+    );
+    const contentAssetsRow = contentAssets.rows[0];
+    const contentAssetsMigration = PUBLISHED_MIGRATIONS[9];
+    if (
+      contentAssets.rows.length !== 1
+      || contentAssetsRow === undefined
+      || contentAssetsMigration === undefined
+      || contentAssetsRow.contract_version !== "0010_content_assets.v1"
+      || contentAssetsRow.migration_created_at !== String(contentAssetsMigration.when)
+      || contentAssetsRow.migration_hash !== contentAssetsMigration.hash
+      || contentAssetsRow.asset_table_ready !== true
+      || contentAssetsRow.track_table_ready !== true
+      || contentAssetsRow.binding_ready !== true
+      || contentAssetsRow.receipt_constraint_ready !== true
+      || contentAssetsRow.table_acl_ready !== true
+      || contentAssetsRow.function_acl_ready !== true
+      || contentAssetsRow.public_execute_denied !== true
+      || typeof contentAssetsRow.empty_catalog !== "boolean"
+    ) {
+      throw new Error("content-assets projection mismatch");
     }
     return { latencyMs: Date.now() - started, status: "ok" };
   } catch {

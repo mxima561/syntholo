@@ -5,9 +5,11 @@ import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   assertPublishedMigrationInventory,
+  migrateDatabase,
   PUBLISHED_MIGRATIONS,
   resolveMigrationsFolder,
 } from "./migrations.js";
+import type { Database } from "./client.js";
 
 const temporaryRoots: string[] = [];
 const migrationsFolder = new URL("../drizzle", import.meta.url).pathname;
@@ -26,6 +28,83 @@ afterEach(async () => {
 });
 
 describe("published migration inventory", () => {
+  it("serializes atomic migrations and makes only 0008 constraints immediate", async () => {
+    const queries: string[] = [];
+    let released = false;
+    const client = {
+      async query(statement: string) {
+        queries.push(statement);
+        if (statement.startsWith("select hash,created_at::text")) {
+          return {
+            rows: PUBLISHED_MIGRATIONS.slice(0, 7).map((migration) => ({
+              created_at: String(migration.when),
+              hash: migration.hash,
+            })),
+          };
+        }
+        return { rows: [] };
+      },
+      release() {
+        released = true;
+      },
+    };
+    const database = {
+      pool: { connect: async () => client },
+    } as unknown as Database;
+
+    await migrateDatabase(database);
+
+    expect(queries[0]).toBe("select pg_advisory_lock($1::integer,$2::integer)");
+    expect(queries.at(-1)).toBe("select pg_advisory_unlock($1::integer,$2::integer)");
+    expect(queries.filter((query) => query === "begin")).toHaveLength(4);
+    expect(queries.filter((query) => query === "commit")).toHaveLength(4);
+    expect(queries.filter((query) => query === "set constraints all immediate"))
+      .toHaveLength(1);
+    const immediate = queries.indexOf("set constraints all immediate");
+    expect(queries[immediate - 1]).toBe("begin");
+    expect(queries.filter((query) => query.startsWith(
+      "insert into drizzle.__drizzle_migrations",
+    ))).toHaveLength(3);
+    expect(released).toBe(true);
+  });
+
+  it("rolls back a failed migration without journaling it and releases the lock", async () => {
+    const queries: string[] = [];
+    let released = false;
+    const client = {
+      async query(statement: string) {
+        queries.push(statement);
+        if (statement.startsWith("select hash,created_at::text")) {
+          return {
+            rows: PUBLISHED_MIGRATIONS.slice(0, 9).map((migration) => ({
+              created_at: String(migration.when),
+              hash: migration.hash,
+            })),
+          };
+        }
+        if (statement.startsWith("CREATE TABLE public.content_media_assets")) {
+          throw new Error("TEST_MIGRATION_FAILED");
+        }
+        return { rows: [] };
+      },
+      release() {
+        released = true;
+      },
+    };
+    const database = {
+      pool: { connect: async () => client },
+    } as unknown as Database;
+
+    await expect(migrateDatabase(database)).rejects.toThrow("TEST_MIGRATION_FAILED");
+
+    expect(queries).toContain("rollback");
+    expect(queries.some((query) => query.startsWith(
+      "insert into drizzle.__drizzle_migrations",
+    ))).toBe(false);
+    expect(queries.at(-1)).toBe("select pg_advisory_unlock($1::integer,$2::integer)");
+    expect(released).toBe(true);
+  });
+
   it("fails the content preview command closed until authoritative publication derivation exists", async () => {
     const sql = await readFile(join(migrationsFolder, "0009_content.sql"), "utf8");
     const functionStart = sql.indexOf("CREATE FUNCTION public.syntholo_content_create_preview_v1");
@@ -122,6 +201,7 @@ describe("published migration inventory", () => {
       { idx: 6, when: 1786662000000, tag: "0007_runtime_contract", hash: "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002" },
       { idx: 7, when: 1786669200000, tag: "0008_account_name", hash: "505693d0977b3cf51b156ac792605be7bf6e4a5c89c5ead8d4c728d1c298f513" },
       { idx: 8, when: 1786676400000, tag: "0009_content", hash: "2cf79d036accf426172ab2249e690e34c17a8f145c8e2afa72bb8e3994425922" },
+      { idx: 9, when: 1786683600000, tag: "0010_content_assets", hash: "65e621c5754cb490c50dff009854433815dae8ee3fd3a6410de9dea6080fcb43" },
     ]);
   });
 

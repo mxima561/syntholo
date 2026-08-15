@@ -11,6 +11,8 @@ export {
 export { AccountRepository } from "./repositories/accounts.js";
 export { ContentCommandConflictError, StaffContentCommandRepository } from "./repositories/content.js";
 export type { ContentPreviewRecord, CreateContentPreviewInput } from "./repositories/content.js";
+export { StaffMuxAssetRepository, SystemMuxEventRepository, WorkerContentMediaRepository } from "./repositories/content-media.js";
+export type { ApplyMuxEventInput, ImportedMuxAsset, ImportMuxAssetInput, MuxEventApplyResult, MuxReconciliationSnapshot, MuxReconcileTarget } from "./repositories/content-media.js";
 export { AuditRepository } from "./repositories/audit.js";
 export type { AuditEventInput } from "./repositories/audit.js";
 export type {

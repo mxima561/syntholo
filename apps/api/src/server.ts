@@ -9,6 +9,7 @@ import {
   StaffIdentityRepository,
   StaffLoginAttemptRepository,
   StaffSessionRepository,
+  SystemMuxEventRepository,
 } from "@syntholo/database";
 import {
   createClerkSessionAuthenticator,
@@ -23,6 +24,7 @@ import {
   parseStaffSessionKeyRing,
 } from "./auth/session-crypto.js";
 import { parseApiConfig, type ApiConfig, type RuntimeEnvironment } from "./config.js";
+import { createMuxWebhookHandler } from "./modules/mux-webhook.js";
 
 type BuildApp = (dependencies: ApiDependencies) => Promise<FastifyInstance>;
 type Listen = (
@@ -48,10 +50,15 @@ async function productionDependencies(config: ApiConfig): Promise<{
     url: config.staffDatabaseUrl,
     applicationName: "syntholo-staff-api",
   });
+  const systemDatabase = createDatabase({
+    url: config.systemDatabaseUrl,
+    applicationName: "syntholo-system-api",
+  });
   try {
     await Promise.all([
       assertDatabaseCapability(memberDatabase, "syntholo_member_api"),
       assertDatabaseCapability(staffDatabase, "syntholo_staff_api"),
+      assertDatabaseCapability(systemDatabase, "syntholo_system_api"),
     ]);
     const workosJwks = createRemoteWorkosJwks(new URL(config.workosJwksUrl));
     const sessions = new StaffSessionRepository(staffDatabase);
@@ -73,6 +80,13 @@ async function productionDependencies(config: ApiConfig): Promise<{
               check: () => checkDatabaseReadiness(
                 staffDatabase,
                 "syntholo_staff_api",
+              ),
+            },
+            {
+              name: "system-postgres",
+              check: () => checkDatabaseReadiness(
+                systemDatabase,
+                "syntholo_system_api",
               ),
             },
           ],
@@ -141,15 +155,25 @@ async function productionDependencies(config: ApiConfig): Promise<{
             },
           },
         },
+        mux: config.mux.kind === "configured" ? {
+          kind: "enabled",
+          handler: createMuxWebhookHandler({
+            actorId: "mux-webhook",
+            environmentId: config.mux.environmentId,
+            repository: new SystemMuxEventRepository(systemDatabase),
+            secret: config.mux.webhookSecret,
+            clock: { now: () => new Date() },
+          }),
+        } : { kind: "disabled" },
         close: async () =>
-          Promise.all([memberDatabase.close(), staffDatabase.close()]).then(
+          Promise.all([memberDatabase.close(), staffDatabase.close(), systemDatabase.close()]).then(
             () => undefined,
           ),
       },
-      close: async () => Promise.all([memberDatabase.close(), staffDatabase.close()]).then(() => undefined),
+      close: async () => Promise.all([memberDatabase.close(), staffDatabase.close(), systemDatabase.close()]).then(() => undefined),
     };
   } catch (error) {
-    await Promise.allSettled([memberDatabase.close(), staffDatabase.close()]);
+    await Promise.allSettled([memberDatabase.close(), staffDatabase.close(), systemDatabase.close()]);
     throw error;
   }
 }

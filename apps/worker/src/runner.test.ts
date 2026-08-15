@@ -81,7 +81,36 @@ describe("worker configuration and startup", () => {
       releaseSha,
       concurrency: 4,
       idleDelayMs: 750,
+      mux: { enabled: false },
     });
+  });
+
+  it("requires one complete Mux reconciliation credential pair when enabled", () => {
+    const base = {
+      DATABASE_URL: "postgres://worker:password@example.test/db",
+      RELEASE_SHA: releaseSha,
+      WORKER_CONCURRENCY: "2",
+    };
+    expect(parseWorkerConfig({
+      ...base,
+      MUX_CONTENT_ENABLED: "true",
+      MUX_ENVIRONMENT_ID: "env_staging",
+      MUX_RECONCILE_TOKEN_ID: "mux-id",
+      MUX_RECONCILE_TOKEN_SECRET: "mux-secret-value",
+    })).toMatchObject({ mux: {
+      enabled: true,
+      environmentId: "env_staging",
+      tokenId: "mux-id",
+      tokenSecret: "mux-secret-value",
+    } });
+    for (const environment of [
+      { ...base, MUX_CONTENT_ENABLED: "true" },
+      { ...base, MUX_CONTENT_ENABLED: "true", MUX_RECONCILE_TOKEN_ID: "mux-id", MUX_RECONCILE_TOKEN_SECRET: "mux-secret-value" },
+      { ...base, MUX_RECONCILE_TOKEN_ID: "mux-id" },
+      { ...base, MUX_RECONCILE_TOKEN_SECRET: "mux-secret-value" },
+      { ...base, MUX_ENVIRONMENT_ID: "env_staging" },
+      { ...base, MUX_CONTENT_ENABLED: "true", MUX_RECONCILE_TOKEN_ID: "mux-id" },
+    ]) expect(() => parseWorkerConfig(environment)).toThrow("WORKER_CONFIG_INVALID");
   });
 
   it("rejects malformed and artifact-mismatched release identity", () => {
@@ -505,6 +534,26 @@ describe("outbox and production lifecycle", () => {
       .toEqual(["entitlement_reconciliation_queue"]);
   });
 
+  it.each([
+    "content.lesson_published.v1",
+    "content.course_published.v1",
+    "content.version_archived.v1",
+    "content.media_state_changed.v1",
+    "content.resource_state_changed.v1",
+    "content.readiness_approved.v1",
+  ])("routes %s only to content readiness recomputation", (eventType) => {
+    expect(handlersForOutboxEvent({
+      attempt: 1,
+      claimGeneration: 1,
+      claimToken: "10000000-0000-4000-8000-000000000001",
+      eventId: "10000000-0000-4000-8000-000000000002",
+      eventType,
+      leaseExpiresAt: new Date(now.getTime() + 10_000),
+      maxAttempts: 5,
+      workerId: "worker-test",
+    })).toEqual(["content.readiness_recompute"]);
+  });
+
   it("classifies permanent routing failures and injects retry jitter", async () => {
     const controller = new AbortController();
     const claim = {
@@ -679,6 +728,92 @@ describe("outbox and production lifecycle", () => {
       complete: vi.fn(async () => { throw new Error("effect unavailable"); }),
     }, { now: () => now })(job, new AbortController().signal))
       .rejects.toBeInstanceOf(FatalWorkerConsistencyError);
+  });
+
+  it("invokes the exact named domain handler before completing its receipt", async () => {
+    const job = {
+      accountId: null,
+      attempt: 1,
+      claimGeneration: 1,
+      claimToken: "10000000-0000-4000-8000-000000000001",
+      correlationId: "10000000-0000-4000-8000-000000000002",
+      id: "10000000-0000-4000-8000-000000000003",
+      idempotencyKey: "event:test",
+      leaseExpiresAt: new Date(now.getTime() + 10_000),
+      maxAttempts: 5,
+      payload: {
+        eventId: "10000000-0000-4000-8000-000000000004",
+        handlerName: "content.readiness_recompute",
+      },
+      sourceActorId: "source",
+      sourceActorType: "system",
+      type: "foundation.domain_event_handler.v1",
+      workerId: "worker-test",
+    } as ClaimedJob;
+    const receipt = {
+      accountId: null,
+      attempt: 1,
+      claimGeneration: 1,
+      claimToken: "10000000-0000-4000-8000-000000000005",
+      eventId: job.payload.eventId,
+      handlerName: job.payload.handlerName,
+      jobAttempt: 1,
+      jobClaimGeneration: 1,
+      jobClaimToken: job.claimToken,
+      jobId: job.id,
+      kind: "acquired",
+      leaseExpiresAt: job.leaseExpiresAt,
+      workerId: job.workerId,
+    } as HandlerReceiptClaim;
+    const sequence: string[] = [];
+    const domainHandler = vi.fn(async () => { sequence.push("effect"); });
+    const complete = vi.fn(async () => {
+      sequence.push("receipt");
+      return { kind: "completed" as const };
+    });
+
+    await createDomainEventJobHandler({
+      acquire: vi.fn(async () => receipt),
+      abandon: vi.fn(),
+      complete,
+    }, { now: () => now }, {
+      "content.readiness_recompute": domainHandler,
+    })(job, new AbortController().signal);
+
+    expect(domainHandler).toHaveBeenCalledWith({
+      eventId: job.payload.eventId,
+      handlerName: job.payload.handlerName,
+    }, expect.any(AbortSignal));
+    expect(sequence).toEqual(["effect", "receipt"]);
+  });
+
+  it("rejects an inexact domain-event job payload before claiming a receipt", async () => {
+    const acquire = vi.fn();
+    const handler = createDomainEventJobHandler({
+      acquire,
+      abandon: vi.fn(),
+      complete: vi.fn(),
+    }, { now: () => now }, {
+      "content.readiness_recompute": vi.fn(),
+    });
+    await expect(handler({
+      accountId: null, attempt: 1, claimGeneration: 1,
+      claimToken: "10000000-0000-4000-8000-000000000001",
+      correlationId: "10000000-0000-4000-8000-000000000002",
+      id: "10000000-0000-4000-8000-000000000003",
+      idempotencyKey: "event:test",
+      leaseExpiresAt: new Date(now.getTime() + 10_000), maxAttempts: 5,
+      payload: {
+        eventId: "10000000-0000-4000-8000-000000000004",
+        handlerName: "content.readiness_recompute",
+        providerBody: "forbidden",
+      },
+      sourceActorId: "source", sourceActorType: "system",
+      type: "foundation.domain_event_handler.v1", workerId: "worker-test",
+    } as ClaimedJob, new AbortController().signal)).rejects.toMatchObject({
+      failure: { code: "JOB_INPUT_INVALID", permanent: true },
+    });
+    expect(acquire).not.toHaveBeenCalled();
   });
 });
 
