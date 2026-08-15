@@ -49,6 +49,45 @@ afterEach(async () => {
 });
 
 describe("production dependency policy", () => {
+  it("forbids test-only Stripe composition from every production service closure", async () => {
+    const root = await fixture({
+      "apps/api/package.json": JSON.stringify({ dependencies: { "@syntholo/testing": "0.1.0" } }),
+      "apps/api/src/server.ts": [
+        "import '@syntholo/testing'",
+        "import '@syntholo/integrations/testing/stripe'",
+      ].join("\n"),
+      "packages/testing/package.json": JSON.stringify({
+        name: "@syntholo/testing", exports: { ".": "./src/index.ts" },
+      }),
+      "packages/testing/src/index.ts": "export const fixture = true",
+      "packages/integrations/package.json": JSON.stringify({
+        name: "@syntholo/integrations", exports: { "./testing/stripe": "./src/testing/stripe.ts" },
+      }),
+      "packages/integrations/src/testing/stripe.ts": "export const fixture = true",
+      "package-lock.json": JSON.stringify({ lockfileVersion: 3, packages: {} }),
+      "package.json": JSON.stringify({ workspaces: ["apps/*", "packages/*"] }),
+    });
+    const graph = await inspectProductionDependencyGraph(root);
+    expect(graph.policyViolations).toContainEqual(expect.objectContaining({
+      kind: "package", service: "api", value: "@syntholo/testing",
+    }));
+
+    const subpathRoot = await fixture({
+      "apps/api/package.json": JSON.stringify({ dependencies: { "@syntholo/integrations": "0.1.0" } }),
+      "apps/api/src/server.ts": "import '@syntholo/integrations/testing/stripe'",
+      "packages/integrations/package.json": JSON.stringify({
+        name: "@syntholo/integrations", exports: { "./testing/stripe": "./src/testing/stripe.ts" },
+      }),
+      "packages/integrations/src/testing/stripe.ts": "export const fixture = true",
+      "package-lock.json": JSON.stringify({ lockfileVersion: 3, packages: {} }),
+      "package.json": JSON.stringify({ workspaces: ["apps/*", "packages/*"] }),
+    });
+    const subpathGraph = await inspectProductionDependencyGraph(subpathRoot);
+    expect(subpathGraph.policyViolations).toContainEqual(expect.objectContaining({
+      kind: "import", service: "api", value: "@syntholo/integrations/testing/stripe",
+    }));
+  });
+
   it("fails web production reachability through static, dynamic, alias, lockfile, and built server-adapter edges", async () => {
     const root = await fixture({
       "apps/web/.next/server/app.js": "require('@clerk/backend')",
@@ -59,10 +98,12 @@ describe("production dependency policy", () => {
       }),
       "apps/web/src/app/page.ts": [
         "import adapter from '@/adapter'",
+        "import '../stripe-leak'",
         "void adapter",
         "void import('@private/dynamic')",
       ].join("\n"),
       "apps/web/src/adapter.ts": "export { default } from '@private/static'",
+      "apps/web/src/stripe-leak.ts": "export const key = process.env.STRIPE_API_RESTRICTED_KEY",
       "packages/private/package.json": JSON.stringify({
         name: "@syntholo/private",
         dependencies: { resend: "1.0.0" },
@@ -106,6 +147,7 @@ describe("production dependency policy", () => {
       expect.objectContaining({ kind: "import", service: "web", value: "@workos-inc/node" }),
       expect.objectContaining({ kind: "import", service: "web", value: "stripe" }),
       expect.objectContaining({ kind: "lockfile", service: "web", value: "resend" }),
+      expect.objectContaining({ kind: "environment", service: "web", value: "STRIPE_API_RESTRICTED_KEY" }),
     ]));
     expect(graph.resolvedImports).toEqual(expect.arrayContaining([
       expect.objectContaining({

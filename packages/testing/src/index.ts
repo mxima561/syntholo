@@ -14,3 +14,5 @@ export type {
 export { memberActor, staffActor } from "./factories/actors.js";
 export { createFixture } from "./fixtures.js";
 export type { FixtureBuilder } from "./fixtures.js";
+export { createDeterministicStripeFixture } from "./stripe-fake.js";
+export type { DeterministicStripeFixture } from "./stripe-fake.js";

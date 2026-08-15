@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./clock": "./src/clock.ts",
     "./database": "./src/database.ts",
+    "./stripe-fake": "./src/stripe-fake.ts",
     "./factories/actors": "./src/factories/actors.ts",
     "./fixtures": "./src/fixtures.ts"
   },
@@ -17,6 +18,7 @@
   },
   "dependencies": {
     "@syntholo/database": "^0.1.0",
-    "@syntholo/domain": "^0.1.0"
+    "@syntholo/domain": "^0.1.0",
+    "@syntholo/integrations": "^0.1.0"
   }
 }

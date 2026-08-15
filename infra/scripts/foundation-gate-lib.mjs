@@ -28,7 +28,7 @@ export const FOUNDATION_CHECK_CATALOG = Object.freeze([
 
 const launchOnlyChecks = new Set(["ancestry", "proxy"]);
 
-const forbiddenEnvironmentKey = /^(?:(?:DATABASE_(?:DIRECT_|POOLED_)?URL|TEST_DATABASE_URL|(?:MEMBER|STAFF|SYSTEM|WORKER)_DATABASE_URL|WORKOS_.+|STRIPE_(?:SECRET|WEBHOOK).+|MUX_(?:TOKEN|SIGNING).+|RESEND_(?:API|SECRET).+|BLOB_(?:READ_WRITE|WRITE).+|HIGHLEVEL_.+)|.*(?:SECRET(?:_KEY)?|API_KEY|PRIVATE_KEY|WRITE_TOKEN))$/u;
+const forbiddenEnvironmentKey = /^(?:(?:DATABASE_(?:DIRECT_|POOLED_)?URL|TEST_DATABASE_URL|(?:MEMBER|STAFF|SYSTEM|WORKER)_DATABASE_URL|WORKOS_.+|STRIPE_.+|MUX_(?:TOKEN|SIGNING).+|RESEND_(?:API|SECRET).+|BLOB_(?:READ_WRITE|WRITE).+|HIGHLEVEL_.+)|.*(?:SECRET(?:_KEY)?|API_KEY|PRIVATE_KEY|WRITE_TOKEN))$/u;
 const forbiddenUrl = /https?:\/\/(?:[^/]*\.)?(?:leadconnectorhq\.com|gohighlevel\.com)\/(?:api|v\d+|locations|contacts|oauth|sso|token)(?:[/?"'`]|$)/iu;
 const globallyForbiddenPackages = new Set([
   "mongodb",
@@ -125,6 +125,8 @@ export function isForbiddenServerPackage(specifier) {
 function isForbiddenPackageForService(specifier, service) {
   const name = packageNameFromSpecifier(specifier);
   return globallyForbiddenPackages.has(name)
+    || name === "@syntholo/testing"
+    || specifier.startsWith("@syntholo/integrations/testing/")
     || highLevelPackage.test(name)
     || (service === "web" && webForbiddenServerPackages.has(name));
 }
@@ -502,6 +504,20 @@ export async function inspectProductionDependencyGraph(repositoryRoot) {
       }
     }
     for (const specifier of importsIn(contents)) {
+      const forbiddenImport = isForbiddenPackageForService(specifier, service);
+      if (forbiddenImport) {
+        const violation = { path, service, specifier };
+        addUnique(imports, importKeys, violation);
+        addUnique(policyViolations, policyViolationKeys, {
+          kind: built ? "built" : "import",
+          path,
+          service,
+          value: specifier.startsWith("@syntholo/integrations/testing/")
+            ? specifier
+            : packageNameFromSpecifier(specifier),
+        });
+        builtViolation ||= built;
+      }
       const resolvedPath = resolveLocalImport(
         specifier,
         path,
@@ -514,16 +530,6 @@ export async function inspectProductionDependencyGraph(repositoryRoot) {
           path, resolvedPath, service, specifier,
         });
         queue.push({ path: resolvedPath, service });
-      } else if (isForbiddenPackageForService(specifier, service)) {
-        const violation = { path, service, specifier };
-        addUnique(imports, importKeys, violation);
-        addUnique(policyViolations, policyViolationKeys, {
-          kind: built ? "built" : "import",
-          path,
-          service,
-          value: packageNameFromSpecifier(specifier),
-        });
-        builtViolation ||= built;
       }
     }
     if (built) {
