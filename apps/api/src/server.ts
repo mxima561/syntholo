@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import {
   assertDatabaseCapability,
+  AccountRepository,
   checkDatabaseReadiness,
   createDatabase,
   MemberIdentityRepository,
@@ -91,6 +92,10 @@ async function productionDependencies(config: ApiConfig): Promise<{
               access: new MemberEntitlementReadRepository(memberDatabase, {
                 now: () => new Date(),
               }),
+              dashboard: {
+                accounts: new AccountRepository(memberDatabase),
+                clock: { now: () => new Date() },
+              },
             },
             staff: {
               config: {

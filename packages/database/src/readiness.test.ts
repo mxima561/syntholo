@@ -10,6 +10,7 @@ describe("database readiness projection", () => {
     "b61002f28e9970c63ea24a291ebcca8711bdd1f1a178b9ce09910243cc6683b5",
     "6b465ae711125f441115f83dfbfe9bf63e92a74edd57190e357c10268adeafb5",
     "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002",
+    "c0b495047a3ca6bdb1a24be475184a11c74037e255648a4d5bd73a5c68d598bb",
   ];
   const requiredObjects = [
     "public.access_decision_audit",
@@ -45,11 +46,11 @@ describe("database readiness projection", () => {
     const query = vi.fn(async () => ({
       rows: [{
         capability: "syntholo_member_api",
-        migration_count: 7,
+        migration_count: 8,
         migration_hashes: migrationHashes,
         required_objects: requiredObjects,
         runtime_role: "syntholo_member_runtime",
-        schema_version: "0007_runtime_contract",
+        schema_version: "0008_account_name",
       }],
     }));
 

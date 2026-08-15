@@ -1,4 +1,12 @@
 /* Member application */
+.production-dashboard { min-height: 100vh; width: min(880px, calc(100% - 48px)); margin-inline: auto; padding: 72px 0; }
+.production-dashboard-heading { display: grid; justify-items: start; }
+.production-dashboard-heading .micro-label { margin-top: 24px; }
+.production-dashboard-heading h1 { margin: 12px 0 8px; font: 750 clamp(34px, 6vw, 54px)/1 var(--font-heading); letter-spacing: -.05em; }
+.production-dashboard-heading p { margin: 0; color: var(--muted); font-size: 15px; }
+.production-dashboard-panel { margin-top: 36px; padding: clamp(24px, 5vw, 42px); border: 1px solid var(--border); border-radius: var(--radius-shell); background: var(--surface); box-shadow: var(--shadow-card); }
+.production-dashboard-panel h2 { margin: 11px 0 10px; font: 750 clamp(24px, 4vw, 34px)/1.08 var(--font-heading); letter-spacing: -.04em; }
+.production-dashboard-panel p { max-width: 650px; margin: 0 0 22px; color: var(--muted); font-size: 16px; line-height: 1.6; }
 .member-shell { min-height: 100vh; display: grid; grid-template-columns: 190px minmax(0, 1fr); background: var(--canvas); }
 .member-sidebar { position: sticky; top: 0; height: 100vh; padding: 24px 15px 12px; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: #fafaf8; }
 .member-brand { padding: 0 10px 16px; }

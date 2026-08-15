@@ -9,6 +9,15 @@ const demoMarkers = [
   "Naomi Reed",
   "member-maria",
   "demoReferenceTime",
+  "lib/demo/repository",
+  "lib/demo/data",
+];
+
+const secretPatterns = [
+  /postgres(?:ql)?:\/\/[^/\s:@]+:[^@\s/]+@/iu,
+  /(?:sk|rk)_live_[a-z0-9]/iu,
+  /whsec_[a-z0-9]/iu,
+  /-----BEGIN (?:RSA )?PRIVATE KEY-----/u,
 ];
 
 async function filesBelow(directory) {
@@ -19,7 +28,7 @@ async function filesBelow(directory) {
   }))).flat();
 }
 
-test("production learn payloads and client-reference chunks contain no demo member data", async () => {
+test("production learn payloads and client-reference chunks contain no demo modules, member data, or secrets", async () => {
   const buildDirectory = resolve(process.env.WEB_BUILD_DIR ?? ".next");
   const routeDirectory = resolve(buildDirectory, "server/app/learn");
   const routeFiles = await filesBelow(routeDirectory);
@@ -56,6 +65,9 @@ test("production learn payloads and client-reference chunks contain no demo memb
   for (const { path, text } of publicArtifacts) {
     for (const marker of demoMarkers) {
       assert.equal(text.includes(marker), false, `${marker} leaked through ${path}`);
+    }
+    for (const pattern of secretPatterns) {
+      assert.equal(pattern.test(text), false, `${pattern} matched secret material in ${path}`);
     }
   }
 });

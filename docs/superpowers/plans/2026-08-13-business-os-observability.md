@@ -44,7 +44,7 @@
 - Create: `packages/domain/src/business-os/state.ts`
 - Create: `packages/domain/src/business-os/state.test.ts`
 - Create: `packages/database/src/schema/business-os.ts`
-- Create: `packages/database/drizzle/0020_business_os.sql`
+- Create: `packages/database/drizzle/0024_business_os.sql`
 - Create: `packages/database/src/repositories/business-os.ts`
 - Create: `apps/api/src/modules/business-os/{get-onboarding,update-onboarding}.ts`
 - Create: `apps/api/src/routes/{member,staff}/business-os.ts`
@@ -118,7 +118,7 @@ git commit -m "feat: model isolated Business OS state"
 - Create: `packages/domain/src/business-os/checks.test.ts`
 - Create: `packages/contracts/src/business-os/checks.ts`
 - Create: `packages/database/src/schema/business-os-checks.ts`
-- Create: `packages/database/drizzle/0021_business_os_checks.sql`
+- Create: `packages/database/drizzle/0025_business_os_checks.sql`
 - Create: `apps/api/src/modules/business-os/{record-check,activate}.ts`
 - Create: `apps/api/src/routes/staff/business-os-checks.ts`
 - Create: `apps/api/src/modules/business-os/checks.integration.test.ts`
@@ -255,7 +255,7 @@ git commit -m "feat: add Business OS operations interfaces"
 - Create: `packages/domain/src/business-os/verification.ts`
 - Create: `packages/domain/src/business-os/verification.test.ts`
 - Create: `packages/database/src/schema/business-os-verification.ts`
-- Create: `packages/database/drizzle/0022_business_os_verification.sql`
+- Create: `packages/database/drizzle/0026_business_os_verification.sql`
 - Create: `apps/api/src/modules/business-os/{start-verification,complete-verification,record-incident,resolve-incident}.ts`
 - Create: `apps/worker/src/handlers/business-os/schedule-verifications.ts`
 - Create: `apps/worker/src/handlers/business-os/schedule-verifications.integration.test.ts`
@@ -391,7 +391,7 @@ git commit -m "refactor: enforce HighLevel isolation"
 **Files:**
 - Create: `packages/contracts/src/notifications/events.ts`
 - Create: `packages/database/src/schema/notifications.ts`
-- Create: `packages/database/drizzle/0023_notifications.sql`
+- Create: `packages/database/drizzle/0027_notifications.sql`
 - Create: `packages/database/src/repositories/notifications.ts`
 - Create: `packages/integrations/src/resend/{port,adapter}.ts`
 - Create: `apps/worker/src/handlers/notifications/{render,send}.ts`
@@ -482,7 +482,7 @@ git commit -m "feat: deliver transactional notifications"
 - Create: `packages/domain/src/analytics/policy.ts`
 - Create: `packages/domain/src/analytics/policy.test.ts`
 - Create: `packages/database/src/schema/analytics.ts`
-- Create: `packages/database/drizzle/0024_analytics.sql`
+- Create: `packages/database/drizzle/0028_analytics.sql`
 - Create: `packages/integrations/src/posthog/{server,client-policy}.ts`
 - Create: `apps/worker/src/handlers/analytics/deliver.ts`
 - Create: `apps/worker/src/handlers/analytics/deliver.test.ts`

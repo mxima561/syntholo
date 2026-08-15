@@ -7,6 +7,19 @@ import {
   type SeatReservation,
 } from "@syntholo/domain";
 import type { Database } from "../client.js";
+import {
+  acquireMemberReadClient,
+  destroyMemberReadLease,
+  isMemberReadDeadlineError,
+  MEMBER_READ_DEADLINES,
+  memberReadLockDeadlineExceeded,
+  memberReadParentDeadline,
+  runMemberReadCleanupQuery,
+  runMemberReadLockQuery,
+  runMemberReadQuery,
+  throwIfMemberReadDeadlineExpired,
+  translateMemberReadDependencyError,
+} from "../member-read-deadlines.js";
 
 const canonicalUuid =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
@@ -110,7 +123,10 @@ export class MemberEntitlementReadRepository {
     private readonly clock: Readonly<{ now(): Date }>,
   ) {}
 
-  async getEffectiveAccess(actor: MemberActor): Promise<EffectiveAccess> {
+  async getEffectiveAccess(
+    actor: MemberActor,
+    parentDeadline = memberReadParentDeadline(),
+  ): Promise<EffectiveAccess> {
     if (
       actor.kind !== "member"
       || !canonicalUuid.test(actor.accountId)
@@ -118,33 +134,68 @@ export class MemberEntitlementReadRepository {
       || !canonicalUuid.test(actor.actorId)
     ) throw new MemberAccessUnavailableError();
     try {
-      const client = await this.database.pool.connect();
+      const lease = await acquireMemberReadClient(
+        this.database.pool,
+        performance.now() + MEMBER_READ_DEADLINES.poolAcquireMs,
+        parentDeadline,
+      );
       let locked = false;
       let transactionOpen = false;
-      let destroy = false;
       let snapshot: unknown;
       let evaluated: EffectiveAccess | undefined;
       try {
-        await client.query(
-          "select pg_advisory_lock_shared(hashtextextended($1,0))",
-          [`syntholo-entitlement-account:${actor.accountId}`],
+        const lockDeadline = performance.now() + MEMBER_READ_DEADLINES.lockMs;
+        while (!locked) {
+          throwIfMemberReadDeadlineExpired(parentDeadline);
+          if (performance.now() >= lockDeadline) {
+            throw memberReadLockDeadlineExceeded();
+          }
+          const attempted = await runMemberReadLockQuery<{ locked: boolean }>(
+            lease,
+            lockDeadline,
+            parentDeadline,
+            "select pg_try_advisory_lock_shared(hashtextextended($1,0)) locked",
+            [`syntholo-entitlement-account:${actor.accountId}`],
+          );
+          locked = attempted.rows[0]?.locked === true;
+          if (!locked) {
+            const remaining = Math.min(lockDeadline, parentDeadline)
+              - performance.now();
+            if (remaining <= 0) {
+              if (parentDeadline <= lockDeadline) {
+                throwIfMemberReadDeadlineExpired(parentDeadline);
+              }
+              throw memberReadLockDeadlineExceeded();
+            }
+            await new Promise((resolve) => setTimeout(resolve, Math.min(25, remaining)));
+          }
+        }
+        const query = <TRow extends Record<string, unknown>>(
+          text: string,
+          values: readonly unknown[] = [],
+        ) => runMemberReadQuery<TRow>(
+          lease,
+          performance.now() + MEMBER_READ_DEADLINES.queryMs,
+          parentDeadline,
+          text,
+          values,
         );
-        locked = true;
-        await client.query("begin isolation level repeatable read read only");
+        await query("begin isolation level repeatable read read only");
         transactionOpen = true;
-        await client.query(
+        await query(
           `select set_config('app.account_id',$1,true),
                   set_config('app.actor_id',$2,true),
                   set_config('app.actor_kind','member',true),
                   set_config('app.membership_id',$3,true)`,
           [actor.accountId, actor.actorId, actor.membershipId],
         );
-        const result = await client.query<{ snapshot: unknown }>(
+        const result = await query<{ snapshot: unknown }>(
           `select syntholo_member_entitlement_snapshot($1,$2,$3) as snapshot`,
           [actor.accountId, actor.membershipId, actor.actorId],
         );
         if (result.rows.length !== 1) throw new Error("MEMBER_ACCESS_DATA_INVALID");
         snapshot = result.rows[0]!.snapshot;
+        throwIfMemberReadDeadlineExpired(parentDeadline);
         const evaluationNow = new Date(this.clock.now());
         const parsed = record(snapshot);
         evaluated = evaluateEntitlements({
@@ -154,27 +205,46 @@ export class MemberEntitlementReadRepository {
           holds: array(parsed.holds).map(mapHold),
           seats: array(parsed.seats).map(mapSeat),
         });
-        await client.query("commit");
+        throwIfMemberReadDeadlineExpired(parentDeadline);
+        await query("commit");
         transactionOpen = false;
       } catch (error) {
-        if (transactionOpen) {
-          await client.query("rollback").catch(() => { destroy = true; });
+        if (transactionOpen && !lease.destroyed) {
+          await runMemberReadCleanupQuery(
+            lease,
+            MEMBER_READ_DEADLINES.cleanupMs,
+            "rollback",
+          ).catch(() => lease.destroyed
+            ? undefined
+            : destroyMemberReadLease(lease, MEMBER_READ_DEADLINES.cleanupMs));
           transactionOpen = false;
         }
         throw error;
       } finally {
-        if (locked) {
+        if (locked && !lease.destroyed) {
           try {
-            const unlocked = await client.query<{ unlocked: boolean }>(
+            const unlocked = await runMemberReadCleanupQuery<{ unlocked: boolean }>(
+              lease,
+              MEMBER_READ_DEADLINES.cleanupMs,
               "select pg_advisory_unlock_shared(hashtextextended($1,0)) unlocked",
               [`syntholo-entitlement-account:${actor.accountId}`],
             );
-            if (unlocked.rows[0]?.unlocked !== true) destroy = true;
+            if (unlocked.rows[0]?.unlocked !== true) {
+              await destroyMemberReadLease(
+                lease,
+                MEMBER_READ_DEADLINES.cleanupMs,
+              );
+            }
           } catch {
-            destroy = true;
+            if (!lease.destroyed) {
+              await destroyMemberReadLease(
+                lease,
+                MEMBER_READ_DEADLINES.cleanupMs,
+              );
+            }
           }
         }
-        client.release(destroy);
+        lease.release();
       }
       if (evaluated === undefined) throw new Error("MEMBER_ACCESS_DATA_INVALID");
       return evaluated;
@@ -184,6 +254,9 @@ export class MemberEntitlementReadRepository {
       }
       if (error instanceof Error && error.message === "MEMBER_ACCESS_DATA_INVALID") {
         throw error;
+      }
+      if (isMemberReadDeadlineError(error)) {
+        throw translateMemberReadDependencyError(error);
       }
       throw error;
     }

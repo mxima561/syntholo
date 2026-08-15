@@ -1,9 +1,15 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
+import { isCanonicalAccountName } from "@syntholo/contracts/member-dashboard";
 import { createDatabase } from "../client.js";
+import { migrateDatabase } from "../migrations.js";
 import {
   createTestDatabaseHarness,
   createTestMigrationEnvironment,
@@ -187,6 +193,7 @@ describe("foundation migration", () => {
         { created_at: "1786647600000", hash: "b61002f28e9970c63ea24a291ebcca8711bdd1f1a178b9ce09910243cc6683b5" },
         { created_at: "1786654800000", hash: "6b465ae711125f441115f83dfbfe9bf63e92a74edd57190e357c10268adeafb5" },
         { created_at: "1786662000000", hash: "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002" },
+        { created_at: "1786669200000", hash: "c0b495047a3ca6bdb1a24be475184a11c74037e255648a4d5bd73a5c68d598bb" },
       ]);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
@@ -216,6 +223,171 @@ describe("foundation migration", () => {
       }
     }
   }, 20_000);
+
+  it("upgrades canonical populated account names and rolls back an incompatible 0008 preflight", async () => {
+    const baseUrl = process.env.TEST_DATABASE_URL;
+    if (baseUrl === undefined) throw new Error("TEST_DATABASE_URL_REQUIRED");
+    const maintenancePool = new Pool({
+      application_name: "syntholo-account-name-upgrade-maintenance",
+      connectionString: databaseUrl(baseUrl, "postgres"),
+      max: 1,
+    });
+    const compatibleName = `syntholo_account_name_compatible_${process.pid}`;
+    const incompatibleName = `syntholo_account_name_incompatible_${process.pid}`;
+    const temporaryMigrations = await mkdtemp(join(tmpdir(), "syntholo-0007-"));
+    let compatible: ReturnType<typeof createDatabase> | undefined;
+    let incompatible: ReturnType<typeof createDatabase> | undefined;
+    try {
+      await dropTestDatabase(maintenancePool, compatibleName);
+      await dropTestDatabase(maintenancePool, incompatibleName);
+      await maintenancePool.query(`create database ${quotedDatabaseName(compatibleName)}`);
+      await maintenancePool.query(`create database ${quotedDatabaseName(incompatibleName)}`);
+      await mkdir(join(temporaryMigrations, "meta"));
+      for (const migration of [
+        "0001_foundation.sql",
+        "0002_roles_and_rls.sql",
+        "0003_staff_authentication.sql",
+        "0004_audit_and_jobs.sql",
+        "0005_entitlements.sql",
+        "0006_runtime_readiness.sql",
+        "0007_runtime_contract.sql",
+      ]) {
+        await writeFile(
+          join(temporaryMigrations, migration),
+          await readFile(new URL(`../../drizzle/${migration}`, import.meta.url)),
+        );
+      }
+      const fullJournal = JSON.parse(await readFile(
+        new URL("../../drizzle/meta/_journal.json", import.meta.url),
+        "utf8",
+      )) as { entries: unknown[] };
+      await writeFile(
+        join(temporaryMigrations, "meta/_journal.json"),
+        JSON.stringify({ ...fullJournal, entries: fullJournal.entries.slice(0, 7) }),
+      );
+
+      compatible = createDatabase({
+        applicationName: "syntholo-account-name-compatible",
+        url: databaseUrl(baseUrl, compatibleName),
+      });
+      incompatible = createDatabase({
+        applicationName: "syntholo-account-name-incompatible",
+        url: databaseUrl(baseUrl, incompatibleName),
+      });
+      await migrate(compatible, { migrationsFolder: temporaryMigrations });
+      await migrate(incompatible, { migrationsFolder: temporaryMigrations });
+      await compatible.pool.query(
+        "insert into accounts(id,name) values($1,$2),($3,$4)",
+        [
+          "30000000-0000-4000-8000-000000000001",
+          "Café",
+          "30000000-0000-4000-8000-000000000002",
+          "a".repeat(255),
+        ],
+      );
+      await incompatible.pool.query(
+        "insert into accounts(id,name) values($1,$2)",
+        ["30000000-0000-4000-8000-000000000003", "Cafe\u0301"],
+      );
+
+      await migrateDatabase(compatible);
+      await migrateDatabase(compatible);
+      const upgraded = await compatible.pool.query(
+        `select
+          (select count(*)::int from drizzle.__drizzle_migrations) journal_count,
+          (select convalidated from pg_constraint
+             where conrelid='accounts'::regclass
+               and conname='accounts_name_canonical_check') constraint_validated,
+          public.syntholo_account_name_is_canonical('Café') canonical,
+          public.syntholo_account_name_is_canonical($1) boundary,
+          has_function_privilege('syntholo_member_api',
+            'public.syntholo_account_name_is_canonical(text)','EXECUTE') member_execute,
+          has_function_privilege('syntholo_staff_api',
+            'public.syntholo_account_name_is_canonical(text)','EXECUTE') staff_execute,
+          exists(select 1 from pg_proc p,
+            aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
+            where p.oid='public.syntholo_account_name_is_canonical(text)'::regprocedure
+              and acl.grantee=0 and acl.privilege_type='EXECUTE') public_execute`,
+        ["a".repeat(255)],
+      );
+      expect(upgraded.rows).toEqual([{
+        boundary: true,
+        canonical: true,
+        constraint_validated: true,
+        journal_count: 8,
+        member_execute: true,
+        public_execute: false,
+        staff_execute: false,
+      }]);
+      const accountNameCorpus = [
+        "",
+        " ",
+        " Acme",
+        "Acme ",
+        "Acme  Advisory",
+        "Café",
+        "Cafe\u0301",
+        "a".repeat(255),
+        "a".repeat(256),
+        "é".repeat(127) + "a",
+        "é".repeat(128),
+        ...[
+          1, 31, 127, 159, 160, 173, 1564, 5760, 6158, 8192, 8207,
+          8232, 8239, 8287, 8303, 12288, 64976, 65007, 65279, 65534,
+          65535, 0x1fffe, 0x1ffff,
+        ].map((codePoint) => `A${String.fromCodePoint(codePoint)}`),
+        ...[33, 126, 161, 174, 1565, 5759, 6157, 6159, 8208, 8240, 8304,
+          64975, 65008, 65278, 0x10000, 0x1fffd]
+          .map((codePoint) => `A${String.fromCodePoint(codePoint)}`),
+      ];
+      const sqlCorpus = await compatible.pool.query<{
+        canonical: boolean;
+        ordinal: number;
+      }>(
+        `select ordinal::int, public.syntholo_account_name_is_canonical(value) canonical
+         from unnest($1::text[]) with ordinality as corpus(value,ordinal)
+         order by ordinal`,
+        [accountNameCorpus],
+      );
+      expect(sqlCorpus.rows.map((row) => row.canonical)).toEqual(
+        accountNameCorpus.map(isCanonicalAccountName),
+      );
+
+      await expect(migrateDatabase(incompatible)).rejects.toThrow(
+        "SYNTHOLO_0008_ACCOUNT_NAME_PREFLIGHT_FAILED",
+      );
+      const rolledBack = await incompatible.pool.query(
+        `select
+          (select count(*)::int from drizzle.__drizzle_migrations) journal_count,
+          (select name from accounts where id=$1) legacy_name,
+          to_regprocedure('public.syntholo_account_name_is_canonical(text)') is not null function_exists,
+          exists(select 1 from pg_constraint
+            where conrelid='accounts'::regclass
+              and conname='accounts_name_canonical_check') constraint_exists`,
+        ["30000000-0000-4000-8000-000000000003"],
+      );
+      expect(rolledBack.rows).toEqual([{
+        constraint_exists: false,
+        function_exists: false,
+        journal_count: 7,
+        legacy_name: "Cafe\u0301",
+      }]);
+    } finally {
+      await Promise.allSettled([compatible?.close(), incompatible?.close()]);
+      try {
+        await dropTestDatabase(maintenancePool, compatibleName);
+      } finally {
+        try {
+          await dropTestDatabase(maintenancePool, incompatibleName);
+        } finally {
+          await Promise.allSettled([maintenancePool.end(), rm(temporaryMigrations, {
+            force: true,
+            recursive: true,
+          })]);
+        }
+      }
+    }
+  }, 30_000);
 
   it("creates all foundation and authentication tables", async () => {
     const result = await harness.database.pool.query<{ table_name: string }>(
@@ -270,7 +442,7 @@ describe("foundation migration", () => {
 
     expect(result.rows).toEqual([{
       capability: "syntholo_migrator",
-      migration_count: 7,
+      migration_count: 8,
       migration_hashes: [
         "bf3b66561107047f8c317d81bb561e9a29dc6207a14469a3ce588ec1f8ddc60c",
         "6508044b65dcce22b5d9a25b954a40768b813d84f943247e59f6c6391cec60a4",
@@ -279,6 +451,7 @@ describe("foundation migration", () => {
         "b61002f28e9970c63ea24a291ebcca8711bdd1f1a178b9ce09910243cc6683b5",
         "6b465ae711125f441115f83dfbfe9bf63e92a74edd57190e357c10268adeafb5",
         "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002",
+        "c0b495047a3ca6bdb1a24be475184a11c74037e255648a4d5bd73a5c68d598bb",
       ],
       required_objects: [
         "public.access_decision_audit",
@@ -310,7 +483,7 @@ describe("foundation migration", () => {
         "public.staff_sessions",
       ],
       runtime_role: expect.any(String),
-      schema_version: "0007_runtime_contract",
+      schema_version: "0008_account_name",
     }]);
   });
 

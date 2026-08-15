@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./entitlements": "./src/entitlements.ts",
     "./health": "./src/health.ts",
-    "./http": "./src/http.ts"
+    "./http": "./src/http.ts",
+    "./member-dashboard": "./src/member-dashboard.ts"
   },
   "scripts": {
     "lint": "eslint --config ../../eslint.config.mjs src",

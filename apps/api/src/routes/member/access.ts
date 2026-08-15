@@ -3,7 +3,10 @@ import {
   MemberAccessResponseSchema,
 } from "@syntholo/contracts";
 import type { FastifyPluginAsync } from "fastify";
-import { MemberAccessUnavailableError } from "@syntholo/database";
+import {
+  DatabaseDependencyUnavailableError,
+  MemberAccessUnavailableError,
+} from "@syntholo/database";
 import { authenticateMember } from "../../auth/member.js";
 import type { AuthRouteDependencies } from "../../auth/types.js";
 import { AppError } from "../../plugins/error-handler.js";
@@ -25,6 +28,13 @@ export const memberAccessRoutes: FastifyPluginAsync<
     } catch (error) {
       if (error instanceof MemberAccessUnavailableError) {
         throw new AppError("UNAUTHENTICATED", 401, "Authentication required");
+      }
+      if (error instanceof DatabaseDependencyUnavailableError) {
+        throw new AppError(
+          "DEPENDENCY_UNAVAILABLE",
+          503,
+          "Service temporarily unavailable",
+        );
       }
       throw error;
     }

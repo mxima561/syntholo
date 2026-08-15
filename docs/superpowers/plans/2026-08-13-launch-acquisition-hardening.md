@@ -282,7 +282,7 @@ git commit -m "security: enforce production authorization matrix"
 - Create: `packages/domain/src/privacy/retention.ts`
 - Create: `packages/domain/src/privacy/retention.test.ts`
 - Create: `packages/database/src/schema/privacy.ts`
-- Create: `packages/database/drizzle/0025_privacy.sql`
+- Create: `packages/database/drizzle/0029_privacy.sql`
 - Create: `apps/api/src/modules/privacy/{request-export,request-deletion,execute-deletion}.ts`
 - Create: `apps/api/src/routes/{member,staff}/privacy.ts`
 - Create: `apps/worker/src/handlers/privacy/{generate-export,execute-deletion}.ts`

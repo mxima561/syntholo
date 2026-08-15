@@ -202,19 +202,26 @@ async function productionReport() {
     NODE_ENV: "production",
     RELEASE_SHA: process.env.RELEASE_SHA,
   };
+  const productionWebEnvironment = {
+    ...releaseEnvironment,
+    API_UPSTREAM_ORIGIN: "https://api.production-build.invalid",
+    APP_MODE: "production",
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_live_production_build_contract",
+    WEB_ORIGIN: "https://web.production-build.invalid",
+  };
   const definitions = [
     { name: "workspaces", command: "required contracts + lint + typecheck + unit", timeoutMs: 900_000,
       run: async (signal) => validateRequiredContracts(process.cwd()).then(() => command("npm", ["run", "lint"], {}, [], signal)).then(() => command("npm", ["run", "typecheck"], {}, [], signal)).then(() => command("npm", ["run", "test:coverage"], {}, [], signal)) },
     { name: "browser", command: "npm run test:e2e", timeoutMs: 900_000,
       run: async (signal) => command("npm", ["run", "test:e2e"], { ...releaseEnvironment, APP_MODE: "demo" }, ["TEST_DATABASE_URL", "DATABASE_URL", "DATABASE_DIRECT_URL", "DATABASE_POOLED_URL"], signal) },
-    { name: "artifacts", command: "npm run build && node artifact syntax", timeoutMs: 900_000,
-      run: async (signal) => validateRailwayServiceConfigs(process.cwd()).then(() => command("npm", ["run", "build"], { ...releaseEnvironment, APP_MODE: "demo" }, ["TEST_DATABASE_URL", "DATABASE_URL", "DATABASE_DIRECT_URL", "DATABASE_POOLED_URL"], signal)).then(() => command("npm", ["run", "build:migrate"], releaseEnvironment, ["TEST_DATABASE_URL", "DATABASE_URL", "DATABASE_DIRECT_URL", "DATABASE_POOLED_URL"], signal)).then(() => command(process.execPath, ["--check", "apps/api/dist/server.js"], {}, [], signal)).then(() => command(process.execPath, ["--check", "apps/worker/dist/runner.js"], {}, [], signal)).then(() => command(process.execPath, ["--check", "apps/worker/dist/cron.js"], {}, [], signal)).then(() => command(process.execPath, ["--check", "dist/migrate.js"], {}, [], signal)).then(() => expectArtifactStartupFailure("apps/api/dist/server.js", "API_STARTUP_FAILED\n", signal)).then(() => expectArtifactStartupFailure("apps/worker/dist/runner.js", "WORKER_STARTUP_FAILED\n", signal)).then(() => expectArtifactStartupFailure("apps/worker/dist/cron.js", "WORKER_STARTUP_FAILED\n", signal)).then(() => expectArtifactStartupFailure("dist/migrate.js", "MIGRATION_STARTUP_FAILED\n", signal)) },
+    { name: "artifacts", command: "production build + dashboard graph + node artifact syntax", timeoutMs: 900_000,
+      run: async (signal) => validateRailwayServiceConfigs(process.cwd()).then(() => command("npm", ["run", "build"], productionWebEnvironment, ["TEST_DATABASE_URL", "DATABASE_URL", "DATABASE_DIRECT_URL", "DATABASE_POOLED_URL"], signal)).then(() => command("npm", ["run", "test:production-artifacts", "-w", "@syntholo/web"], productionWebEnvironment, ["TEST_DATABASE_URL", "DATABASE_URL", "DATABASE_DIRECT_URL", "DATABASE_POOLED_URL"], signal)).then(() => command("npm", ["run", "build:migrate"], releaseEnvironment, ["TEST_DATABASE_URL", "DATABASE_URL", "DATABASE_DIRECT_URL", "DATABASE_POOLED_URL"], signal)).then(() => command(process.execPath, ["--check", "apps/api/dist/server.js"], {}, [], signal)).then(() => command(process.execPath, ["--check", "apps/worker/dist/runner.js"], {}, [], signal)).then(() => command(process.execPath, ["--check", "apps/worker/dist/cron.js"], {}, [], signal)).then(() => command(process.execPath, ["--check", "dist/migrate.js"], {}, [], signal)).then(() => expectArtifactStartupFailure("apps/api/dist/server.js", "API_STARTUP_FAILED\n", signal)).then(() => expectArtifactStartupFailure("apps/worker/dist/runner.js", "WORKER_STARTUP_FAILED\n", signal)).then(() => expectArtifactStartupFailure("apps/worker/dist/cron.js", "WORKER_STARTUP_FAILED\n", signal)).then(() => expectArtifactStartupFailure("dist/migrate.js", "MIGRATION_STARTUP_FAILED\n", signal)) },
   ];
   const databaseDefinitions = [
     { name: "migrations", command: "exact migration inventory + schema + database migration integration", timeoutMs: 600_000,
       run: async (signal) => command("npm", ["run", "db:schema:check"], {}, [], signal).then(() => command("npm", ["run", "test:integration", "-w", "@syntholo/database", "--", "src/schema/foundation.integration.test.ts"], {}, [], signal)) },
-    { name: "rls", command: "database RLS integration", timeoutMs: 600_000,
-      run: async (signal) => command("npm", ["run", "test:integration", "-w", "@syntholo/database", "--", "src/rls.integration.test.ts"], {}, [], signal) },
+    { name: "rls", command: "database RLS + member deadline integration", timeoutMs: 600_000,
+      run: async (signal) => command("npm", ["run", "test:integration", "-w", "@syntholo/database", "--", "src/rls.integration.test.ts", "src/member-read-deadlines.integration.test.ts"], {}, [], signal) },
     { name: "identitySeparation", command: "identity/session/crypto suites", timeoutMs: 600_000,
       run: async (signal) => command("npm", ["test", "-w", "@syntholo/api", "--", "src/auth/auth.integration.test.ts", "src/auth/session-crypto.test.ts"], {}, [], signal).then(() => command("npm", ["run", "test:integration", "-w", "@syntholo/database", "--", "src/auth.integration.test.ts"], {}, [], signal)) },
     { name: "jobs", command: "worker unit and integration", timeoutMs: 600_000,

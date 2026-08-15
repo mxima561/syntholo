@@ -118,7 +118,7 @@ git commit -m "feat: calculate coach business-time SLA"
 
 **Files:**
 - Create: `packages/database/src/schema/support.ts`
-- Create: `packages/database/drizzle/0013_support.sql`
+- Create: `packages/database/drizzle/0017_support.sql`
 - Create: `packages/database/src/repositories/support.ts`
 - Create: `apps/api/src/modules/support/{open-thread,list-threads,get-thread,send-message}.ts`
 - Create: `apps/api/src/routes/{member,staff}/support.ts`
@@ -190,7 +190,7 @@ git commit -m "feat: persist account-shared support"
 - Create: `packages/domain/src/support/assignment.ts`
 - Create: `packages/domain/src/support/assignment.test.ts`
 - Create: `packages/database/src/schema/coach-operations.ts`
-- Create: `packages/database/drizzle/0014_coach_operations.sql`
+- Create: `packages/database/drizzle/0018_coach_operations.sql`
 - Create: `packages/database/src/repositories/coach-queue.ts`
 - Create: `apps/api/src/modules/support/{assign,transition,reassign}.ts`
 - Create: `apps/api/src/modules/support/record-effort.ts`
@@ -359,7 +359,7 @@ git commit -m "feat: add member and coach support workspaces"
 - Create: `packages/domain/src/reviews/state.ts`
 - Create: `packages/domain/src/reviews/state.test.ts`
 - Create: `packages/database/src/schema/reviews.ts`
-- Create: `packages/database/drizzle/0015_review_lock.sql`
+- Create: `packages/database/drizzle/0019_review_lock.sql`
 - Create: `packages/database/src/repositories/reviews.ts`
 - Create: `apps/api/src/modules/reviews/{submit,start,return}.ts`
 - Create: `apps/api/src/routes/{member,staff}/reviews.ts`
@@ -441,7 +441,7 @@ git commit -m "feat: lock artifact review queue per account"
 **Files:**
 - Create: `packages/contracts/src/support/attachments.ts`
 - Create: `packages/database/src/schema/attachments.ts`
-- Create: `packages/database/drizzle/0016_attachments.sql`
+- Create: `packages/database/drizzle/0020_attachments.sql`
 - Create: `packages/integrations/src/blob/{port,vercel}.ts`
 - Create: `packages/integrations/src/clamav/{port,client}.ts`
 - Create: `apps/api/src/modules/files/{begin-upload,download}.ts`
@@ -528,7 +528,7 @@ git commit -m "feat: quarantine and scan private uploads"
 - Create: `packages/domain/src/sessions/{schedule,rsvp}.test.ts`
 - Create: `packages/contracts/src/sessions/sessions.ts`
 - Create: `packages/database/src/schema/sessions.ts`
-- Create: `packages/database/drizzle/0017_sessions.sql`
+- Create: `packages/database/drizzle/0021_sessions.sql`
 - Create: `packages/database/src/repositories/sessions.ts`
 - Create: `apps/api/src/modules/sessions/{generate,list,rsvp,cancel,attendance}.ts`
 - Create: `apps/api/src/routes/{member,staff}/sessions.ts`
@@ -599,7 +599,7 @@ git commit -m "feat: schedule cohorts and office hours"
 **Files:**
 - Create: `packages/contracts/src/sessions/join.ts`
 - Create: `packages/database/src/schema/session-delivery.ts`
-- Create: `packages/database/drizzle/0018_session_delivery.sql`
+- Create: `packages/database/drizzle/0022_session_delivery.sql`
 - Create: `apps/api/src/modules/sessions/{set-join-metadata,get-join,record-incident}.ts`
 - Create: `apps/worker/src/handlers/sessions/{enqueue-reminders,send-reminder}.ts`
 - Create: `apps/worker/src/handlers/sessions/reminders.integration.test.ts`
@@ -666,7 +666,7 @@ git commit -m "feat: operate manually linked live sessions"
 - Create: `packages/domain/src/community/access.ts`
 - Create: `packages/domain/src/community/access.test.ts`
 - Create: `packages/database/src/schema/community.ts`
-- Create: `packages/database/drizzle/0019_community.sql`
+- Create: `packages/database/drizzle/0023_community.sql`
 - Create: `packages/integrations/src/circle/{port,adapter}.ts`
 - Create: `apps/worker/src/handlers/community/sync-access.ts`
 - Create: `apps/worker/src/handlers/community/sync-access.integration.test.ts`

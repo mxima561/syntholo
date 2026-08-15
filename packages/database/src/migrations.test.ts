@@ -26,6 +26,14 @@ afterEach(async () => {
 });
 
 describe("published migration inventory", () => {
+  it("keeps the canonical-name predicate executable only by its runtime writer and migrator", async () => {
+    const sql = await readFile(join(migrationsFolder, "0008_account_name.sql"), "utf8");
+    expect(sql).toContain(
+      "GRANT EXECUTE ON FUNCTION public.syntholo_account_name_is_canonical(text) TO\n  syntholo_member_api,\n  syntholo_migrator;",
+    );
+    expect(sql).not.toContain("syntholo_staff_api,\n  syntholo_member_api");
+  });
+
   it("resolves migrations copied beside the bundled release artifact", async () => {
     const root = await mkdtemp(join(tmpdir(), "syntholo-migration-artifact-"));
     temporaryRoots.push(root);
@@ -49,6 +57,7 @@ describe("published migration inventory", () => {
       { idx: 4, when: 1786647600000, tag: "0005_entitlements", hash: "b61002f28e9970c63ea24a291ebcca8711bdd1f1a178b9ce09910243cc6683b5" },
       { idx: 5, when: 1786654800000, tag: "0006_runtime_readiness", hash: "6b465ae711125f441115f83dfbfe9bf63e92a74edd57190e357c10268adeafb5" },
       { idx: 6, when: 1786662000000, tag: "0007_runtime_contract", hash: "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002" },
+      { idx: 7, when: 1786669200000, tag: "0008_account_name", hash: "c0b495047a3ca6bdb1a24be475184a11c74037e255648a4d5bd73a5c68d598bb" },
     ]);
   });
 

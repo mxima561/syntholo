@@ -1,6 +1,9 @@
 import type { EffectiveAccess, MemberActor } from "@syntholo/domain";
 import { MemberAccessResponseSchema } from "@syntholo/contracts";
-import { MemberAccessUnavailableError } from "@syntholo/database";
+import {
+  DatabaseDependencyUnavailableError,
+  MemberAccessUnavailableError,
+} from "@syntholo/database";
 import { memberActor } from "@syntholo/testing";
 import { describe, expect, it, vi } from "vitest";
 import { buildApp, type ApiDependencies } from "../../app.js";
@@ -176,6 +179,21 @@ describe("GET /v1/member/access", () => {
     expect(response.statusCode).toBe(401);
     expect(response.json()).toMatchObject({
       error: { code: "UNAUTHENTICATED" },
+    });
+    await app.close();
+  });
+
+  it("maps only a repository-owned deadline wrapper to dependency unavailable", async () => {
+    const app = await buildApp(dependencies(async () => {
+      throw new DatabaseDependencyUnavailableError("lock_timeout");
+    }));
+    const response = await app.inject({
+      method: "GET", url: "/v1/member/access",
+      headers: { authorization: "Bearer member-token" },
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({
+      error: { code: "DEPENDENCY_UNAVAILABLE" },
     });
     await app.close();
   });

@@ -33,6 +33,10 @@ export const accounts = pgTable(
       sql`${table.status} in ('active', 'suspended', 'deleted')`,
     ),
     check(
+      "accounts_name_canonical_check",
+      sql`syntholo_account_name_is_canonical(${table.name})`,
+    ),
+    check(
       "accounts_owner_established_time_check",
       sql`${table.ownerEstablishedAt} is null or (isfinite(${table.ownerEstablishedAt}) and ${table.ownerEstablishedAt} >= '2000-01-01 00:00:00+00'::timestamptz and ${table.ownerEstablishedAt} < '10000-01-01 00:00:00+00'::timestamptz and ${table.ownerEstablishedAt} = date_trunc('milliseconds', ${table.ownerEstablishedAt}))`,
     ),

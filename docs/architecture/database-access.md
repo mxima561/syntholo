@@ -75,6 +75,12 @@ function. Each capability receives explicit schema usage and only current table
 privileges. Future tables receive no runtime privilege automatically; their owning
 migration must make a new access decision.
 
+Migration `0008_account_name` adds the immutable canonical-name predicate used
+by the `accounts_name_canonical_check` constraint. `PUBLIC` and non-writing
+runtime capabilities have no execute privilege; only `syntholo_member_api` and
+`syntholo_migrator` may execute it so the existing scoped account-name writer
+continues to satisfy the constraint.
+
 Migration 0003 adds fixed-search-path functions for login-attempt creation and
 consumption, atomic session issue/rotation, refresh lease/CAS transitions,
 revocation, and bounded cleanup. Staff runtime receives no direct table insert,

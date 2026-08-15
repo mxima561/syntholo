@@ -59,7 +59,7 @@ export async function checkDatabaseReadiness(
     if (
       result.rows.length !== 1
       || row === undefined
-      || row.schema_version !== "0007_runtime_contract"
+      || row.schema_version !== "0008_account_name"
       || row.migration_count !== PUBLISHED_MIGRATIONS.length
       || JSON.stringify(row.migration_hashes) !== JSON.stringify(
         PUBLISHED_MIGRATIONS.map(({ hash }) => hash),

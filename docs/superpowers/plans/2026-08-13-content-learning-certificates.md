@@ -43,7 +43,7 @@
 - Create: `packages/contracts/src/content/{blocks,courses,lessons}.ts`
 - Create: `packages/contracts/src/content/blocks.test.ts`
 - Create: `packages/database/src/schema/content.ts`
-- Create: `packages/database/drizzle/0008_content.sql`
+- Create: `packages/database/drizzle/0009_content.sql`
 - Create: `packages/database/src/content.integration.test.ts`
 
 **Interfaces:**
@@ -199,7 +199,7 @@ git commit -m "feat: add audited lesson publishing"
 - Create: `packages/integrations/src/mux/{port,adapter}.ts`
 - Create: `packages/contracts/src/content/assets.ts`
 - Create: `packages/database/src/schema/content-assets.ts`
-- Create: `packages/database/drizzle/0009_content_assets.sql`
+- Create: `packages/database/drizzle/0010_content_assets.sql`
 - Create: `apps/api/src/routes/webhooks/mux.ts`
 - Create: `apps/api/src/modules/content/process-mux-event.ts`
 - Create: `apps/api/src/routes/member/lesson-playback.ts`
@@ -359,7 +359,7 @@ git commit -m "feat: add Academy content editor"
 **Files:**
 - Create: `packages/contracts/src/learning/{course,progress}.ts`
 - Create: `packages/database/src/schema/learning.ts`
-- Create: `packages/database/drizzle/0010_learning.sql`
+- Create: `packages/database/drizzle/0011_learning.sql`
 - Create: `packages/database/src/repositories/learning.ts`
 - Create: `apps/api/src/modules/learning/{get-course,get-lesson,save-resume}.ts`
 - Create: `apps/api/src/routes/member/learning.ts`
@@ -526,7 +526,7 @@ git commit -m "feat: record immutable Academy completion"
 - Create: `packages/domain/src/implementation/versioning.ts`
 - Create: `packages/domain/src/implementation/versioning.test.ts`
 - Create: `packages/database/src/schema/implementation.ts`
-- Create: `packages/database/drizzle/0011_implementation.sql`
+- Create: `packages/database/drizzle/0012_implementation.sql`
 - Create: `packages/database/src/repositories/artifacts.ts`
 - Create: `apps/api/src/modules/implementation/{list,save-version}.ts`
 - Create: `apps/api/src/routes/member/artifacts.ts`
@@ -603,7 +603,7 @@ git commit -m "feat: persist shared implementation artifacts"
 **Files:**
 - Create: `packages/contracts/src/learning/certificates.ts`
 - Create: `packages/database/src/schema/certificates.ts`
-- Create: `packages/database/drizzle/0012_certificates.sql`
+- Create: `packages/database/drizzle/0013_certificates.sql`
 - Create: `packages/database/src/repositories/certificates.ts`
 - Create: `packages/integrations/src/blob/private-files.ts`
 - Create: `apps/worker/src/handlers/certificates/generate.ts`

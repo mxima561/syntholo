@@ -1,4 +1,5 @@
 import { getTableColumns, getTableName } from "drizzle-orm";
+import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import * as schema from "./index.js";
 
@@ -339,6 +340,11 @@ const expectedColumns = {
 } as const;
 
 describe("foundation Drizzle schema", () => {
+  it("declares the canonical account-name database check", () => {
+    expect(getTableConfig(schema.accounts).checks.map((check) => check.name))
+      .toContain("accounts_name_canonical_check");
+  });
+
   it("declares the foundation and authentication table contracts", () => {
     const actual = Object.values(schema)
       .map((table) => [

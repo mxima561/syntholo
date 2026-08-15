@@ -4,6 +4,10 @@ export { selectMigrationDatabaseUrl } from "./migration-config.js";
 export type { MigrationEnvironment } from "./migration-config.js";
 export { migrateDatabase } from "./migrations.js";
 export { checkDatabaseReadiness } from "./readiness.js";
+export {
+  DatabaseDependencyUnavailableError,
+  memberReadParentDeadline,
+} from "./member-read-deadlines.js";
 export { AccountRepository } from "./repositories/accounts.js";
 export { AuditRepository } from "./repositories/audit.js";
 export type { AuditEventInput } from "./repositories/audit.js";

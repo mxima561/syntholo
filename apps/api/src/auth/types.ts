@@ -81,7 +81,17 @@ export interface AuthRouteDependencies {
       ): Promise<MemberActor | null>;
     };
     access: {
-      getEffectiveAccess(actor: MemberActor): Promise<unknown>;
+      getEffectiveAccess(actor: MemberActor, parentDeadline?: number): Promise<unknown>;
+    };
+    dashboard?: {
+      accounts: {
+        getById(
+          scope: Readonly<{ accountId: string }>,
+          id: string,
+          parentDeadline?: number,
+        ): Promise<Readonly<{ id: string; name: string }> | null>;
+      };
+      clock: { now(): Date };
     };
   };
   staff: {

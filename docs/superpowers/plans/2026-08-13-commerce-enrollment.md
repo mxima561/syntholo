@@ -49,7 +49,7 @@
 - Create: `packages/domain/src/commerce/availability.test.ts`
 - Create: `packages/contracts/src/commerce/offers.ts`
 - Create: `packages/database/src/schema/commerce.ts`
-- Create: `packages/database/drizzle/0005_commerce_catalog.sql`
+- Create: `packages/database/drizzle/0014_commerce_catalog.sql`
 - Create: `packages/database/src/repositories/offers.ts`
 - Create: `apps/api/src/routes/public/offers.ts`
 
@@ -117,7 +117,7 @@ git commit -m "feat: model production offer availability"
 - Create: `packages/domain/src/applications/review.ts`
 - Create: `packages/domain/src/applications/review.test.ts`
 - Create: `packages/database/src/schema/applications.ts`
-- Create: `packages/database/drizzle/0006_applications.sql`
+- Create: `packages/database/drizzle/0015_applications.sql`
 - Create: `apps/api/src/routes/public/{scorecards,pilot-applications}.ts`
 - Create: `apps/api/src/modules/applications/{submit,review}.ts`
 - Modify: `apps/web/src/features/scorecard/scorecard-client.tsx`
@@ -744,7 +744,7 @@ git commit -m "feat: add Operator Club billing"
 - Create: `packages/domain/src/commerce/{refund-policy,disputes}.ts`
 - Create: `packages/domain/src/commerce/{refund-policy,disputes}.test.ts`
 - Create: `packages/database/src/schema/commerce-cases.ts`
-- Create: `packages/database/drizzle/0007_commerce_cases.sql`
+- Create: `packages/database/drizzle/0016_commerce_cases.sql`
 - Create: `apps/api/src/modules/commerce/cases/{open,decide,apply-provider-result}.ts`
 - Create: `apps/api/src/routes/{member,staff}/commerce-cases.ts`
 - Create: `apps/api/src/modules/commerce/cases.integration.test.ts`

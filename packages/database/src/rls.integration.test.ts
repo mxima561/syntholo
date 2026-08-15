@@ -465,7 +465,7 @@ describe.sequential("capability role provisioning migration", () => {
           "select count(*)::text as count from drizzle.__drizzle_migrations",
         )
       ));
-      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["7", "7"]);
+      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["8", "8"]);
       const passwords = await maintenance.query<{
         rolname: string;
         rolpasswordisnull: boolean;
@@ -1748,12 +1748,12 @@ describe("PostgreSQL account role boundary", () => {
       const afterUpgrade = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterUpgrade.rows[0]?.count).toBe("7");
+      expect(afterUpgrade.rows[0]?.count).toBe("8");
       await migrateDatabase(upgradeDb);
       const afterRerun = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterRerun.rows[0]?.count).toBe("7");
+      expect(afterRerun.rows[0]?.count).toBe("8");
       const normalized = await upgradeDb.pool.query(
         `select
           (select bool_and(actor_id is not null and correlation_id is not null)
@@ -1801,7 +1801,7 @@ describe("PostgreSQL account role boundary", () => {
       const freshJournal = await freshDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(freshJournal.rows[0]?.count).toBe("7");
+      expect(freshJournal.rows[0]?.count).toBe("8");
     } finally {
       await Promise.allSettled([
         upgradeDb?.close(),

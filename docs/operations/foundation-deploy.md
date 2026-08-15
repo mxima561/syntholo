@@ -63,8 +63,8 @@ link only to each other. No hosted Account Portal DNS record is part of the
 current launch contract.
 
 API liveness proves only process life. API readiness uses the additive
-`0007_runtime_contract` projection to prove database connectivity, the exact
-ordered journal hashes (including the immutable published `0001`–`0006`
+`0008_account_name` projection to prove database connectivity, the exact
+ordered journal hashes (including the immutable published `0001`–`0007`
 inventory), required migration-owned objects, schema marker, and expected
 runtime capability without exposing connection strings, role topology, or
 provider details.
