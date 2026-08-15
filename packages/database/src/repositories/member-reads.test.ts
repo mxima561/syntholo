@@ -15,8 +15,13 @@ const actor: MemberActor = {
 };
 
 function databaseWithClient(query: ReturnType<typeof vi.fn>) {
-  const release = vi.fn();
-  const once = vi.fn();
+  let ended: (() => void) | undefined;
+  const release = vi.fn((destroy?: boolean) => {
+    if (destroy) ended?.();
+  });
+  const once = vi.fn((event: string, listener: () => void) => {
+    if (event === "end") ended = listener;
+  });
   return {
     database: {
       pool: { connect: vi.fn(async () => ({ query, release, once })) },
@@ -109,7 +114,73 @@ describe("bounded member repositories", () => {
       const rejected = expect(pending).rejects.toMatchObject({ kind: "lock_timeout" });
       await vi.advanceTimersByTimeAsync(2_000);
       await rejected;
-      expect(fixture.release).toHaveBeenCalledExactlyOnceWith();
+      expect(fixture.release).toHaveBeenCalledExactlyOnceWith(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("poisons the lease and stops SQL when the parent deadline expires between lock polls", async () => {
+    vi.useFakeTimers();
+    try {
+      const query = vi.fn(async (text: string) => text.includes("pg_try_advisory_lock_shared")
+        ? { rows: [{ locked: false }] }
+        : { rows: [] });
+      const fixture = databaseWithClient(query);
+      const repository = new MemberEntitlementReadRepository(
+        fixture.database as never,
+        { now: () => new Date("2026-08-14T16:00:00.000Z") },
+      );
+      const pending = repository.getEffectiveAccess(actor, performance.now() + 50);
+      const rejected = expect(pending).rejects.toMatchObject({ kind: "parent_timeout" });
+      await vi.advanceTimersByTimeAsync(50);
+      await rejected;
+
+      expect(query).toHaveBeenCalledTimes(2);
+      expect(query.mock.calls.every(([sql]) => String(sql).includes(
+        "pg_try_advisory_lock_shared",
+      ))).toBe(true);
+      expect(fixture.release).toHaveBeenCalledExactlyOnceWith(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("poisons the lease and issues no cleanup SQL when the parent deadline expires after evaluation", async () => {
+    vi.useFakeTimers();
+    try {
+      const query = vi.fn(async (text: string) => {
+        if (text.includes("pg_try_advisory_lock_shared")) {
+          return { rows: [{ locked: true }] };
+        }
+        if (text.includes("syntholo_member_entitlement_snapshot")) {
+          return { rows: [{ snapshot: { grants: [], holds: [], seats: [] } }] };
+        }
+        return { rows: [] };
+      });
+      const fixture = databaseWithClient(query);
+      const repository = new MemberEntitlementReadRepository(
+        fixture.database as never,
+        {
+          now: () => {
+            vi.advanceTimersByTime(10);
+            return new Date("2026-08-14T16:00:00.000Z");
+          },
+        },
+      );
+
+      await expect(repository.getEffectiveAccess(
+        actor,
+        performance.now() + 5,
+      )).rejects.toMatchObject({ kind: "parent_timeout" });
+
+      expect(query.mock.calls.map(([sql]) => String(sql))).toEqual([
+        expect.stringContaining("pg_try_advisory_lock_shared"),
+        "begin isolation level repeatable read read only",
+        expect.stringContaining("set_config('app.account_id'"),
+        expect.stringContaining("syntholo_member_entitlement_snapshot"),
+      ]);
+      expect(fixture.release).toHaveBeenCalledExactlyOnceWith(true);
     } finally {
       vi.useRealTimers();
     }

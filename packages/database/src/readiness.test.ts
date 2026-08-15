@@ -10,7 +10,7 @@ describe("database readiness projection", () => {
     "b61002f28e9970c63ea24a291ebcca8711bdd1f1a178b9ce09910243cc6683b5",
     "6b465ae711125f441115f83dfbfe9bf63e92a74edd57190e357c10268adeafb5",
     "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002",
-    "c0b495047a3ca6bdb1a24be475184a11c74037e255648a4d5bd73a5c68d598bb",
+    "505693d0977b3cf51b156ac792605be7bf6e4a5c89c5ead8d4c728d1c298f513",
   ];
   const requiredObjects = [
     "public.access_decision_audit",
@@ -42,17 +42,29 @@ describe("database readiness projection", () => {
     "public.staff_sessions",
   ];
 
-  it("accepts only the exact journal hashes, required owned objects, schema marker, and runtime capability", async () => {
-    const query = vi.fn(async () => ({
-      rows: [{
-        capability: "syntholo_member_api",
-        migration_count: 8,
-        migration_hashes: migrationHashes,
-        required_objects: requiredObjects,
-        runtime_role: "syntholo_member_runtime",
-        schema_version: "0008_account_name",
-      }],
-    }));
+  it("keeps the 0007 foundation projection exact and requires the additive 0008 account-name contract", async () => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({
+        rows: [{
+          capability: "syntholo_member_api",
+          migration_count: 7,
+          migration_hashes: migrationHashes.slice(0, 7),
+          required_objects: requiredObjects,
+          runtime_role: "syntholo_member_runtime",
+          schema_version: "0007_runtime_contract",
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          acl_ready: true,
+          constraint_ready: true,
+          contract_version: "0008_account_name.v1",
+          migration_created_at: "1786669200000",
+          migration_hash: migrationHashes[7],
+          predicate_ready: true,
+          writer_compatibility_ready: true,
+        }],
+      });
 
     await expect(checkDatabaseReadiness(
       { pool: { query } },
@@ -61,8 +73,11 @@ describe("database readiness projection", () => {
       latencyMs: expect.any(Number),
       status: "ok",
     });
-    expect(query).toHaveBeenCalledWith(
+    expect(query).toHaveBeenNthCalledWith(1,
       "select schema_version, migration_count, migration_hashes, required_objects, runtime_role, capability from public.syntholo_runtime_readiness()",
+    );
+    expect(query).toHaveBeenNthCalledWith(2,
+      "select contract_version, migration_created_at, migration_hash, predicate_ready, constraint_ready, writer_compatibility_ready, acl_ready from public.syntholo_account_name_readiness_v1()",
     );
   });
 
@@ -72,9 +87,47 @@ describe("database readiness projection", () => {
     { capability: "syntholo_member_api", migration_count: 7, migration_hashes: migrationHashes, required_objects: requiredObjects, runtime_role: "member", schema_version: "0005_entitlements" },
     { capability: "syntholo_member_api", migration_count: 7, migration_hashes: [...migrationHashes.slice(0, 2), "f".repeat(64), ...migrationHashes.slice(3)], required_objects: requiredObjects, runtime_role: "member", schema_version: "0007_runtime_contract" },
     { capability: "syntholo_member_api", migration_count: 7, migration_hashes: migrationHashes, required_objects: requiredObjects.slice(0, -1), runtime_role: "member", schema_version: "0007_runtime_contract" },
-  ])("fails a stale or wrong-capability projection closed", async (row) => {
+  ])("fails a stale or wrong-capability foundation projection closed", async (row) => {
     await expect(checkDatabaseReadiness(
       { pool: { query: async () => ({ rows: [row] }) } },
+      "syntholo_member_api",
+    )).rejects.toThrow("DATABASE_NOT_READY");
+  });
+
+  it.each([
+    { migration_created_at: "1786669199999" },
+    { migration_hash: "f".repeat(64) },
+    { predicate_ready: false },
+    { constraint_ready: false },
+    { writer_compatibility_ready: false },
+    { acl_ready: false },
+  ])("fails a broken additive account-name contract closed", async (override) => {
+    const query = vi.fn()
+      .mockResolvedValueOnce({
+        rows: [{
+          capability: "syntholo_member_api",
+          migration_count: 7,
+          migration_hashes: migrationHashes.slice(0, 7),
+          required_objects: requiredObjects,
+          runtime_role: "syntholo_member_runtime",
+          schema_version: "0007_runtime_contract",
+        }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          acl_ready: true,
+          constraint_ready: true,
+          contract_version: "0008_account_name.v1",
+          migration_created_at: "1786669200000",
+          migration_hash: migrationHashes[7],
+          predicate_ready: true,
+          writer_compatibility_ready: true,
+          ...override,
+        }],
+      });
+
+    await expect(checkDatabaseReadiness(
+      { pool: { query } },
       "syntholo_member_api",
     )).rejects.toThrow("DATABASE_NOT_READY");
   });

@@ -33,10 +33,35 @@ GRANT EXECUTE ON FUNCTION public.syntholo_account_name_is_canonical(text) TO
   syntholo_member_api,
   syntholo_migrator;
 --> statement-breakpoint
+CREATE FUNCTION public.syntholo_normalize_account_name_write()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = pg_catalog, pg_temp
+AS $normalize_account_name$
+BEGIN
+  NEW.name := btrim(normalize(NEW.name, NFC), ' ');
+  RETURN NEW;
+END
+$normalize_account_name$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.syntholo_normalize_account_name_write() FROM PUBLIC;
+--> statement-breakpoint
+CREATE TRIGGER accounts_normalize_name_write
+BEFORE INSERT OR UPDATE OF name ON public.accounts
+FOR EACH ROW
+EXECUTE FUNCTION public.syntholo_normalize_account_name_write();
+--> statement-breakpoint
 ALTER TABLE public.accounts
   ADD CONSTRAINT accounts_name_canonical_check
   CHECK (public.syntholo_account_name_is_canonical(name))
   NOT VALID;
+--> statement-breakpoint
+UPDATE public.accounts
+SET name = btrim(normalize(name, NFC), ' ')
+WHERE name IS DISTINCT FROM btrim(normalize(name, NFC), ' ')
+  AND public.syntholo_account_name_is_canonical(
+    btrim(normalize(name, NFC), ' ')
+  );
 --> statement-breakpoint
 DO $preflight$
 BEGIN
@@ -52,7 +77,18 @@ $preflight$;
 ALTER TABLE public.accounts
   VALIDATE CONSTRAINT accounts_name_canonical_check;
 --> statement-breakpoint
-CREATE OR REPLACE FUNCTION public.syntholo_runtime_readiness()
+ALTER FUNCTION public.syntholo_runtime_readiness()
+  RENAME TO syntholo_runtime_readiness_foundation_v1;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.syntholo_runtime_readiness_foundation_v1() FROM
+  PUBLIC,
+  syntholo_migrator,
+  syntholo_member_api,
+  syntholo_staff_api,
+  syntholo_worker,
+  syntholo_system_api;
+--> statement-breakpoint
+CREATE FUNCTION public.syntholo_runtime_readiness()
 RETURNS TABLE(
   schema_version text,
   migration_count integer,
@@ -66,91 +102,134 @@ STABLE
 SECURITY DEFINER
 SET search_path = pg_catalog, pg_temp
 AS $readiness$
-  WITH runtime AS (
-    SELECT session_user AS role_name,
-      CASE
-        WHEN pg_has_role(session_user, 'syntholo_member_api', 'MEMBER')
-          AND NOT pg_has_role(session_user, 'syntholo_staff_api', 'MEMBER')
-          AND NOT pg_has_role(session_user, 'syntholo_worker', 'MEMBER')
-          AND NOT pg_has_role(session_user, 'syntholo_system_api', 'MEMBER')
-          THEN 'syntholo_member_api'
-        WHEN pg_has_role(session_user, 'syntholo_staff_api', 'MEMBER')
-          AND NOT pg_has_role(session_user, 'syntholo_member_api', 'MEMBER')
-          AND NOT pg_has_role(session_user, 'syntholo_worker', 'MEMBER')
-          AND NOT pg_has_role(session_user, 'syntholo_system_api', 'MEMBER')
-          THEN 'syntholo_staff_api'
-        WHEN pg_has_role(session_user, 'syntholo_worker', 'MEMBER')
-          AND NOT pg_has_role(session_user, 'syntholo_member_api', 'MEMBER')
-          AND NOT pg_has_role(session_user, 'syntholo_staff_api', 'MEMBER')
-          AND NOT pg_has_role(session_user, 'syntholo_system_api', 'MEMBER')
-          THEN 'syntholo_worker'
-        WHEN pg_has_role(session_user, 'syntholo_system_api', 'MEMBER')
-          AND NOT pg_has_role(session_user, 'syntholo_member_api', 'MEMBER')
-          AND NOT pg_has_role(session_user, 'syntholo_staff_api', 'MEMBER')
-          AND NOT pg_has_role(session_user, 'syntholo_worker', 'MEMBER')
-          THEN 'syntholo_system_api'
-        WHEN EXISTS (
-          SELECT 1 FROM pg_roles
-          WHERE rolname = session_user AND rolsuper
-        ) THEN 'syntholo_migrator'
-        ELSE NULL
-      END AS capability_name
-  ), required(name, object_oid) AS (
-    VALUES
-      ('public.access_decision_audit', to_regclass('public.access_decision_audit')),
-      ('public.account_hold_sources', to_regclass('public.account_hold_sources')),
-      ('public.account_holds', to_regclass('public.account_holds')),
-      ('public.accounts', to_regclass('public.accounts')),
-      ('public.administrative_grant_restorations', to_regclass('public.administrative_grant_restorations')),
-      ('public.audit_events', to_regclass('public.audit_events')),
-      ('public.business_os_setup_receipts', to_regclass('public.business_os_setup_receipts')),
-      ('public.business_os_subscription_cancellations', to_regclass('public.business_os_subscription_cancellations')),
-      ('public.club_subscription_cancellations', to_regclass('public.club_subscription_cancellations')),
-      ('public.commerce_fulfillment_receipts', to_regclass('public.commerce_fulfillment_receipts')),
-      ('public.commerce_reconciliations', to_regclass('public.commerce_reconciliations')),
-      ('public.entitlement_commands', to_regclass('public.entitlement_commands')),
-      ('public.entitlement_grants', to_regclass('public.entitlement_grants')),
-      ('public.entitlement_sources', to_regclass('public.entitlement_sources')),
-      ('public.event_handler_receipts', to_regclass('public.event_handler_receipts')),
-      ('public.job_attempts', to_regclass('public.job_attempts')),
-      ('public.jobs', to_regclass('public.jobs')),
-      ('public.member_identities', to_regclass('public.member_identities')),
-      ('public.memberships', to_regclass('public.memberships')),
-      ('public.outbox_events', to_regclass('public.outbox_events')),
-      ('public.provider_event_receipts', to_regclass('public.provider_event_receipts')),
-      ('public.seat_invitation_token_generations', to_regclass('public.seat_invitation_token_generations')),
-      ('public.seat_invitations', to_regclass('public.seat_invitations')),
-      ('public.seat_reservations', to_regclass('public.seat_reservations')),
-      ('public.staff_identities', to_regclass('public.staff_identities')),
-      ('public.staff_login_attempts', to_regclass('public.staff_login_attempts')),
-      ('public.staff_sessions', to_regclass('public.staff_sessions'))
-  ), readiness_owner AS (
-    SELECT proowner AS oid
-    FROM pg_proc
-    WHERE oid = 'public.syntholo_runtime_readiness()'::regprocedure
-  )
   SELECT
-    '0008_account_name'::text,
-    (SELECT count(*)::integer FROM drizzle.__drizzle_migrations),
-    coalesce((
-      SELECT array_agg(hash ORDER BY created_at)
-      FROM drizzle.__drizzle_migrations
-    ), ARRAY[]::text[]),
-    coalesce((
-      SELECT array_agg(required.name ORDER BY required.name)
-      FROM required
-      JOIN pg_class ON pg_class.oid = required.object_oid
-      WHERE pg_class.relowner = (SELECT oid FROM readiness_owner)
-    ), ARRAY[]::text[]),
-    runtime.role_name::text,
-    runtime.capability_name::text
-  FROM runtime
-  WHERE runtime.capability_name IS NOT NULL;
+    foundation.schema_version,
+    7::integer,
+    foundation.migration_hashes[1:7],
+    foundation.required_objects,
+    foundation.runtime_role,
+    foundation.capability
+  FROM public.syntholo_runtime_readiness_foundation_v1() AS foundation;
 $readiness$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION public.syntholo_runtime_readiness() FROM PUBLIC;
 --> statement-breakpoint
 GRANT EXECUTE ON FUNCTION public.syntholo_runtime_readiness() TO
+  syntholo_migrator,
+  syntholo_member_api,
+  syntholo_staff_api,
+  syntholo_worker,
+  syntholo_system_api;
+--> statement-breakpoint
+CREATE FUNCTION public.syntholo_account_name_readiness_v1()
+RETURNS TABLE(
+  contract_version text,
+  migration_created_at bigint,
+  migration_hash text,
+  predicate_ready boolean,
+  constraint_ready boolean,
+  writer_compatibility_ready boolean,
+  acl_ready boolean
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, pg_temp
+AS $account_name_readiness$
+  WITH account_table AS (
+    SELECT oid, relowner
+    FROM pg_class
+    WHERE oid = 'public.accounts'::regclass
+  ), predicate AS (
+    SELECT oid, proowner, proacl
+    FROM pg_proc
+    WHERE oid = 'public.syntholo_account_name_is_canonical(text)'::regprocedure
+  ), normalizer AS (
+    SELECT oid, proowner, proacl
+    FROM pg_proc
+    WHERE oid = 'public.syntholo_normalize_account_name_write()'::regprocedure
+  ), journal AS (
+    SELECT created_at, hash
+    FROM drizzle.__drizzle_migrations
+    WHERE created_at = 1786669200000
+  )
+  SELECT
+    '0008_account_name.v1'::text,
+    journal.created_at,
+    journal.hash,
+    EXISTS (
+      SELECT 1
+      FROM predicate, account_table
+      WHERE predicate.proowner = account_table.relowner
+    ),
+    EXISTS (
+      SELECT 1
+      FROM pg_constraint, account_table
+      WHERE pg_constraint.conrelid = account_table.oid
+        AND pg_constraint.conname = 'accounts_name_canonical_check'
+        AND pg_constraint.contype = 'c'
+        AND pg_constraint.convalidated
+    ),
+    EXISTS (
+      SELECT 1
+      FROM pg_trigger, account_table, normalizer
+      WHERE pg_trigger.tgrelid = account_table.oid
+        AND pg_trigger.tgname = 'accounts_normalize_name_write'
+        AND NOT pg_trigger.tgisinternal
+        AND pg_trigger.tgenabled = 'O'
+        AND pg_trigger.tgfoid = normalizer.oid
+        AND normalizer.proowner = account_table.relowner
+        AND NOT EXISTS (
+          SELECT 1
+          FROM aclexplode(coalesce(
+            normalizer.proacl,
+            acldefault('f', normalizer.proowner)
+          )) AS privilege
+          WHERE privilege.grantee = 0
+            AND privilege.privilege_type = 'EXECUTE'
+        )
+    ),
+    has_function_privilege(
+      'syntholo_member_api',
+      'public.syntholo_account_name_is_canonical(text)',
+      'EXECUTE'
+    )
+      AND has_function_privilege(
+        'syntholo_migrator',
+        'public.syntholo_account_name_is_canonical(text)',
+        'EXECUTE'
+      )
+      AND NOT has_function_privilege(
+        'syntholo_staff_api',
+        'public.syntholo_account_name_is_canonical(text)',
+        'EXECUTE'
+      )
+      AND NOT has_function_privilege(
+        'syntholo_worker',
+        'public.syntholo_account_name_is_canonical(text)',
+        'EXECUTE'
+      )
+      AND NOT has_function_privilege(
+        'syntholo_system_api',
+        'public.syntholo_account_name_is_canonical(text)',
+        'EXECUTE'
+      )
+      AND NOT EXISTS (
+        SELECT 1
+        FROM predicate,
+          LATERAL aclexplode(coalesce(
+            predicate.proacl,
+            acldefault('f', predicate.proowner)
+          )) AS privilege
+        WHERE privilege.grantee = 0
+          AND privilege.privilege_type = 'EXECUTE'
+      )
+  FROM journal;
+$account_name_readiness$;
+--> statement-breakpoint
+REVOKE ALL ON FUNCTION public.syntholo_account_name_readiness_v1() FROM PUBLIC;
+--> statement-breakpoint
+GRANT EXECUTE ON FUNCTION public.syntholo_account_name_readiness_v1() TO
   syntholo_migrator,
   syntholo_member_api,
   syntholo_staff_api,

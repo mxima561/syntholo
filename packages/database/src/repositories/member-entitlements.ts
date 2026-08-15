@@ -12,12 +12,12 @@ import {
   destroyMemberReadLease,
   isMemberReadDeadlineError,
   MEMBER_READ_DEADLINES,
-  memberReadLockDeadlineExceeded,
   memberReadParentDeadline,
   runMemberReadCleanupQuery,
   runMemberReadLockQuery,
   runMemberReadQuery,
   throwIfMemberReadDeadlineExpired,
+  throwMemberReadLockDeadlineExceeded,
   translateMemberReadDependencyError,
 } from "../member-read-deadlines.js";
 
@@ -146,9 +146,9 @@ export class MemberEntitlementReadRepository {
       try {
         const lockDeadline = performance.now() + MEMBER_READ_DEADLINES.lockMs;
         while (!locked) {
-          throwIfMemberReadDeadlineExpired(parentDeadline);
+          await throwIfMemberReadDeadlineExpired(lease, parentDeadline);
           if (performance.now() >= lockDeadline) {
-            throw memberReadLockDeadlineExceeded();
+            await throwMemberReadLockDeadlineExceeded(lease);
           }
           const attempted = await runMemberReadLockQuery<{ locked: boolean }>(
             lease,
@@ -163,9 +163,9 @@ export class MemberEntitlementReadRepository {
               - performance.now();
             if (remaining <= 0) {
               if (parentDeadline <= lockDeadline) {
-                throwIfMemberReadDeadlineExpired(parentDeadline);
+                await throwIfMemberReadDeadlineExpired(lease, parentDeadline);
               }
-              throw memberReadLockDeadlineExceeded();
+              await throwMemberReadLockDeadlineExceeded(lease);
             }
             await new Promise((resolve) => setTimeout(resolve, Math.min(25, remaining)));
           }
@@ -195,7 +195,7 @@ export class MemberEntitlementReadRepository {
         );
         if (result.rows.length !== 1) throw new Error("MEMBER_ACCESS_DATA_INVALID");
         snapshot = result.rows[0]!.snapshot;
-        throwIfMemberReadDeadlineExpired(parentDeadline);
+        await throwIfMemberReadDeadlineExpired(lease, parentDeadline);
         const evaluationNow = new Date(this.clock.now());
         const parsed = record(snapshot);
         evaluated = evaluateEntitlements({
@@ -205,7 +205,7 @@ export class MemberEntitlementReadRepository {
           holds: array(parsed.holds).map(mapHold),
           seats: array(parsed.seats).map(mapSeat),
         });
-        throwIfMemberReadDeadlineExpired(parentDeadline);
+        await throwIfMemberReadDeadlineExpired(lease, parentDeadline);
         await query("commit");
         transactionOpen = false;
       } catch (error) {

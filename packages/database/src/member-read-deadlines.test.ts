@@ -252,4 +252,36 @@ describe("member read deadlines", () => {
       vi.useRealTimers();
     }
   });
+
+  it("poisons an acquired lease when the parent deadline is already expired before a query", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = clientFixture();
+      fixture.release.mockImplementation(() => undefined);
+      const { acquireMemberReadClient, runMemberReadQuery } = await import("./member-read-deadlines.js");
+      const lease = await acquireMemberReadClient(
+        { connect: async () => fixture.client } as never,
+        performance.now() + 100,
+        performance.now() + 100,
+      );
+      const pending = runMemberReadQuery(
+        lease,
+        performance.now() + 100,
+        performance.now() - 1,
+        "select must_not_run()",
+        [],
+        50,
+      );
+      const rejected = expect(pending).rejects.toMatchObject({ kind: "parent_timeout" });
+
+      await vi.advanceTimersByTimeAsync(49);
+      expect(fixture.release).toHaveBeenCalledExactlyOnceWith(true);
+      expect(fixture.client.query).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1);
+      await rejected;
+      expect(lease.destroyed).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

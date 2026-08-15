@@ -193,7 +193,7 @@ describe("foundation migration", () => {
         { created_at: "1786647600000", hash: "b61002f28e9970c63ea24a291ebcca8711bdd1f1a178b9ce09910243cc6683b5" },
         { created_at: "1786654800000", hash: "6b465ae711125f441115f83dfbfe9bf63e92a74edd57190e357c10268adeafb5" },
         { created_at: "1786662000000", hash: "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002" },
-        { created_at: "1786669200000", hash: "c0b495047a3ca6bdb1a24be475184a11c74037e255648a4d5bd73a5c68d598bb" },
+        { created_at: "1786669200000", hash: "505693d0977b3cf51b156ac792605be7bf6e4a5c89c5ead8d4c728d1c298f513" },
       ]);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
@@ -224,7 +224,7 @@ describe("foundation migration", () => {
     }
   }, 20_000);
 
-  it("upgrades canonical populated account names and rolls back an incompatible 0008 preflight", async () => {
+  it("canonicalizes legacy names during a populated upgrade and rolls back an irreparable 0008 preflight", async () => {
     const baseUrl = process.env.TEST_DATABASE_URL;
     if (baseUrl === undefined) throw new Error("TEST_DATABASE_URL_REQUIRED");
     const maintenancePool = new Pool({
@@ -277,17 +277,19 @@ describe("foundation migration", () => {
       await migrate(compatible, { migrationsFolder: temporaryMigrations });
       await migrate(incompatible, { migrationsFolder: temporaryMigrations });
       await compatible.pool.query(
-        "insert into accounts(id,name) values($1,$2),($3,$4)",
+        "insert into accounts(id,name) values($1,$2),($3,$4),($5,$6)",
         [
           "30000000-0000-4000-8000-000000000001",
           "Café",
           "30000000-0000-4000-8000-000000000002",
           "a".repeat(255),
+          "30000000-0000-4000-8000-000000000004",
+          "  Cafe\u0301  ",
         ],
       );
       await incompatible.pool.query(
         "insert into accounts(id,name) values($1,$2)",
-        ["30000000-0000-4000-8000-000000000003", "Cafe\u0301"],
+        ["30000000-0000-4000-8000-000000000003", "Cafe\u00a0"],
       );
 
       await migrateDatabase(compatible);
@@ -307,8 +309,9 @@ describe("foundation migration", () => {
           exists(select 1 from pg_proc p,
             aclexplode(coalesce(p.proacl,acldefault('f',p.proowner))) acl
             where p.oid='public.syntholo_account_name_is_canonical(text)'::regprocedure
-              and acl.grantee=0 and acl.privilege_type='EXECUTE') public_execute`,
-        ["a".repeat(255)],
+              and acl.grantee=0 and acl.privilege_type='EXECUTE') public_execute,
+          (select name from accounts where id=$2) upgraded_legacy_name`,
+        ["a".repeat(255), "30000000-0000-4000-8000-000000000004"],
       );
       expect(upgraded.rows).toEqual([{
         boundary: true,
@@ -318,7 +321,16 @@ describe("foundation migration", () => {
         member_execute: true,
         public_execute: false,
         staff_execute: false,
+        upgraded_legacy_name: "Café",
       }]);
+      await compatible.pool.query(
+        "insert into accounts(id,name) values($1,$2)",
+        ["30000000-0000-4000-8000-000000000005", "  Rollback Cafe\u0301  "],
+      );
+      await expect(compatible.pool.query(
+        "select name from accounts where id=$1",
+        ["30000000-0000-4000-8000-000000000005"],
+      )).resolves.toMatchObject({ rows: [{ name: "Rollback Café" }] });
       const accountNameCorpus = [
         "",
         " ",
@@ -370,7 +382,7 @@ describe("foundation migration", () => {
         constraint_exists: false,
         function_exists: false,
         journal_count: 7,
-        legacy_name: "Cafe\u0301",
+        legacy_name: "Cafe\u00a0",
       }]);
     } finally {
       await Promise.allSettled([compatible?.close(), incompatible?.close()]);
@@ -428,7 +440,7 @@ describe("foundation migration", () => {
     ]);
   });
 
-  it("exposes the exact additive runtime contract projection", async () => {
+  it("keeps the 0007 foundation projection stable and exposes additive 0008 readiness", async () => {
     const result = await harness.database.pool.query<{
       capability: string;
       migration_count: number;
@@ -442,7 +454,7 @@ describe("foundation migration", () => {
 
     expect(result.rows).toEqual([{
       capability: "syntholo_migrator",
-      migration_count: 8,
+      migration_count: 7,
       migration_hashes: [
         "bf3b66561107047f8c317d81bb561e9a29dc6207a14469a3ce588ec1f8ddc60c",
         "6508044b65dcce22b5d9a25b954a40768b813d84f943247e59f6c6391cec60a4",
@@ -451,7 +463,6 @@ describe("foundation migration", () => {
         "b61002f28e9970c63ea24a291ebcca8711bdd1f1a178b9ce09910243cc6683b5",
         "6b465ae711125f441115f83dfbfe9bf63e92a74edd57190e357c10268adeafb5",
         "cc614367c67c41e46a22d951a5d413ce272e356b0fcd20d8ab0ab992d6727002",
-        "c0b495047a3ca6bdb1a24be475184a11c74037e255648a4d5bd73a5c68d598bb",
       ],
       required_objects: [
         "public.access_decision_audit",
@@ -483,7 +494,20 @@ describe("foundation migration", () => {
         "public.staff_sessions",
       ],
       runtime_role: expect.any(String),
-      schema_version: "0008_account_name",
+      schema_version: "0007_runtime_contract",
+    }]);
+
+    const accountName = await harness.database.pool.query(
+      "select contract_version, migration_created_at::text, migration_hash, predicate_ready, constraint_ready, writer_compatibility_ready, acl_ready from public.syntholo_account_name_readiness_v1()",
+    );
+    expect(accountName.rows).toEqual([{
+      acl_ready: true,
+      constraint_ready: true,
+      contract_version: "0008_account_name.v1",
+      migration_created_at: "1786669200000",
+      migration_hash: "505693d0977b3cf51b156ac792605be7bf6e4a5c89c5ead8d4c728d1c298f513",
+      predicate_ready: true,
+      writer_compatibility_ready: true,
     }]);
   });
 

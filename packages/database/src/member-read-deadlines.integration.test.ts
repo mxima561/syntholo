@@ -34,6 +34,25 @@ afterEach(async () => {
 });
 
 describe.sequential("real pg member read deadline disposal", () => {
+  it("destroys an acquired lease when the parent is already expired, runs no SQL, and keeps the following request healthy", async () => {
+    const pool = realPool();
+    const lease = await acquireMemberReadClient(
+      pool,
+      performance.now() + 1_000,
+      performance.now() + 1_000,
+    );
+    await expect(runMemberReadQuery(
+      lease,
+      performance.now() + 1_000,
+      performance.now() - 1,
+      "select pg_sleep(5)",
+    )).rejects.toMatchObject({ kind: "parent_timeout" });
+    expect(lease.destroyed).toBe(true);
+    await expect(pool.query("select 1::int value"))
+      .resolves.toMatchObject({ rows: [{ value: 1 }] });
+    expect(pool.totalCount).toBe(1);
+  });
+
   it("destroys a late one-client-pool checkout and keeps the following request healthy", async () => {
     const pool = realPool();
     const blocker = await pool.connect();

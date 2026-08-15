@@ -76,10 +76,15 @@ privileges. Future tables receive no runtime privilege automatically; their owni
 migration must make a new access decision.
 
 Migration `0008_account_name` adds the immutable canonical-name predicate used
-by the `accounts_name_canonical_check` constraint. `PUBLIC` and non-writing
-runtime capabilities have no execute privilege; only `syntholo_member_api` and
-`syntholo_migrator` may execute it so the existing scoped account-name writer
-continues to satisfy the constraint.
+by the validated `accounts_name_canonical_check` constraint. Its write trigger
+normalizes NFC and ASCII edge spaces before the check, preserving migration-
+first and rolled-back-API compatibility while new writers adopt the shared
+canonicalizer. `PUBLIC` and non-writing runtime capabilities have no predicate
+execute privilege; only `syntholo_member_api` and `syntholo_migrator` may
+execute it. The exact `0007_runtime_contract` readiness result remains callable
+for old instances. New instances additionally require the stable
+`syntholo_account_name_readiness_v1()` projection, including the exact 0008
+journal row/hash, owned predicate and trigger, validated constraint, and ACLs.
 
 Migration 0003 adds fixed-search-path functions for login-attempt creation and
 consumption, atomic session issue/rotation, refresh lease/CAS transitions,

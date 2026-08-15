@@ -755,22 +755,33 @@ $$;
 
 PostgreSQL UTF-8 text cannot contain `U+0000` or unpaired surrogates; the
 explicit numeric conditions keep the SQL predicate aligned with TypeScript for
-all representable scalars. The deployment sequence is:
+all representable scalars. Migration `0008_account_name` must remain safe when
+it is applied before new API writers and when the API is rolled back afterward.
+The deployment sequence is:
 
-1. deploy the shared TypeScript canonicalizer to account creation/onboarding
+1. add a `BEFORE INSERT OR UPDATE OF name` compatibility trigger that applies
+   only the shared deterministic NFC plus ASCII-edge-space canonicalization;
+   this lets pre-0008 writers and a rolled-back API continue to write valid
+   names without weakening the constraint;
+2. add the SQL predicate and an `accounts_name_canonical_check` constraint `NOT
+   VALID`, so every new write is protected without pretending old rows were
+   checked;
+3. deterministically repair only existing NFC/ASCII-edge-space differences for
+   which the resulting value passes the exact predicate. Preflight with that
+   predicate and abort the entire migration if any blank, forbidden-code-point,
+   or over-255-byte name remains; never guess or truncate a replacement;
+4. validate the named constraint only after the preflight returns zero rows;
+5. preserve the exact `0007_runtime_contract` result at
+   `syntholo_runtime_readiness()` for old instances. New instances require that
+   foundation projection plus additive, versioned
+   `syntholo_account_name_readiness_v1()`, which attests the exact 0008 journal
+   row/hash, predicate ownership, validated constraint, compatibility trigger,
+   and ACLs without changing as future migrations are appended;
+6. deploy the shared TypeScript canonicalizer to account creation/onboarding
    and `TransactionAccountRepository.rename`; each computes
    `canonicalizeAccountName(input)` once and persists that returned value, never
    the original input;
-2. add the SQL function and an `accounts_name_canonical_check` constraint `NOT
-   VALID` using `syntholo_account_name_is_canonical(name)`, so every new write
-   is protected without pretending old rows were checked;
-3. preflight with the same SQL function and stop if any existing row fails.
-   ASCII-edge-space/NFC-only differences may receive the deterministic
-   canonical value after operator review; a blank, forbidden-code-point, or
-   over-255-byte name requires an explicit customer-safe replacement, never a
-   guessed/truncated value;
-4. validate the named constraint only after the preflight returns zero rows;
-5. keep `AccountNameSchema` as the non-transforming response predicate, so
+7. keep `AccountNameSchema` as the non-transforming response predicate, so
    malformed storage fails `500` rather than being silently repaired on read.
 
 This is storage integrity hardening, not new feature persistence.
@@ -1224,7 +1235,8 @@ route:
   `MemberReadQueryDeadlineExceeded`, destroys the active
   socket through `release(true)`, and maps to canonical `503`;
 - a parent deadline that wins before the per-query budget produces only
-  `MemberReadParentDeadlineExceeded` and maps to canonical `503`;
+  `MemberReadParentDeadlineExceeded`, destroys an already acquired lease before
+  acknowledgement, executes no later SQL, and maps to canonical `503`;
 - a held exclusive entitlement advisory lock beyond 2,000 ms -> typed
   `lock_timeout` -> canonical `503`;
 - built-in `connectionTimeoutMillis` and `query_timeout` failures, raw transport
@@ -1232,8 +1244,9 @@ route:
   snapshots, and unknown thrown errors remain `500`; no message/code classifier
   can manufacture a sentinel;
 - deadline tests assert the raw query rejects/connection closes before the
-  route completes, no late SQL or retained advisory lock remains, the lease is
-  released exactly once, and a following request on the pool succeeds, with
+  route completes; every parent/lock expiry observed after acquisition poisons
+  the lease before bounded acknowledgement, no late SQL or retained advisory
+  lock remains, and a following request on the pool succeeds, with
   canonical correlation/cache headers and no secret raw cause.
 
 Existing entitlement evaluator property tests and member-access integration
@@ -1293,11 +1306,26 @@ Run desktop and mobile Playwright fixtures through the same-origin facade:
 The legacy demo member journey and screenshot may continue only under explicit
 demo configuration. It is not evidence for any production acceptance test.
 
+The focused production browser journey builds and starts the web app with
+`APP_MODE=production`, uses the real `ClerkProvider`/`useAuth` boundary, and
+observes the same-origin bearer request. Its local HTTPS reverse proxy models
+Vercel's deployment boundary by overwriting `x-vercel-id`, just as the platform
+does before application code runs. Product code consumes that marker only when
+server-owned `VERCEL=1` and `VERCEL_ENV=production` are both present and the
+request URL is the explicitly ported loopback hop hidden behind the TLS proxy.
+External request URLs—including Vercel preview aliases—are never reconstructed, so a
+valid-looking client marker cannot suppress their canonical redirect. The app
+never uses browser-supplied `Forwarded` or `X-Forwarded-*` values to defeat
+canonical-host enforcement. Direct-spoof regression tests cover both the
+external-alias and outside-platform cases.
+
 ## 14. Rollout and observability
 
-1. Ship the shared account-name canonicalizer to every writer, then add the SQL
-   function/`NOT VALID` check, run the same-predicate preflight, repair explicitly,
-   and validate before any dashboard API can serialize names.
+1. Apply `0008_account_name` first: compatibility trigger, SQL predicate/`NOT
+   VALID` check, deterministic repair, fail-closed preflight, validation, and
+   additive readiness. Old instances continue to receive the exact 0007
+   readiness result and old writers remain compatible. Then ship the shared
+   canonicalizer to every writer before any dashboard API serializes names.
 2. Ship the contracts subpath, bounded repository wrappers/sentinels, and v1 API
    route with version-header negotiation behind no UI consumer; verify Fastify/real-PG
    deadline, race, isolation, and default/explicit-v1 fallback tests.
@@ -1309,9 +1337,11 @@ demo configuration. It is not evidence for any production acceptance test.
 5. Monitor route status/latency by low-cardinality code only. Do not log account
    name, Clerk bearer, grant IDs, member email, or response body.
 6. Roll back the web consumer first if rendering fails. The read-only API route
-   may remain safely unused. The account-name check is backward-compatible and
-   may remain; if it must be removed, drop only that named constraint after the
-   web/API rollback and preserve canonicalized names.
+   may remain safely unused. Migration 0008 remains compatible with the old API
+   through its writer trigger and exact 0007 readiness surface. If 0008 itself
+   must be rolled back, remove only its additive readiness function, wrapper/
+   renamed-foundation indirection, trigger/function, and named constraint after
+   web/API rollback, preserving canonicalized account values.
 
 Recommended operational counters:
 

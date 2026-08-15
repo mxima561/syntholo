@@ -111,14 +111,23 @@ export function memberReadParentDeadline(
   return performance.now() + budgetMs;
 }
 
-export function throwIfMemberReadDeadlineExpired(parentDeadline: number): void {
+export async function throwIfMemberReadDeadlineExpired(
+  lease: MemberReadClientLease,
+  parentDeadline: number,
+  cleanupMs: number = MEMBER_READ_DEADLINES.cleanupMs,
+): Promise<void> {
   if (performance.now() >= parentDeadline) {
+    await destroyMemberReadLease(lease, cleanupMs);
     throw new MemberReadParentDeadlineExceeded();
   }
 }
 
-export function memberReadLockDeadlineExceeded(): Error {
-  return new MemberReadLockDeadlineExceeded();
+export async function throwMemberReadLockDeadlineExceeded(
+  lease: MemberReadClientLease,
+  cleanupMs: number = MEMBER_READ_DEADLINES.cleanupMs,
+): Promise<never> {
+  await destroyMemberReadLease(lease, cleanupMs);
+  throw new MemberReadLockDeadlineExceeded();
 }
 
 export function isMemberReadDeadlineError(
@@ -212,7 +221,7 @@ async function runMemberReadQueryWithDeadline<
   cleanupMs: number,
   operationError: () => MemberReadDeadlineExceeded,
 ): Promise<QueryResult<TRow>> {
-  throwIfMemberReadDeadlineExpired(parentDeadline);
+  await throwIfMemberReadDeadlineExpired(lease, parentDeadline, cleanupMs);
   const rawQuery = Promise.resolve(lease.client.query<TRow>(text, [...values]));
   const effectiveDeadline = Math.min(operationDeadline, parentDeadline);
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -252,7 +261,7 @@ export function runMemberReadQuery<TRow extends Record<string, unknown>>(
   parentDeadline: number,
   text: string,
   values: readonly unknown[] = [],
-  cleanupMs = MEMBER_READ_DEADLINES.cleanupMs,
+  cleanupMs: number = MEMBER_READ_DEADLINES.cleanupMs,
 ): Promise<QueryResult<TRow>> {
   return runMemberReadQueryWithDeadline(
     lease,
@@ -271,7 +280,7 @@ export function runMemberReadLockQuery<TRow extends Record<string, unknown>>(
   parentDeadline: number,
   text: string,
   values: readonly unknown[] = [],
-  cleanupMs = MEMBER_READ_DEADLINES.cleanupMs,
+  cleanupMs: number = MEMBER_READ_DEADLINES.cleanupMs,
 ): Promise<QueryResult<TRow>> {
   return runMemberReadQueryWithDeadline(
     lease,

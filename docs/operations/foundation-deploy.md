@@ -62,12 +62,14 @@ and initiate-login URI use the same host. Clerk uses DNS mode at
 link only to each other. No hosted Account Portal DNS record is part of the
 current launch contract.
 
-API liveness proves only process life. API readiness uses the additive
-`0008_account_name` projection to prove database connectivity, the exact
-ordered journal hashes (including the immutable published `0001`–`0007`
-inventory), required migration-owned objects, schema marker, and expected
-runtime capability without exposing connection strings, role topology, or
-provider details.
+API liveness proves only process life. API readiness first requires the exact
+legacy `0007_runtime_contract` projection—unchanged for migration-first rolling
+deploys and API rollback—then requires the additive, versioned
+`0008_account_name` projection. Together they prove database connectivity, the
+immutable ordered `0001`–`0007` journal hashes and exact 0008 journal row/hash,
+required foundation objects/schema/capability, and the owned/validated account-
+name predicate, constraint, compatibility trigger, and ACLs without exposing
+connection strings, role topology, or provider details.
 
 ## Gate and evidence
 

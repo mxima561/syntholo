@@ -35,12 +35,19 @@ type ReadinessDatabase = Readonly<{
   pool: Readonly<{
     query(sql: string): Promise<Readonly<{
       rows: Array<{
-        capability: string | null;
-        migration_count: number;
-        migration_hashes: string[];
-        required_objects: string[];
-        runtime_role: string;
-        schema_version: string;
+        acl_ready?: boolean;
+        capability?: string | null;
+        constraint_ready?: boolean;
+        contract_version?: string;
+        migration_count?: number;
+        migration_created_at?: string;
+        migration_hash?: string;
+        migration_hashes?: string[];
+        predicate_ready?: boolean;
+        required_objects?: string[];
+        runtime_role?: string;
+        schema_version?: string;
+        writer_compatibility_ready?: boolean;
       }>;
     }>>;
   }>;
@@ -52,23 +59,44 @@ export async function checkDatabaseReadiness(
 ): Promise<Readonly<{ latencyMs: number; status: "ok" }>> {
   const started = Date.now();
   try {
-    const result = await database.pool.query(
+    const foundation = await database.pool.query(
       "select schema_version, migration_count, migration_hashes, required_objects, runtime_role, capability from public.syntholo_runtime_readiness()",
     );
-    const row = result.rows[0];
+    const row = foundation.rows[0];
+    const foundationMigrations = PUBLISHED_MIGRATIONS.slice(0, 7);
     if (
-      result.rows.length !== 1
+      foundation.rows.length !== 1
       || row === undefined
-      || row.schema_version !== "0008_account_name"
-      || row.migration_count !== PUBLISHED_MIGRATIONS.length
+      || row.schema_version !== "0007_runtime_contract"
+      || row.migration_count !== foundationMigrations.length
       || JSON.stringify(row.migration_hashes) !== JSON.stringify(
-        PUBLISHED_MIGRATIONS.map(({ hash }) => hash),
+        foundationMigrations.map(({ hash }) => hash),
       )
       || JSON.stringify(row.required_objects) !== JSON.stringify(REQUIRED_RUNTIME_OBJECTS)
       || row.capability !== expectedCapability
+      || row.runtime_role === undefined
       || row.runtime_role.trim() === ""
     ) {
       throw new Error("projection mismatch");
+    }
+    const accountName = await database.pool.query(
+      "select contract_version, migration_created_at, migration_hash, predicate_ready, constraint_ready, writer_compatibility_ready, acl_ready from public.syntholo_account_name_readiness_v1()",
+    );
+    const accountNameRow = accountName.rows[0];
+    const accountNameMigration = PUBLISHED_MIGRATIONS[7];
+    if (
+      accountName.rows.length !== 1
+      || accountNameRow === undefined
+      || accountNameMigration === undefined
+      || accountNameRow.contract_version !== "0008_account_name.v1"
+      || accountNameRow.migration_created_at !== String(accountNameMigration.when)
+      || accountNameRow.migration_hash !== accountNameMigration.hash
+      || accountNameRow.predicate_ready !== true
+      || accountNameRow.constraint_ready !== true
+      || accountNameRow.writer_compatibility_ready !== true
+      || accountNameRow.acl_ready !== true
+    ) {
+      throw new Error("account-name projection mismatch");
     }
     return { latencyMs: Date.now() - started, status: "ok" };
   } catch {

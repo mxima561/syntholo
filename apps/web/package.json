@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:production-artifacts": "node --test tests/build/production-learn-artifacts.test.mjs",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:production": "playwright test --config playwright.production.config.ts"
   },
   "dependencies": {
     "@clerk/react": "6.14.1",
