@@ -10,10 +10,34 @@ export {
 } from "./member-read-deadlines.js";
 export { AccountRepository } from "./repositories/accounts.js";
 export { ContentCommandConflictError, StaffContentCommandRepository } from "./repositories/content.js";
-export { LearningPrerequisiteInputError, WorkerLearningRepository } from "./repositories/learning-worker.js";
+export {
+  CertificateCandidateInputError,
+  LearningPrerequisiteInputError,
+  WorkerLearningRepository,
+} from "./repositories/learning-worker.js";
 export { ImplementationCompletionInputError, WorkerImplementationRepository } from "./repositories/implementation-worker.js";
+export {
+  CertificateGenerationInputError,
+  CertificateGenerationConsistencyError,
+  CertificateGenerationRepositoryError,
+  CertificateStorageRecoveryPriorDecisionError,
+  WorkerCertificateRepository,
+} from "./repositories/certificates-worker.js";
+export type {
+  CertificateFile,
+  CertificateGeneration,
+  CertificateGenerationFence,
+  CertificateStorageRetryCandidate,
+} from "./repositories/certificates-worker.js";
 export { LearningRepositoryError, MemberLearningRepository } from "./repositories/learning.js";
 export { ImplementationRepositoryError, MemberImplementationRepository, SystemImplementationRepository } from "./repositories/implementation.js";
+export {
+  CertificateRepositoryError,
+  MemberCertificatesRepository,
+  StaffCertificatesRepository,
+  decodeCertificateCursor,
+} from "./repositories/certificates.js";
+export type { CertificateDownloadFence, CertificateRepositoryErrorCode } from "./repositories/certificates.js";
 export type { LearningPlaybackTarget } from "./repositories/learning.js";
 export type { ContentPreviewRecord, CreateContentPreviewInput } from "./repositories/content.js";
 export { StaffMuxAssetRepository, SystemMuxEventRepository, WorkerContentMediaRepository } from "./repositories/content-media.js";

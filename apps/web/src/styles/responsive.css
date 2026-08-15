@@ -78,6 +78,7 @@
   .production-conflict-comparison { grid-template-columns: 1fr; }
   .review-rail { grid-column: 1; }
   .production-course-summary, .production-lesson-workspace { grid-template-columns: 1fr; }
+  .production-certificate-name-card, .production-certificate-grid { grid-template-columns: 1fr; }
   .production-course-progress { max-width: 310px; }
   .production-lesson-rail { position: static; }
 }
@@ -115,7 +116,7 @@
   .member-sidebar { position: fixed; z-index: 20; inset: auto 0 0; width: 100%; height: 58px; padding: 7px 10px; display: block; border: 1px solid var(--border); border-radius: 13px 13px 0 0; box-shadow: 0 -8px 28px rgba(16,42,53,.08); }
   .member-sidebar .member-brand, .member-sidebar .nav-group > span, .member-sidebar .nav-group:nth-of-type(2), .member-sidebar .nav-group:nth-of-type(3), .sidebar-program, .member-identity { display: none; }
   .member-sidebar nav, .member-sidebar .nav-group:first-child { height: 100%; display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; }
-  .production-member-sidebar nav, .production-member-sidebar .nav-group:first-child { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .production-member-sidebar nav, .production-member-sidebar .nav-group:first-child { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .member-sidebar .nav-group a { min-height: 44px; }
   .member-topbar { height: 57px; padding-inline: 16px; }
   .member-topbar > div:first-child strong, .member-topbar > div:first-child small { display: none; }

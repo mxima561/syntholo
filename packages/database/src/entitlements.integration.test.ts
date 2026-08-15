@@ -455,7 +455,7 @@ describe.sequential("entitlement authority database", () => {
       `select hash,created_at::text created_at
        from drizzle.__drizzle_migrations order by id`,
     );
-    expect(journal.rowCount).toBe(12);
+    expect(journal.rowCount).toBe(13);
     expect(journal.rows.slice(3, 5)).toEqual([
       {
         created_at: "1786640400000",
@@ -750,7 +750,7 @@ describe.sequential("entitlement authority database", () => {
         from accounts where id='30000000-0000-4000-8000-000000000003'
       `);
       expect(upgraded.rows).toEqual([{
-        journal_count: 12,
+        journal_count: 13,
         owner_established_at: "2026-01-02T03:04:05.123Z",
       }]);
       const afterUpgrade = await upgrade.pool.query<{

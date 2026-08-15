@@ -19,9 +19,42 @@ execFileSync("openssl", [
   "-days", "1",
 ], { stdio: "ignore" });
 
+const apiUpstreamOrigin = "https://127.0.0.1:3202";
+const runtimeEnvironment = {
+  ...process.env,
+  API_UPSTREAM_ORIGIN: apiUpstreamOrigin,
+  NODE_EXTRA_CA_CERTS: certificate,
+};
+
+const apiFixture = createHttpsServer({
+  cert: readFileSync(certificate),
+  key: readFileSync(key),
+}, (request, response) => {
+  if (
+    request.method === "GET"
+    && request.url === "/v1/staff/whoami"
+    && request.headers.cookie === `__Host-syntholo_staff_session=${"s".repeat(43)}`
+  ) {
+    response.writeHead(200, { "cache-control": "no-store", "content-type": "application/json; charset=utf-8" });
+    response.end(JSON.stringify({
+      kind: "staff",
+      actorId: "10000000-0000-4000-8000-000000000001",
+      workosUserId: "production-browser-staff",
+      staffId: "10000000-0000-4000-8000-000000000002",
+      role: "admin",
+      permissions: ["certificates:deliver"],
+      authenticatedAt: "2026-08-15T12:00:00.000Z",
+    }));
+    return;
+  }
+  response.writeHead(404, { "cache-control": "no-store" });
+  response.end();
+});
+apiFixture.listen(3202, "127.0.0.1");
+
 execFileSync(process.execPath, ["../../node_modules/next/dist/bin/next", "build"], {
   cwd: new URL("../../apps/web", import.meta.url),
-  env: process.env,
+  env: runtimeEnvironment,
   stdio: "inherit",
 });
 
@@ -34,7 +67,7 @@ if (existsSync(publicRoot)) {
 cpSync(new URL(".next/static/", webRoot), new URL(".next/static/", standaloneRoot), { recursive: true });
 const child = spawn(process.execPath, ["server.js"], {
   cwd: standaloneRoot,
-  env: { ...process.env, HOSTNAME: "127.0.0.1", PORT: "3201" },
+  env: { ...runtimeEnvironment, HOSTNAME: "127.0.0.1", PORT: "3201" },
   stdio: ["ignore", "pipe", "pipe"],
 });
 child.stdout.pipe(process.stdout);
@@ -82,12 +115,14 @@ function stop(signal = "SIGTERM") {
   if (stopping) return;
   stopping = true;
   proxy.close();
+  apiFixture.close();
   child.kill(signal);
 }
 
 process.once("SIGINT", () => stop("SIGINT"));
 process.once("SIGTERM", () => stop("SIGTERM"));
 child.once("exit", (code, signal) => {
+  apiFixture.close();
   rmSync(certificateRoot, { force: true, recursive: true });
   if (signal !== null) process.kill(process.pid, signal);
   process.exitCode = code ?? 1;

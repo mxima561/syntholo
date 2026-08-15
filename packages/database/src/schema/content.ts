@@ -292,6 +292,7 @@ export const courseVersions = pgTable("course_versions", {
   unique("course_versions_source_preview_unique").on(table.sourcePreviewId),
   unique("course_versions_id_course_hash_unique").on(table.id, table.courseId, table.manifestHash),
   unique("course_versions_id_course_unique").on(table.id, table.courseId),
+  unique("course_versions_certificate_exact_unique").on(table.id, table.courseId, table.version),
 ]);
 
 export const courseVersionLessons = pgTable("course_version_lessons", {

@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "algorithm": "certificate-font-repertoire.v1",
+  "fonts": [
+    {
+      "name": "unifont-15.0.04.ttf",
+      "sha256": "92449b12f581aef7270601c374a263a52605e812431309984b15506cf910eaca"
+    },
+    {
+      "name": "unifont_upper-15.0.04.ttf",
+      "sha256": "ee245cc8a7c6a6fdab8d52cf44d721c695f08f4280e639600e709f1bb6f22cb2"
+    }
+  ],
+  "license": {
+    "name": "OFL.txt",
+    "sha256": "6a73f9541c2de74158c0e7cf6b0a58ef774f5a780bf191f2d7ec9cc53efe2bf2"
+  },
+  "attribution": {
+    "name": "ATTRIBUTION.md",
+    "sha256": "8ca6820359941fd2d18754206fb4945500fba41d15b669ba59548b81049c38f0"
+  },
+  "supportedScalarCount": 112458,
+  "supportedCodePointRanges": [
+    [
+      0,
+      55295
+    ],
+    [
+      63744,
+      65533
+    ],
+    [
+      65536,
+      72543
+    ],
+    [
+      72704,
+      73727
+    ],
+    [
+      74650,
+      74751
+    ],
+    [
+      74863,
+      74863
+    ],
+    [
+      74869,
+      74879
+    ],
+    [
+      75076,
+      77823
+    ],
+    [
+      78895,
+      82943
+    ],
+    [
+      83527,
+      92159
+    ],
+    [
+      92729,
+      94207
+    ],
+    [
+      100344,
+      100351
+    ],
+    [
+      101120,
+      101631
+    ],
+    [
+      101641,
+      131069
+    ],
+    [
+      917504,
+      917631
+    ],
+    [
+      917760,
+      917999
+    ]
+  ],
+  "manifestCanonicalSha256": "08b07f94c69e07cf51395aaa8057a4f5c2aebd1571fcf50e32baa89e9c881f96"
+}

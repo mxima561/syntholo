@@ -33,3 +33,4 @@ export {
 export * from "./content.js";
 export * from "./learning.js";
 export * from "./implementation.js";
+export * from "./certificates.js";

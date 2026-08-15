@@ -6,10 +6,12 @@ import {
   createDatabase,
   MemberIdentityRepository,
   MemberEntitlementReadRepository,
+  MemberCertificatesRepository,
   MemberImplementationRepository,
   MemberLearningRepository,
   StaffIdentityRepository,
   StaffContentCommandRepository,
+  StaffCertificatesRepository,
   StaffLoginAttemptRepository,
   StaffSessionRepository,
   SystemMuxEventRepository,
@@ -17,6 +19,7 @@ import {
 import {
   createClerkSessionAuthenticator,
   createMuxPlaybackSigner,
+  createPrivateCertificateBlobStore,
   createRemoteWorkosJwks,
   createWorkosStaffClient,
   verifyWorkosAccessToken,
@@ -67,6 +70,9 @@ async function productionDependencies(config: ApiConfig): Promise<{
     const workosJwks = createRemoteWorkosJwks(new URL(config.workosJwksUrl));
     const sessions = new StaffSessionRepository(staffDatabase);
     const content = new StaffContentCommandRepository(staffDatabase);
+    const certificateBlob = config.certificateBlob === undefined
+      ? undefined
+      : createPrivateCertificateBlobStore(config.certificateBlob);
     const playbackSigner = config.mux.kind === "configured"
       ? await createMuxPlaybackSigner({
           keyId: config.mux.signingKeyId,
@@ -126,6 +132,13 @@ async function productionDependencies(config: ApiConfig): Promise<{
                 memberDatabase,
                 config.implementationCursorSecret,
               ),
+              ...(certificateBlob === undefined ? {} : {
+                certificates: new MemberCertificatesRepository(
+                  memberDatabase,
+                  config.certificateBlob!.cursorSecret,
+                ),
+                certificateBlob,
+              }),
               ...(playbackSigner === undefined ? {} : {
                 playback: {
                   sign: playbackSigner.sign,
@@ -180,6 +193,9 @@ async function productionDependencies(config: ApiConfig): Promise<{
                 publishCourse: ({ actor, ...input }) => content.publishCourse({ actorId: actor.actorId, ...input }),
                 publishLesson: ({ actor, ...input }) => content.publishLesson({ actorId: actor.actorId, ...input }),
               },
+              ...(certificateBlob === undefined ? {} : {
+                certificates: new StaffCertificatesRepository(staffDatabase),
+              }),
             },
           },
         },

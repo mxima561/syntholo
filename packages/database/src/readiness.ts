@@ -70,7 +70,11 @@ type ReadinessDatabase = Readonly<{
         track_table_ready?: boolean;
         public_execute_denied?: boolean;
         function_ready?: boolean;
+        font_manifest_hash?: string;
         immutability_ready?: boolean;
+        implementation_completion_is_authority?: boolean;
+        implementation_migration_hash?: string;
+        independence_ready?: boolean;
         policy_ready?: boolean;
         receipt_binding_ready?: boolean;
         rls_ready?: boolean;
@@ -78,6 +82,7 @@ type ReadinessDatabase = Readonly<{
         structure_ready?: boolean;
         table_ready?: boolean;
         upstream_fk_ready?: boolean;
+        upstream_ready?: boolean;
         writer_compatibility_ready?: boolean;
       }>;
     }>>;
@@ -212,6 +217,36 @@ export async function checkDatabaseReadiness(
       || implementationRow.upstream_fk_ready !== true
       || implementationRow.seed_backfill_ready !== true
     ) throw new Error("implementation projection mismatch");
+    const certificates = await database.pool.query(
+      "select contract_version, migration_created_at, migration_hash, implementation_migration_hash, implementation_completion_is_authority, font_manifest_hash, table_ready, structure_ready, immutability_ready, rls_ready, policy_ready, table_acl_ready, function_ready, function_acl_ready, public_execute_denied, receipt_binding_ready, upstream_ready, independence_ready from public.syntholo_certificates_readiness_v1()",
+    );
+    const certificatesRow = certificates.rows[0];
+    const certificatesMigration = PUBLISHED_MIGRATIONS[12];
+    if (
+      certificates.rows.length !== 1
+      || certificatesRow === undefined
+      || certificatesMigration === undefined
+      || certificatesRow.contract_version !== "0013_certificates.v1"
+      || certificatesRow.migration_created_at !== String(certificatesMigration.when)
+      || certificatesRow.migration_hash !== certificatesMigration.hash
+      || certificatesRow.implementation_migration_hash
+        !== "dabb54d9842c3e06c67e1ef5b17f42312011ffb133275b4dd346afd2465939a9"
+      || certificatesRow.implementation_completion_is_authority !== false
+      || certificatesRow.font_manifest_hash
+        !== "08b07f94c69e07cf51395aaa8057a4f5c2aebd1571fcf50e32baa89e9c881f96"
+      || certificatesRow.table_ready !== true
+      || certificatesRow.structure_ready !== true
+      || certificatesRow.immutability_ready !== true
+      || certificatesRow.rls_ready !== true
+      || certificatesRow.policy_ready !== true
+      || certificatesRow.table_acl_ready !== true
+      || certificatesRow.function_ready !== true
+      || certificatesRow.function_acl_ready !== true
+      || certificatesRow.public_execute_denied !== true
+      || certificatesRow.receipt_binding_ready !== true
+      || certificatesRow.upstream_ready !== true
+      || certificatesRow.independence_ready !== true
+    ) throw new Error("certificates projection mismatch");
     return { latencyMs: Date.now() - started, status: "ok" };
   } catch {
     throw new Error("DATABASE_NOT_READY");

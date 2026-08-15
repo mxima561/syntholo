@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, FileText, Gauge, Workflow } from "lucide-react";
+import { Award, BookOpen, FileText, Gauge, Workflow } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
@@ -10,6 +10,7 @@ const links = [
   { href: "/learn/course", label: "Course", icon: BookOpen },
   { href: "/learn/plan", label: "Plan", icon: FileText },
   { href: "/learn/workflows", label: "Workflows", icon: Workflow },
+  { href: "/learn/settings/certificates", label: "Certificates", icon: Award },
 ] as const;
 
 export function ProductionMemberShell({ children }: Readonly<{ children: ReactNode }>) {

@@ -204,6 +204,7 @@ describe.sequential("implementation workspace database authority", () => {
 
   beforeAll(async () => {
     harness = await createTestDatabaseHarness();
+    await harness.reset();
     const baseUrl = process.env.TEST_DATABASE_URL;
     if (baseUrl === undefined) throw new Error("TEST_DATABASE_URL_REQUIRED");
     const memberPassword = randomUUID();
@@ -227,6 +228,7 @@ describe.sequential("implementation workspace database authority", () => {
   afterAll(async () => {
     await Promise.allSettled([member?.close(), system?.close(), workerDatabase?.close()]);
     if (harness !== undefined) {
+      await harness.reset();
       await harness.database.pool.query(await roleSql(harness.database, "revoke syntholo_member_api from %I", [memberRole])).catch(() => undefined);
       await harness.database.pool.query(await roleSql(harness.database, "revoke syntholo_system_api from %I", [systemRole])).catch(() => undefined);
       await harness.database.pool.query(await roleSql(harness.database, "revoke syntholo_worker from %I", [workerRole])).catch(() => undefined);
@@ -269,7 +271,7 @@ describe.sequential("implementation workspace database authority", () => {
         [ids.access, ids.courseVersion, ids.accountA, ids.course],
       );
       expect(backfilled.rows).toEqual([{ count: 5, access_count: 5, version_count: 5 }]);
-      expect((await upgrade.pool.query("select count(*)::integer count from drizzle.__drizzle_migrations")).rows).toEqual([{ count: 12 }]);
+      expect((await upgrade.pool.query("select count(*)::integer count from drizzle.__drizzle_migrations")).rows).toEqual([{ count: 13 }]);
     } finally {
       await upgrade?.close();
       await maintenance.query(`drop database if exists "${databaseName}" with (force)`).catch(() => undefined);

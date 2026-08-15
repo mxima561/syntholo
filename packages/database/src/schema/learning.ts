@@ -97,4 +97,15 @@ export const courseCompletions = pgTable("course_completions", {
 
 export const certificatePrerequisites = pgTable("certificate_prerequisites", {
   id: uuid("id").primaryKey().defaultRandom(), courseCompletionId: id("course_completion_id").unique(), accountId: id("account_id"), membershipId: id("membership_id"), enrollmentId: id("enrollment_id"), courseId: id("course_id"), courseVersionId: id("course_version_id"), recordedAt: instant("recorded_at").notNull().defaultNow(),
-}, (table) => [foreignKey({ columns: [table.courseCompletionId, table.accountId, table.membershipId, table.enrollmentId, table.courseId, table.courseVersionId], foreignColumns: [courseCompletions.id, courseCompletions.accountId, courseCompletions.membershipId, courseCompletions.enrollmentId, courseCompletions.courseId, courseCompletions.courseVersionId], name: "certificate_prerequisites_completion_fk" }).onDelete("restrict").onUpdate("restrict")]);
+}, (table) => [
+  foreignKey({ columns: [table.courseCompletionId, table.accountId, table.membershipId, table.enrollmentId, table.courseId, table.courseVersionId], foreignColumns: [courseCompletions.id, courseCompletions.accountId, courseCompletions.membershipId, courseCompletions.enrollmentId, courseCompletions.courseId, courseCompletions.courseVersionId], name: "certificate_prerequisites_completion_fk" }).onDelete("restrict").onUpdate("restrict"),
+  unique("certificate_prerequisites_exact_unique").on(
+    table.id,
+    table.courseCompletionId,
+    table.accountId,
+    table.membershipId,
+    table.enrollmentId,
+    table.courseId,
+    table.courseVersionId,
+  ),
+]);

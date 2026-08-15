@@ -24,6 +24,13 @@ export class LearningPrerequisiteInputError extends Error {
   }
 }
 
+export class CertificateCandidateInputError extends Error {
+  constructor() {
+    super("CERTIFICATE_EVENT_INPUT_INVALID");
+    this.name = "CertificateCandidateInputError";
+  }
+}
+
 export class WorkerLearningRepository {
   constructor(private readonly database: Database) {}
 
@@ -32,8 +39,41 @@ export class WorkerLearningRepository {
     signal?: AbortSignal,
     parentDeadline = memberReadParentDeadline(),
   ): Promise<Readonly<{ kind: "recorded" | "duplicate" }>> {
+    return this.executeEventCommand(
+      input,
+      "select public.syntholo_learning_record_certificate_prerequisite_v1($1,$2) outcome",
+      "LEARNING_PREREQUISITE_INPUT_INVALID",
+      () => new LearningPrerequisiteInputError(),
+      signal,
+      parentDeadline,
+    );
+  }
+
+  async stageCertificateCandidate(
+    input: z.input<typeof InputSchema>,
+    signal?: AbortSignal,
+    parentDeadline = memberReadParentDeadline(),
+  ): Promise<Readonly<{ kind: "recorded" | "duplicate" }>> {
+    return this.executeEventCommand(
+      input,
+      "select public.syntholo_certificate_stage_candidate_v1($1,$2) outcome",
+      "CERTIFICATE_EVENT_INPUT_INVALID",
+      () => new CertificateCandidateInputError(),
+      signal,
+      parentDeadline,
+    );
+  }
+
+  private async executeEventCommand(
+    input: z.input<typeof InputSchema>,
+    queryText: string,
+    exactInputCode: string,
+    inputError: () => Error,
+    signal: AbortSignal | undefined,
+    parentDeadline: number,
+  ): Promise<Readonly<{ kind: "recorded" | "duplicate" }>> {
     const parsed = InputSchema.safeParse(input);
-    if (!parsed.success) throw new LearningPrerequisiteInputError();
+    if (!parsed.success) throw inputError();
     let lease: MemberReadClientLease | undefined;
     try {
       if (signal?.aborted === true) throw new DatabaseDependencyUnavailableError("parent_timeout");
@@ -59,7 +99,7 @@ export class WorkerLearningRepository {
         lease,
         performance.now() + MEMBER_READ_DEADLINES.lockMs,
         parentDeadline,
-        "select public.syntholo_learning_record_certificate_prerequisite_v1($1,$2) outcome",
+        queryText,
         [parsed.data.eventId, parsed.data.handlerName],
       );
       const queried = signal === undefined ? { kind: "value" as const, value: await query } : await raceAbort(query, signal);
@@ -74,9 +114,7 @@ export class WorkerLearningRepository {
       return Object.freeze({ kind: outcome.data });
     } catch (error) {
       if (isMemberReadDeadlineError(error)) throw translateMemberReadDependencyError(error);
-      if (error instanceof Error && error.message === "LEARNING_PREREQUISITE_INPUT_INVALID") {
-        throw new LearningPrerequisiteInputError();
-      }
+      if (error instanceof Error && error.message === exactInputCode) throw inputError();
       throw error;
     } finally {
       if (lease !== undefined && !lease.destroyed) lease.release();

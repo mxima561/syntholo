@@ -31,7 +31,14 @@ if (service === "api" && process.env.NODE_ENV !== "production") {
 const configuration = service === "api"
   ? { entryPoints: ["src/server.ts"], outfile: "dist/server.js" }
   : service === "worker"
-    ? { entryPoints: ["src/runner.ts", "src/cron.ts"], outdir: "dist" }
+    ? {
+        entryPoints: {
+          runner: "src/runner.ts",
+          cron: "src/cron.ts",
+          "certificate-render": "src/handlers/certificates/render.ts",
+        },
+        outdir: "dist",
+      }
     : service === "migrate"
       ? {
           entryPoints: ["packages/database/src/migrate.ts"],
@@ -61,4 +68,8 @@ await build({
 if (service === "migrate") {
   await rm("dist/drizzle", { force: true, recursive: true });
   await cp("packages/database/drizzle", "dist/drizzle", { recursive: true });
+}
+if (service === "worker") {
+  await rm("dist/assets", { force: true, recursive: true });
+  await cp("src/handlers/certificates/assets", "dist/assets", { recursive: true });
 }

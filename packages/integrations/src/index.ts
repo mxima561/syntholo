@@ -9,6 +9,7 @@ export { createClerkSessionAuthenticator } from "./clerk/client.js";
 export { createWorkosStaffClient } from "./workos/client.js";
 export * from "./mux.js";
 export * from "./mux-playback.js";
+export * from "./blob/private-certificates.js";
 export {
   STRIPE_API_VERSION,
   StripeAdapterError,

@@ -356,7 +356,7 @@ describe("foundation Drizzle schema", () => {
       Object.hasOwn(expectedColumns, tableName)
     ));
 
-    expect(actual).toHaveLength(66);
+    expect(actual).toHaveLength(71);
     expect(foundationAndAuthentication).toEqual(Object.entries(expectedColumns));
   });
 });

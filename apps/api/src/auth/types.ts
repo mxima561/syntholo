@@ -15,6 +15,15 @@ import type {
   SaveArtifactVersionRequest,
   SaveArtifactVersionResponse,
 } from "@syntholo/contracts/implementation";
+import type {
+  CertificateDeliveryResponse,
+  CertificateListResponse,
+  CertificateRecipientNameResponse,
+  ConfirmCertificateRecipientNameRequest,
+  CreateCertificateDeliveryRequest,
+} from "@syntholo/contracts/learning";
+import type { CertificateDownloadFence } from "@syntholo/database";
+import type { PrivateCertificateBlobStore } from "@syntholo/integrations";
 import type { EncryptedValue, StaffSessionCrypto } from "./session-crypto.js";
 
 export type AuthEnvironment = "local" | "test" | "staging" | "production";
@@ -128,6 +137,13 @@ export interface AuthRouteDependencies {
       versions(actor: MemberActor, correlationId: string, artifactId: string, input: Readonly<{ limit: number; cursor?: string }>, parentDeadline?: number): Promise<ArtifactVersionsResponse>;
       saveVersion(actor: MemberActor, correlationId: string, artifactId: string, input: SaveArtifactVersionRequest, idempotencyKey: string, parentDeadline?: number): Promise<SaveArtifactVersionResponse>;
     };
+    certificates?: {
+      getRecipientName(actor: MemberActor, correlationId: string, parentDeadline?: number): Promise<CertificateRecipientNameResponse>;
+      confirmRecipientName(actor: MemberActor, correlationId: string, input: ConfirmCertificateRecipientNameRequest, idempotencyKey: string, parentDeadline?: number): Promise<CertificateRecipientNameResponse>;
+      list(actor: MemberActor, correlationId: string, input: Readonly<{ limit: number; cursor?: string }>, parentDeadline?: number): Promise<CertificateListResponse>;
+      downloadFence(actor: MemberActor, correlationId: string, certificateId: string, parentDeadline?: number): Promise<CertificateDownloadFence>;
+    };
+    certificateBlob?: Pick<PrivateCertificateBlobStore, "download">;
     playback?: {
       sign(input: Readonly<{ playbackId: string; durationSeconds: number; now: Date }>): Promise<Readonly<{
         playbackToken: string;
@@ -278,6 +294,9 @@ export interface AuthRouteDependencies {
         contentHash: string;
         publishedAt: string;
       }>>;
+    };
+    certificates?: {
+      createDelivery(actor: StaffActor, correlationId: string, certificateId: string, input: CreateCertificateDeliveryRequest, idempotencyKey: string, parentDeadline?: number): Promise<CertificateDeliveryResponse>;
     };
   };
 }

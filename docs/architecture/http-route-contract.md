@@ -28,7 +28,7 @@ This ADR makes one v1 contract while preserving these non-negotiable boundaries:
 - Request and response schemas live in `packages/contracts`; route adapters do authentication, validation, cache headers, and translation only. Domain transitions live in `packages/domain` or `apps/api/src/modules`; persistence lives in scoped `packages/database` repositories.
 - JSON routes accept and return `application/json`. Unknown request fields are rejected. Timestamps are UTC RFC 3339 strings. IDs are opaque strings and have no client-visible embedded meaning.
 - A successful single-resource response is the resource document itself, matching the existing API convention. A collection is `{ "items": [...], "nextCursor": string | null }`. A command returning a durable resource returns that resource, not `{ ok: true }`.
-- Creation returns `201`; synchronous queries and completed commands return `200`; accepted asynchronous work returns `202`; idempotent deletion/revocation with no representation returns `204`; private-file and external-provider handoffs use `303` with `Location` and no response body.
+- Creation returns `201`; synchronous queries and completed commands return `200`; accepted asynchronous work returns `202`; idempotent deletion/revocation with no representation returns `204`; external-provider and explicitly signed private-file handoffs use `303` with `Location` and no response body. An authenticated API that server-fetches a private object may instead stream a verified `200` response when its route contract says so.
 - Every response includes `x-correlation-id`. Errors retain the already-implemented shape:
 
   ```json
@@ -100,7 +100,9 @@ These paths are pre-existing focused-plan contracts and are not renamed by this 
 | `GET /v1/member/lessons/:lessonId` | Clerk member + course access/enrollment | Actor-scoped, published enrolled version only | `routes/member/learning.ts` |
 | `PUT /v1/member/lessons/:lessonId/resume` | Clerk member + course access/enrollment | Replay-safe typed resume update; no account/member ID input | `routes/member/learning.ts` |
 | `POST /v1/member/lessons/:lessonId/complete` | Clerk member + course access/enrollment | `I`; immutable completion method `video \| transcript \| mixed` | `routes/member/progress.ts` |
-| `GET /v1/member/certificates` | Clerk member | Only certificates earned by actor; no public equivalent | `routes/member/certificates.ts` |
+| `GET /v1/member/certificate-recipient-name` | Active actor-bound Clerk membership | Current confirmed canonical name version or null; independent of entitlement/course access | `routes/member/certificates.ts` |
+| `PUT /v1/member/certificate-recipient-name` | Active actor-bound Clerk membership | `I`; exact membership-scoped optimistic update; independent of entitlement/course access | `routes/member/certificates.ts` |
+| `GET /v1/member/certificates` | Active actor-bound Clerk membership | Only personal certificates for that exact membership; independent of current entitlement/course access; no public equivalent | `routes/member/certificates.ts` |
 | `POST /v1/member/support/threads/:id/messages` | Clerk member + support access; thread in actor account | `I`; body never enters audit/analytics | `routes/member/support.ts` |
 
 ## Canonical routes for the 20 previously unspecified families
@@ -214,8 +216,8 @@ Artifact content is never copied into audit, analytics, error details, or Sentry
 
 | Method and path | Authorization | Controls and response | Owner |
 |---|---|---|---|
-| `GET /v1/member/certificates/:certificateId/download` | Clerk member who earned that certificate | `303` to five-minute private Blob URL; `no-store` | `routes/member/certificates.ts` |
-| `POST /v1/staff/certificates/:certificateId/deliveries` | WorkOS admin, `certificates:deliver`, `R5` | `I`; reason; audited redelivery to retained recipient identity, returns `202` | `routes/staff/certificates.ts` |
+| `GET /v1/member/certificates/:certificateId/download` | Active Clerk membership that personally earned that certificate | Authenticated server fetch of the exact private object; streamed `200 application/pdf`; `private, no-store`; no provider URL/token | `routes/member/certificates.ts` |
+| `POST /v1/staff/certificates/:certificateId/deliveries` | WorkOS admin, `certificates:deliver`, `R5` | `I`; reason; creates an immutable audited `delivery_pending` request and performs no send; returns `202` | `routes/staff/certificates.ts` |
 
 There is intentionally no `/v1/public/certificates`, lookup, verify, certificate-ID, or public download route. Account teammates cannot fetch one another's certificate.
 

@@ -12,6 +12,7 @@
     "./content": "./src/content/index.ts",
     "./learning": "./src/learning/index.ts",
     "./commerce": "./src/commerce/index.ts",
+    "./certificates": "./src/certificates/index.ts",
     "./implementation": "./src/implementation/index.ts"
   },
   "scripts": {

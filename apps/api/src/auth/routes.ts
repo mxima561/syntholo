@@ -14,6 +14,8 @@ import { memberLessonPlaybackRoutes } from "../routes/member/lesson-playback.js"
 import { memberProgressRoutes } from "../routes/member/progress.js";
 import { memberImplementationRoutes } from "../routes/member/implementation.js";
 import { staffContentRoutes } from "../routes/staff/content.js";
+import { memberCertificateRoutes } from "../routes/member/certificates.js";
+import { staffCertificateRoutes } from "../routes/staff/certificates.js";
 
 export const authRoutes: FastifyPluginAsync<AuthRouteDependencies> = async (
   app,
@@ -41,10 +43,23 @@ export const authRoutes: FastifyPluginAsync<AuthRouteDependencies> = async (
       implementation: dependencies.member.implementation,
     });
   }
+  if (dependencies.member.certificates !== undefined && dependencies.member.certificateBlob !== undefined) {
+    await app.register(memberCertificateRoutes, {
+      member: dependencies.member,
+      certificates: dependencies.member.certificates,
+      blob: dependencies.member.certificateBlob,
+    });
+  }
   if (dependencies.staff.content !== undefined) {
     await app.register(staffContentRoutes, {
       staff: dependencies.staff,
       content: dependencies.staff.content,
+    });
+  }
+  if (dependencies.staff.certificates !== undefined) {
+    await app.register(staffCertificateRoutes, {
+      staff: dependencies.staff,
+      certificates: dependencies.staff.certificates,
     });
   }
 

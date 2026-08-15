@@ -1121,6 +1121,34 @@ describe("API configuration and startup", () => {
     }, releaseSha).mux).toMatchObject({ signingPrivateKey });
   });
 
+  it("binds certificate Blob activation to an independent deployment environment and cursor secret", () => {
+    const base = productionApiEnvironment();
+    const configured = {
+      CERTIFICATE_BLOB_ENABLED: "true",
+      DEPLOYMENT_ENVIRONMENT: "staging",
+      CERTIFICATE_BLOB_ENVIRONMENT: "staging",
+      CERTIFICATE_BLOB_TOKEN: `vercel_blob_rw_stagingstore_${"a".repeat(32)}`,
+      CERTIFICATE_BLOB_STAGING_STORE_ID: "stagingstore",
+      CERTIFICATE_BLOB_PRODUCTION_STORE_ID: "productionstore",
+      CERTIFICATE_CURSOR_SECRET: "certificate-cursor-secret-at-least-32-bytes",
+    };
+    expect(parseApiConfig({ ...base, ...configured }, releaseSha).certificateBlob).toEqual({
+      enabled: true,
+      environment: "staging",
+      token: configured.CERTIFICATE_BLOB_TOKEN,
+      storeIds: { staging: "stagingstore", production: "productionstore" },
+      operationTimeoutMs: 15_000,
+      cursorSecret: "certificate-cursor-secret-at-least-32-bytes",
+    });
+    for (const patch of [
+      { ...configured, DEPLOYMENT_ENVIRONMENT: "production" },
+      { ...configured, CERTIFICATE_CURSOR_SECRET: "short" },
+      { ...configured, CERTIFICATE_BLOB_PRODUCTION_STORE_ID: "stagingstore" },
+      { CERTIFICATE_BLOB_ENABLED: "true" },
+      { CERTIFICATE_BLOB_ENABLED: "false", CERTIFICATE_BLOB_ENVIRONMENT: "staging" },
+    ]) expect(() => parseApiConfig({ ...base, ...patch }, releaseSha)).toThrow("API_CONFIG_INVALID");
+  });
+
   it("requires explicit production mode before selecting release staff cookies", () => {
     const environment = productionApiEnvironment({ NODE_ENV: undefined });
     expect(() => parseApiConfig(environment, releaseSha))

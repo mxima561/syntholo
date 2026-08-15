@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AdminSectionPage from "./[section]/page";
 import AdminContentPage from "./content/page";
+import AdminCertificatesPage from "./certificates/page";
 import AdminOverviewPage from "./page";
 import AdminProvisioningPage from "./provisioning/page";
 import AdminLayout from "./layout";
@@ -32,6 +33,7 @@ const routes: readonly [string, () => ReactNode | Promise<ReactNode>][] = [
   ["/admin", () => AdminOverviewPage()],
   ["/admin layout", () => AdminLayout({ children: <p>Admin content</p> })],
   ["/admin/content", () => AdminContentPage()],
+  ["/admin/certificates", () => AdminCertificatesPage()],
   ["/admin/provisioning", () => AdminProvisioningPage()],
   ["/admin/customers", () => AdminSectionPage({ params: Promise.resolve({ section: "customers" }) })],
 ];

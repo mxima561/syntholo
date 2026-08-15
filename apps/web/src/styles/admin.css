@@ -138,3 +138,19 @@
 .admin-table > button { color: var(--muted); font-size: var(--text-meta); cursor: pointer; transition: background-color var(--motion-fast) ease; }
 .admin-table > button:hover { background: var(--teal-tint); }
 .admin-table > button strong { color: var(--navy); font: 750 13px var(--font-heading); }
+.production-certificate-delivery { max-width: 960px; }
+.certificate-delivery-panel { padding: 28px; display: grid; grid-template-columns: minmax(0, .85fr) minmax(320px, 1.15fr); gap: 28px; border: 1px solid var(--border); border-radius: var(--radius-shell); background: var(--surface); box-shadow: var(--shadow-card); }
+.certificate-delivery-panel h2 { margin: 10px 0 8px; font: 750 24px/1.15 var(--font-heading); }
+.certificate-delivery-panel p { color: var(--muted); line-height: 1.55; }
+.certificate-delivery-form { display: grid; gap: 13px; }
+.certificate-delivery-form label { display: grid; gap: 7px; font-weight: 750; }
+.certificate-delivery-form input, .certificate-delivery-form textarea { width: 100%; padding: 11px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-control); background: white; font: inherit; }
+.certificate-delivery-form input { min-height: 44px; }
+.certificate-delivery-form textarea { min-height: 110px; resize: vertical; }
+.certificate-delivery-form [aria-invalid="true"] { border-color: var(--danger); }
+.certificate-delivery-form .button { min-height: 44px; }
+.certificate-delivery-result, .certificate-delivery-error { grid-column: 1 / -1; padding: 16px; border-radius: var(--radius-card); }
+.certificate-delivery-result { border: 1px solid #cce1d9; background: var(--teal-tint); }
+.certificate-delivery-result p { margin: 6px 0 0; }
+.certificate-delivery-error { margin: 0; border: 1px solid #f0c9c0; background: var(--coral-tint); color: #7c3e34 !important; }
+@media (max-width: 800px) { .certificate-delivery-panel { grid-template-columns: 1fr; padding: 20px; } }

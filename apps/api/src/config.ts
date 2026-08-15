@@ -47,6 +47,14 @@ const ApiEnvironmentSchema = z.object({
   WORKOS_JWKS_URL: optionalNonemptyString,
   STAFF_SESSION_ENCRYPTION_KEYS: optionalNonemptyString,
   IMPLEMENTATION_CURSOR_SECRET: optionalNonemptyString,
+  CERTIFICATE_CURSOR_SECRET: optionalNonemptyString,
+  CERTIFICATE_BLOB_ENABLED: z.enum(["true", "false"]).default("false"),
+  CERTIFICATE_BLOB_ENVIRONMENT: z.enum(["staging", "production"]).optional(),
+  CERTIFICATE_BLOB_TOKEN: optionalNonemptyString,
+  CERTIFICATE_BLOB_STAGING_STORE_ID: z.string().trim().regex(/^[A-Za-z0-9]{3,64}$/u).optional(),
+  CERTIFICATE_BLOB_PRODUCTION_STORE_ID: z.string().trim().regex(/^[A-Za-z0-9]{3,64}$/u).optional(),
+  CERTIFICATE_BLOB_OPERATION_TIMEOUT_MS: z.coerce.number().int().min(100).max(60_000).default(15_000),
+  DEPLOYMENT_ENVIRONMENT: z.enum(["staging", "production"]).optional(),
   MUX_CONTENT_ENABLED: z.enum(["true", "false"]).default("false"),
   MUX_ENVIRONMENT_ID: optionalNonemptyString,
   MUX_WEBHOOK_SECRET: optionalNonemptyString,
@@ -73,6 +81,14 @@ export type ApiConfig = Readonly<{
   workosJwksUrl: string;
   sessionEncryptionKeys: string;
   implementationCursorSecret: string;
+  certificateBlob?: Readonly<{
+    enabled: true;
+    environment: "staging" | "production";
+    token: string;
+    storeIds: Readonly<{ staging: string; production: string }>;
+    operationTimeoutMs: number;
+    cursorSecret: string;
+  }>;
   mux: Readonly<{ kind: "disabled" }> | Readonly<{
     kind: "configured";
     environmentId: string;
@@ -149,6 +165,25 @@ export function parseApiConfig(
       || (result.MUX_SIGNING_KEY_ID !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$/u.test(result.MUX_SIGNING_KEY_ID))) {
       throw new Error("Mux configuration invalid");
     }
+    const certificateBlobEnabled = result.CERTIFICATE_BLOB_ENABLED === "true";
+    const certificateBlobValues = [
+      result.CERTIFICATE_BLOB_ENVIRONMENT,
+      result.CERTIFICATE_BLOB_TOKEN,
+      result.CERTIFICATE_BLOB_STAGING_STORE_ID,
+      result.CERTIFICATE_BLOB_PRODUCTION_STORE_ID,
+      result.CERTIFICATE_CURSOR_SECRET,
+    ];
+    const configuredCertificateBlobValues = certificateBlobValues.filter((value) => value !== undefined).length;
+    if ((configuredCertificateBlobValues !== 0 && configuredCertificateBlobValues !== certificateBlobValues.length)
+      || (certificateBlobEnabled && configuredCertificateBlobValues !== certificateBlobValues.length)
+      || (certificateBlobEnabled
+        && result.DEPLOYMENT_ENVIRONMENT !== result.CERTIFICATE_BLOB_ENVIRONMENT)
+      || (result.CERTIFICATE_CURSOR_SECRET !== undefined
+        && Buffer.byteLength(result.CERTIFICATE_CURSOR_SECRET, "utf8") < 32)
+      || (result.CERTIFICATE_BLOB_STAGING_STORE_ID !== undefined
+        && result.CERTIFICATE_BLOB_STAGING_STORE_ID === result.CERTIFICATE_BLOB_PRODUCTION_STORE_ID)) {
+      throw new Error("certificate Blob configuration invalid");
+    }
     parseStaffSessionKeyRing(required.sessionEncryptionKeys as string);
     const webOrigin = exactUrl(required.webOrigin as string, "origin");
     const workosIssuer = exactUrl(required.workosIssuer as string, "issuer");
@@ -173,6 +208,19 @@ export function parseApiConfig(
       workosOrganizationId: required.workosOrganizationId as string,
       sessionEncryptionKeys: required.sessionEncryptionKeys as string,
       implementationCursorSecret: required.implementationCursorSecret as string,
+      ...(certificateBlobEnabled ? {
+        certificateBlob: Object.freeze({
+          enabled: true as const,
+          environment: result.CERTIFICATE_BLOB_ENVIRONMENT!,
+          token: result.CERTIFICATE_BLOB_TOKEN!,
+          storeIds: Object.freeze({
+            staging: result.CERTIFICATE_BLOB_STAGING_STORE_ID!,
+            production: result.CERTIFICATE_BLOB_PRODUCTION_STORE_ID!,
+          }),
+          operationTimeoutMs: result.CERTIFICATE_BLOB_OPERATION_TIMEOUT_MS,
+          cursorSecret: result.CERTIFICATE_CURSOR_SECRET!,
+        }),
+      } : {}),
       webOrigin,
       workosIssuer,
       workosJwksUrl,

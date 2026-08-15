@@ -66,7 +66,12 @@ const foundationTables = [
   "audit_events",
   "business_os_setup_receipts",
   "business_os_subscription_cancellations",
+  "certificate_delivery_requests",
+  "certificate_files",
   "certificate_prerequisites",
+  "certificate_recipient_name_heads",
+  "certificate_recipient_name_versions",
+  "certificate_records",
   "club_subscription_cancellations",
   "commerce_fulfillment_receipts",
   "commerce_reconciliations",
@@ -1896,12 +1901,12 @@ describe("PostgreSQL account role boundary", () => {
       const afterUpgrade = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterUpgrade.rows[0]?.count).toBe("12");
+      expect(afterUpgrade.rows[0]?.count).toBe("13");
       await migrateDatabase(upgradeDb);
       const afterRerun = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterRerun.rows[0]?.count).toBe("12");
+      expect(afterRerun.rows[0]?.count).toBe("13");
       const normalized = await upgradeDb.pool.query(
         `select
           (select bool_and(actor_id is not null and correlation_id is not null)
@@ -1956,7 +1961,7 @@ describe("PostgreSQL account role boundary", () => {
       const freshJournal = await freshDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(freshJournal.rows[0]?.count).toBe("12");
+      expect(freshJournal.rows[0]?.count).toBe("13");
     } finally {
       await Promise.allSettled([
         upgradeDb?.close(),

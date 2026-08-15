@@ -40,6 +40,9 @@ function disposableDatabaseName(kind: "target" | "trap"): string {
 function databaseUrl(baseUrl: string, databaseName: string): string {
   const url = new URL(baseUrl);
   url.pathname = `/${databaseName}`;
+  if (url.searchParams.get("sslmode") === "require") {
+    url.searchParams.set("sslmode", "verify-full");
+  }
   return url.toString();
 }
 
@@ -155,7 +158,7 @@ describe("foundation migration", () => {
       );
 
       expect(first.stderr).toBe("");
-      expect(migratedTables.rows[0]?.count).toBe("66");
+      expect(migratedTables.rows[0]?.count).toBe("71");
       expect(firstJournal.rows).toEqual([
         { created_at: "1786618800000", hash: "bf3b66561107047f8c317d81bb561e9a29dc6207a14469a3ce588ec1f8ddc60c" },
         { created_at: "1786626000000", hash: "6508044b65dcce22b5d9a25b954a40768b813d84f943247e59f6c6391cec60a4" },
@@ -169,6 +172,7 @@ describe("foundation migration", () => {
         { created_at: "1786683600000", hash: "65e621c5754cb490c50dff009854433815dae8ee3fd3a6410de9dea6080fcb43" },
         { created_at: "1786770000000", hash: "2e37ec9d4bfeee1ad0319ae81172fac4107a87c798bd2f0eed79eb75ee0e2ccf" },
         { created_at: "1786856400000", hash: "dabb54d9842c3e06c67e1ef5b17f42312011ffb133275b4dd346afd2465939a9" },
+        { created_at: "1786942800000", hash: "878a759f41c44e0cbb9cf7492889bdf4d6f0ab087f0e9d7b26865f988fbe1bd9" },
       ]);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
@@ -197,7 +201,7 @@ describe("foundation migration", () => {
         }
       }
     }
-  }, 20_000);
+  }, 45_000);
 
   it("canonicalizes legacy names during a populated upgrade and rolls back an irreparable 0008 preflight", async () => {
     const baseUrl = process.env.TEST_DATABASE_URL;
@@ -292,7 +296,7 @@ describe("foundation migration", () => {
         boundary: true,
         canonical: true,
         constraint_validated: true,
-        journal_count: 12,
+        journal_count: 13,
         member_execute: true,
         public_execute: false,
         staff_execute: false,
@@ -430,7 +434,7 @@ describe("foundation migration", () => {
       "select schema_version, migration_count, migration_hashes, required_objects, runtime_role, capability from public.syntholo_runtime_readiness()",
     );
 
-    expect(journal.rows).toEqual([{ count: 12 }]);
+    expect(journal.rows).toEqual([{ count: 13 }]);
     expect(result.rows).toEqual([{
       capability: "syntholo_migrator",
       migration_count: 7,

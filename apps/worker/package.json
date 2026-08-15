@@ -13,6 +13,7 @@
     "build": "node ../../infra/scripts/build-node-service.mjs worker",
     "dev": "tsx watch src/runner.ts",
     "dev:cron": "tsx watch src/cron.ts",
+    "generate:certificate-font-repertoire": "node scripts/generate-certificate-font-repertoire.mjs",
     "lint": "eslint --config ../../eslint.config.mjs src vitest.config.ts vitest.integration.config.ts",
     "start": "node dist/runner.js",
     "start:cron": "node dist/cron.js",
@@ -21,8 +22,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@pdf-lib/fontkit": "1.1.1",
     "@syntholo/database": "^0.1.0",
+    "@syntholo/domain": "^0.1.0",
     "@syntholo/integrations": "^0.1.0",
+    "pdf-lib": "1.17.1",
     "zod": "4.4.3"
   },
   "devDependencies": {

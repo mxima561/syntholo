@@ -8,10 +8,13 @@ describe("createDatabase", () => {
   it("keeps the TypeScript system capability allowlist identical to the SQL attestation", async () => {
     const [clientSource, migration] = await Promise.all([
       readFile(new URL("./client.ts", import.meta.url), "utf8"),
-      readFile(new URL("../drizzle/0012_implementation.sql", import.meta.url), "utf8"),
+      readFile(new URL("../drizzle/0013_certificates.sql", import.meta.url), "utf8"),
     ]);
     const sqlStart = migration.indexOf("CREATE OR REPLACE FUNCTION public.syntholo_attest_runtime_capability");
-    const sqlEnd = migration.indexOf("WITH source AS (", sqlStart);
+    const sqlEnd = migration.indexOf(
+      "CREATE OR REPLACE FUNCTION public.syntholo_implementation_readiness_v1",
+      sqlStart,
+    );
     const clientStart = clientSource.indexOf("p.oid::regprocedure::text not in (");
     const clientEnd = clientSource.indexOf("))) or (n.nspname = 'public'", clientStart);
     const signatures = (source: string) => [...source.matchAll(/'(syntholo_[^']+\([^']*\))'/gu)]
@@ -22,7 +25,7 @@ describe("createDatabase", () => {
 
     expect(sqlStart).toBeGreaterThanOrEqual(0);
     expect(clientStart).toBeGreaterThanOrEqual(0);
-    expect(sqlAllowlist).toHaveLength(27);
+    expect(sqlAllowlist).toHaveLength(28);
     expect(clientAllowlist).toEqual(sqlAllowlist);
   });
 

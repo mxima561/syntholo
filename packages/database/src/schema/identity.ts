@@ -94,6 +94,11 @@ export const memberships = pgTable(
       table.memberIdentityId,
     ),
     unique("memberships_id_account_unique").on(table.id, table.accountId),
+    unique("memberships_id_account_identity_unique").on(
+      table.id,
+      table.accountId,
+      table.memberIdentityId,
+    ),
     foreignKey({
       columns: [table.memberIdentityId, table.accountId],
       foreignColumns: [memberIdentities.id, memberIdentities.accountId],

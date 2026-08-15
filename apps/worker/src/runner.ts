@@ -12,11 +12,17 @@ import {
   WorkerContentMediaRepository,
   WorkerLearningRepository,
   WorkerImplementationRepository,
+  WorkerCertificateRepository,
+  CertificateStorageRecoveryPriorDecisionError,
   type ClassifiedJobFailure,
   type ClaimedJob,
   type HandlerReceiptClaim,
 } from "@syntholo/database";
-import { createMuxAssetManagementClient } from "@syntholo/integrations";
+import {
+  createMuxAssetManagementClient,
+  createPrivateCertificateBlobStore,
+  CertificateBlobError,
+} from "@syntholo/integrations";
 import {
   parseWorkerConfig,
   type RuntimeEnvironment,
@@ -33,16 +39,22 @@ import { createMuxReconcileJobHandler } from "./handlers/content/mux.js";
 import { createContentReadinessRecomputeHandler } from "./handlers/content/readiness-recompute.js";
 import { createCertificatePrerequisiteRecordHandler } from "./handlers/learning/certificate-prerequisite-record.js";
 import { createImplementationCompletionRecomputeHandler } from "./handlers/implementation/completion-recompute.js";
+import { createCertificateGenerationHandler } from "./handlers/certificates/generate.js";
+import {
+  assertCertificateRendererReadiness,
+  renderCertificatePdf,
+} from "./handlers/certificates/render.js";
 
 export type WorkerJob = Readonly<{
   id: string;
   type: string;
 }>;
 
-export function createWorkerId(host: string, processId: number): string {
+export function createWorkerId(host: string, processId: number, certificateCapable = false): string {
   if (!Number.isInteger(processId) || processId < 1) throw new Error("WORKER_ID_INVALID");
   const safeHost = host.replace(/[^A-Za-z0-9._:-]/gu, "-").replace(/^-+/u, "") || "host";
-  const suffix = `-${processId}-${createHash("sha256").update(host).digest("hex").slice(0, 12)}`;
+  const capability = certificateCapable ? "-certificate-v1" : "";
+  const suffix = `-${processId}-${createHash("sha256").update(host).digest("hex").slice(0, 12)}${capability}`;
   return `${safeHost.slice(0, 128 - suffix.length)}${suffix}`;
 }
 
@@ -421,7 +433,7 @@ export async function runOutboxPump(
 
 export async function superviseWorkerPumps(
   controller: AbortController,
-  pumps: readonly [() => Promise<void>, () => Promise<void>],
+  pumps: readonly (() => Promise<void>)[],
   options?: Readonly<{
     abortActive?(): void;
     close(): Promise<void>;
@@ -471,6 +483,117 @@ export async function superviseWorkerPumps(
   );
   if (failed) throw failed.reason;
   if (options !== undefined) await options.close();
+}
+
+export async function runCertificatePromoter(
+  certificates: Pick<WorkerCertificateRepository, "promote">,
+  signal: AbortSignal,
+  wait: (delayMs: number, signal: AbortSignal) => Promise<void> = abortableDelay,
+): Promise<void> {
+  while (!signal.aborted) {
+    const result = await certificates.promote(100, signal);
+    if (signal.aborted) return;
+    await wait(result.promoted === 100 ? 1_000 : 60_000, signal);
+  }
+}
+
+export async function runCertificateRecovery(
+  certificates: Pick<WorkerCertificateRepository,
+    "listStorageRetryCandidates" | "retry" | "rejectStorageRecovery">,
+  blob: Pick<ReturnType<typeof createPrivateCertificateBlobStore>, "reconcileUpload">,
+  render: typeof renderCertificatePdf,
+  signal: AbortSignal,
+  wait: (delayMs: number, signal: AbortSignal) => Promise<void> = abortableDelay,
+): Promise<void> {
+  const decide = async (operation: () => Promise<unknown>) => {
+    try {
+      await operation();
+    } catch (error) {
+      if (error instanceof CertificateStorageRecoveryPriorDecisionError) return;
+      throw error;
+    }
+  };
+  while (!signal.aborted) {
+    const candidates = await certificates.listStorageRetryCandidates(25, signal);
+    for (const candidate of candidates) {
+      if (signal.aborted) return;
+      let bytes: Uint8Array;
+      try {
+        bytes = await render({
+          recipientName: candidate.recipientName,
+          businessName: candidate.businessName,
+          courseTitle: candidate.courseTitle,
+          courseVersion: candidate.courseVersion,
+          completedAt: candidate.completedAt,
+        });
+      } catch (error) {
+        if (!(error instanceof Error) || ![
+          "CERTIFICATE_RENDER_INPUT_INVALID",
+          "CERTIFICATE_RENDER_GLYPH_UNAVAILABLE",
+          "CERTIFICATE_RENDER_FONT_AUTHORITY_INVALID",
+        ].includes(error.message)) throw error;
+        await decide(() => certificates.rejectStorageRecovery({
+          certificateId: candidate.certificateId,
+          recoveryJobId: candidate.recoveryJobId,
+          failedAttempt: candidate.failedAttempt,
+          failedGeneration: candidate.failedGeneration,
+          reason: "render_authority_invalid",
+        }, signal));
+        continue;
+      }
+      const sha256 = createHash("sha256").update(bytes).digest("hex");
+      const pathname = `certificates/v1/${candidate.accountId}/${candidate.courseCompletionId}.pdf`;
+      try {
+        const object = await blob.reconcileUpload({
+          pathname,
+          expected: { byteLength: bytes.byteLength, sha256 },
+          signal,
+        });
+        await decide(() => certificates.retry({
+          certificateId: candidate.certificateId,
+          recoveryJobId: candidate.recoveryJobId,
+          failedAttempt: candidate.failedAttempt,
+          failedGeneration: candidate.failedGeneration,
+          objectState: "matching",
+          byteLength: bytes.byteLength,
+          sha256,
+          etag: object.etag,
+        }, signal));
+      } catch (error) {
+        if (!(error instanceof CertificateBlobError)) throw error;
+        if (error.retryable) continue;
+        if (error.message === "CERTIFICATE_BLOB_NOT_FOUND") {
+          await decide(() => certificates.retry({
+            certificateId: candidate.certificateId,
+            recoveryJobId: candidate.recoveryJobId,
+            failedAttempt: candidate.failedAttempt,
+            failedGeneration: candidate.failedGeneration,
+            objectState: "absent",
+            byteLength: bytes.byteLength,
+            sha256,
+            etag: null,
+          }, signal));
+          continue;
+        }
+        if (["CERTIFICATE_BLOB_CONSISTENCY_INCIDENT", "CERTIFICATE_BLOB_PROVIDER_SHAPE_INVALID"]
+          .includes(error.message)) {
+          await decide(() => certificates.rejectStorageRecovery({
+            certificateId: candidate.certificateId,
+            recoveryJobId: candidate.recoveryJobId,
+            failedAttempt: candidate.failedAttempt,
+            failedGeneration: candidate.failedGeneration,
+            reason: error.message === "CERTIFICATE_BLOB_PROVIDER_SHAPE_INVALID"
+              ? "provider_shape_invalid"
+              : "object_mismatch",
+          }, signal));
+          continue;
+        }
+        throw new FatalWorkerConsistencyError();
+      }
+    }
+    if (signal.aborted) return;
+    await wait(candidates.length === 25 ? 1_000 : 60_000, signal);
+  }
 }
 
 export type StartWorkerOptions<TJob extends WorkerJob> = Readonly<{
@@ -534,17 +657,13 @@ async function main(): Promise<void> {
   });
   let supervisorOwnsClose = false;
   try {
-    const ready = await establishWorkerReadiness(async () => {
-      await assertDatabaseCapability(database, "syntholo_worker");
-      await checkDatabaseReadiness(database, "syntholo_worker");
-    }, controller.signal, () => transition("ready"));
-    if (!ready) return;
-    const workerId = createWorkerId(hostname(), process.pid);
+    const workerId = createWorkerId(hostname(), process.pid, config.certificateBlob !== undefined);
     const clock = { now: () => new Date() };
     const receipts = new HandlerReceiptRepository(database, { leaseMs: 60_000 });
     const content = new WorkerContentMediaRepository(database);
     const learning = new WorkerLearningRepository(database);
     const implementation = new WorkerImplementationRepository(database);
+    const certificates = new WorkerCertificateRepository(database);
     const mux = config.mux?.enabled === true;
     if (mux && (config.mux.environmentId === undefined
       || config.mux.tokenId === undefined || config.mux.tokenSecret === undefined)) {
@@ -558,6 +677,14 @@ async function main(): Promise<void> {
     const muxHandler = mux && management !== null
       ? createMuxReconcileJobHandler({ enabled: true, management, repository: content })
       : createMuxReconcileJobHandler({ enabled: false, management: null, repository: content });
+    const certificateBlob = config.certificateBlob === undefined
+      ? createPrivateCertificateBlobStore({
+        enabled: false,
+        environment: "staging",
+        token: "",
+        storeIds: { staging: "", production: "" },
+      })
+      : createPrivateCertificateBlobStore(config.certificateBlob);
     const handlers = createHandlerRegistry({
       "foundation.domain_event_handler.v1": createDomainEventJobHandler(receipts, clock, {
         foundation_audit_projection: async () => undefined,
@@ -567,9 +694,22 @@ async function main(): Promise<void> {
         "implementation.completion_recompute": createImplementationCompletionRecomputeHandler(implementation),
       }),
       "content.mux_reconcile.v1": muxHandler,
+      ...(config.certificateBlob === undefined ? {} : {
+        "learning.course_completed.certificate.v1": createCertificateGenerationHandler({
+          blob: certificateBlob,
+          render: renderCertificatePdf,
+          repository: certificates,
+        }),
+      }),
     });
     const jobs = new JobRepository(database, { leaseMs: 60_000 });
     const outbox = new OutboxProcessorRepository(database, { leaseMs: 60_000 });
+    const ready = await establishWorkerReadiness(async () => {
+      await assertDatabaseCapability(database, "syntholo_worker");
+      await checkDatabaseReadiness(database, "syntholo_worker");
+      if (config.certificateBlob !== undefined) await assertCertificateRendererReadiness();
+    }, controller.signal, () => transition("ready"));
+    if (!ready) return;
     supervisorOwnsClose = true;
     await superviseWorkerPumps(controller, [
       () => runWorker({
@@ -589,6 +729,10 @@ async function main(): Promise<void> {
         random: Math.random,
         workerId,
       }, controller.signal),
+      ...(config.certificateBlob === undefined ? [] : [
+        () => runCertificatePromoter(certificates, controller.signal),
+        () => runCertificateRecovery(certificates, certificateBlob, renderCertificatePdf, controller.signal),
+      ]),
     ], {
       abortActive: () => fatalController.abort(),
       close: () => database.close(),

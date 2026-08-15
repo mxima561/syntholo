@@ -294,6 +294,7 @@ export async function assertDatabaseCapability(
                     'syntholo_club_payment_recovered(uuid,uuid,text,uuid,timestamp with time zone,timestamp with time zone)',
                     'syntholo_content_assets_readiness_v1()',
                     'syntholo_content_readiness_v1()',
+                    'syntholo_certificates_readiness_v1()',
                     'syntholo_establish_owner(uuid,uuid,text,text,text,timestamp with time zone)',
                     'syntholo_expire_business_os(uuid,uuid,text,uuid,timestamp with time zone)',
                     'syntholo_expire_club(uuid,uuid,text,uuid,timestamp with time zone)',
