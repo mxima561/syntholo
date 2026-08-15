@@ -1080,6 +1080,57 @@ describe("API configuration and startup", () => {
       sessionEncryptionKeys: `1:${encryptionKey}`,
       implementationCursorSecret: "implementation-cursor-secret-at-least-32-bytes",
       mux: { kind: "disabled" },
+      stripe: { kind: "disabled" },
+    });
+  });
+
+  it("composes Stripe only from one complete API-bound environment", () => {
+    const base = productionApiEnvironment();
+    const configured = {
+      STRIPE_COMMERCE_ENABLED: "true",
+      DEPLOYMENT_ENVIRONMENT: "staging",
+      STRIPE_API_RESTRICTED_KEY: `rk_test_${"a".repeat(24)}`,
+      STRIPE_RECEIVER_ACCOUNT_ID: "acct_test_syntholo",
+      STRIPE_PORTAL_CONFIGURATION_ID: "bpc_test_syntholo",
+      STRIPE_CHECKOUT_SUCCESS_URL: "https://app.syntholo.test/claim",
+      STRIPE_CHECKOUT_CANCEL_URL: "https://app.syntholo.test/programs",
+      STRIPE_PORTAL_RETURN_URL: "https://app.syntholo.test/settings/billing",
+      STRIPE_WEBHOOK_CURRENT_KEY_ID: "stripe-webhook-current",
+      STRIPE_WEBHOOK_CURRENT_SECRET: `whsec_${"b".repeat(24)}`,
+      STRIPE_EXPECTED_LIVEMODE: "false",
+      STRIPE_EXPECTED_EVENT_ACCOUNT: "null",
+      STRIPE_EXPECTED_EVENT_CONTEXT: "null",
+      STRIPE_API_VERSION: "2026-06-24.dahlia",
+    };
+    expect(parseApiConfig(base, releaseSha).stripe).toEqual({ kind: "disabled" });
+    for (const patch of [
+      { STRIPE_COMMERCE_ENABLED: "true" },
+      { STRIPE_API_VERSION: "2026-06-24.dahlia" },
+      { STRIPE_WEBHOOK_CURRENT_SECRET: `whsec_${"a".repeat(24)}` },
+      { STRIPE_WORKER_READ_RESTRICTED_KEY: `rk_test_${"w".repeat(24)}` },
+      { ...configured, STRIPE_TEST_FAKE: "1" },
+      { ...configured, STRIPE_EXPECTED_LIVEMODE: "true" },
+    ]) expect(() => parseApiConfig({ ...base, ...patch }, releaseSha))
+      .toThrow("API_CONFIG_INVALID");
+
+    expect(parseApiConfig({ ...base, ...configured }, releaseSha).stripe).toEqual({
+      kind: "configured",
+      apiRestrictedKey: configured.STRIPE_API_RESTRICTED_KEY,
+      checkoutSuccessUrl: configured.STRIPE_CHECKOUT_SUCCESS_URL,
+      checkoutCancelUrl: configured.STRIPE_CHECKOUT_CANCEL_URL,
+      portalConfigurationId: configured.STRIPE_PORTAL_CONFIGURATION_ID,
+      portalReturnUrl: configured.STRIPE_PORTAL_RETURN_URL,
+      endpointBinding: {
+        receiverAccountId: configured.STRIPE_RECEIVER_ACCOUNT_ID,
+        expectedLivemode: false,
+        expectedApiVersion: configured.STRIPE_API_VERSION,
+        expectedEventAccount: null,
+        expectedEventContext: null,
+      },
+      webhookSecrets: [{
+        keyId: configured.STRIPE_WEBHOOK_CURRENT_KEY_ID,
+        secret: configured.STRIPE_WEBHOOK_CURRENT_SECRET,
+      }],
     });
   });
 

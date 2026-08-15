@@ -1,6 +1,7 @@
 import Fastify, { LogController, type FastifyInstance } from "fastify";
 import rawBody from "fastify-raw-body";
 import { z } from "zod";
+import type { createStripeAdapter } from "@syntholo/integrations";
 import { authRoutes } from "./auth/routes.js";
 import type { AuthComposition } from "./auth/types.js";
 import { correlationIdForRequest, requestContextPlugin } from "./plugins/context.js";
@@ -10,6 +11,10 @@ import {
   type ReadinessDependency,
 } from "./routes/health.js";
 import { muxWebhookRoutes, type MuxWebhookRouteHandler } from "./routes/webhooks/mux.js";
+import {
+  stripeWebhookRoutes,
+  type StripeWebhookRouteHandler,
+} from "./routes/webhooks/stripe.js";
 
 export type ApiDependencies = Readonly<{
   releaseSha: string;
@@ -21,6 +26,11 @@ export type ApiDependencies = Readonly<{
   mux?: Readonly<{ kind: "disabled" }> | Readonly<{
     kind: "enabled";
     handler: MuxWebhookRouteHandler;
+  }>;
+  stripe?: Readonly<{ kind: "disabled" }> | Readonly<{
+    kind: "enabled";
+    handler: StripeWebhookRouteHandler;
+    provider: Pick<ReturnType<typeof createStripeAdapter>, "createCheckout" | "createBillingPortal">;
   }>;
   close?: () => Promise<void>;
 }>;
@@ -61,6 +71,17 @@ const ApiDependenciesSchema = z
         handler: z.custom<MuxWebhookRouteHandler>((value) => typeof value === "function"),
       }).strict(),
     ]).optional().default({ kind: "disabled" }),
+    stripe: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("disabled") }).strict(),
+      z.object({
+        kind: z.literal("enabled"),
+        handler: z.custom<StripeWebhookRouteHandler>((value) => typeof value === "function"),
+        provider: z.object({
+          createCheckout: z.custom((value) => typeof value === "function"),
+          createBillingPortal: z.custom((value) => typeof value === "function"),
+        }).strict(),
+      }).strict(),
+    ]).optional().default({ kind: "disabled" }),
     close: z.custom<() => Promise<void>>((value) => typeof value === "function").optional(),
   })
   .strict();
@@ -96,6 +117,12 @@ export async function buildApp(
     await app.register(muxWebhookRoutes, {
       prefix: "/v1/webhooks/mux",
       handler: parsedDependencies.data.mux.handler,
+    });
+  }
+  if (parsedDependencies.data.stripe.kind === "enabled") {
+    await app.register(stripeWebhookRoutes, {
+      prefix: "/v1/webhooks/stripe",
+      handler: parsedDependencies.data.stripe.handler,
     });
   }
   if (parsedDependencies.data.auth.kind === "enabled") {

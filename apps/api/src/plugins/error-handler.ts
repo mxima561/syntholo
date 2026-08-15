@@ -51,6 +51,18 @@ export function safeErrorHandler(
   request: FastifyRequest,
   reply: FastifyReply,
 ): void {
+  if (request.url.split("?", 1)[0] === "/v1/webhooks/stripe"
+    && ["FST_ERR_CTP_BODY_TOO_LARGE", "FST_ERR_CTP_INVALID_MEDIA_TYPE"].includes(error.code)) {
+    const payload = ApiErrorSchema.parse({
+      error: {
+        code: "WEBHOOK_SIGNATURE_INVALID",
+        message: "Webhook signature invalid",
+        correlationId: canonicalCorrelationId(request),
+      },
+    });
+    void reply.header("cache-control", "no-store").status(400).send(payload);
+    return;
+  }
   if (error instanceof AppError) {
     const payload = ApiErrorSchema.parse({
       error: {

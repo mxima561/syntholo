@@ -1,6 +1,6 @@
 # SDD ledger — plan: .superpowers/sdd/2026-08-13-production-program/commerce-stripe-vertical-design.md
 
-Baseline: `af6a7db7272fde9f608c5b3568475b358d698629` on `codex/production-platform`.
+Baseline: `a66ba1017323b9d960403a8f809c66a381dcb204` on `codex/production-platform`.
 
 The original Commerce foundation remains commit `4652def1afa5afc3702ce8e2ee876c443f9429b3`.
 The reserved upstream authorities are now published and frozen:
@@ -52,7 +52,7 @@ Task 2 preflight: complete. The signed handoff requires `0012`/`0013` first; exa
 - Task 2: complete — `0012_implementation.sql` shared artifacts/workflows authority (`6e4ff831`, Neon/full gates green)
 - Task 3: complete — `0013_certificates.sql` certificate authority (`af6a7db`, Neon/full gates green; live Blob provider exercise remains a later provider gate)
 - Task 4: complete — `0014_commerce_catalog.sql`, ACL/RLS/readiness/repositories and real-PG races
-- Task 5: next, pending a binding brief — raw Stripe webhook receipt/API composition and provider action boundary
+- Task 5: complete — signed raw Stripe webhook receipt/API composition, disabled-by-default provider action boundary, real system-login and production-build gates green
 - Task 6: `0015_applications.sql` and Pilot/scorecard authority
 - Task 7: `0016_commerce_cases.sql` and refund/dispute/reconciliation authority
 - Task 8: Self-Paced paid fulfillment, claim, onboarding, seats, pinned access/enrollment

@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { decodeMuxSigningPrivateKey } from "@syntholo/integrations";
+import {
+  decodeMuxSigningPrivateKey,
+  parseStripeApiEnvironment,
+} from "@syntholo/integrations";
 import { parseStaffSessionKeyRing } from "./auth/session-crypto.js";
 import { artifactReleaseSha } from "./release.js";
 
@@ -60,6 +63,7 @@ const ApiEnvironmentSchema = z.object({
   MUX_WEBHOOK_SECRET: optionalNonemptyString,
   MUX_SIGNING_KEY_ID: optionalNonemptyString,
   MUX_SIGNING_PRIVATE_KEY: optionalNonemptyString,
+  STRIPE_COMMERCE_ENABLED: z.enum(["true", "false"]).default("false"),
 });
 
 export type ApiConfig = Readonly<{
@@ -96,6 +100,8 @@ export type ApiConfig = Readonly<{
     signingKeyId: string;
     signingPrivateKey: string;
   }>;
+  stripe: Readonly<{ kind: "disabled" }> | (Readonly<{ kind: "configured" }>
+    & ReturnType<typeof parseStripeApiEnvironment>);
 }>;
 
 export function parseApiConfig(
@@ -146,6 +152,22 @@ export function parseApiConfig(
       required.systemDatabaseUrl,
     ]).size !== 3) {
       throw new Error("database capabilities must use distinct credentials");
+    }
+    const stripeEnabled = result.STRIPE_COMMERCE_ENABLED === "true";
+    const stripeKeys = Object.keys(environment).filter(
+      (key) => key.startsWith("STRIPE_") && key !== "STRIPE_COMMERCE_ENABLED"
+        && environment[key] !== undefined,
+    );
+    if ((!stripeEnabled && stripeKeys.length !== 0)
+      || (stripeEnabled && result.DEPLOYMENT_ENVIRONMENT === undefined)) {
+      throw new Error("Stripe configuration invalid");
+    }
+    const stripe = stripeEnabled
+      ? parseStripeApiEnvironment(environment, { nodeEnv: result.NODE_ENV })
+      : undefined;
+    if (stripe !== undefined && stripe.endpointBinding.expectedLivemode
+      && result.DEPLOYMENT_ENVIRONMENT !== "production") {
+      throw new Error("Stripe environment invalid");
     }
     const muxEnabled = result.MUX_CONTENT_ENABLED === "true";
     const muxValues = [
@@ -231,6 +253,9 @@ export function parseApiConfig(
         signingKeyId: result.MUX_SIGNING_KEY_ID as string,
         signingPrivateKey: signingPrivateKey as string,
       }) : Object.freeze({ kind: "disabled" as const }),
+      stripe: stripe === undefined
+        ? Object.freeze({ kind: "disabled" as const })
+        : Object.freeze({ kind: "configured" as const, ...stripe }),
     });
   } catch {
     throw new Error("API_CONFIG_INVALID");

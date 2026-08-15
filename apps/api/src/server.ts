@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import {
   assertDatabaseCapability,
+  attestSystemDatabase,
   AccountRepository,
   checkDatabaseReadiness,
   createDatabase,
@@ -21,6 +22,7 @@ import {
   createMuxPlaybackSigner,
   createPrivateCertificateBlobStore,
   createRemoteWorkosJwks,
+  createStripeAdapter,
   createWorkosStaffClient,
   verifyWorkosAccessToken,
 } from "@syntholo/integrations";
@@ -32,6 +34,10 @@ import {
 } from "./auth/session-crypto.js";
 import { parseApiConfig, type ApiConfig, type RuntimeEnvironment } from "./config.js";
 import { createMuxWebhookHandler } from "./modules/mux-webhook.js";
+import {
+  createStripeWebhookHandler,
+  createStripeWebhookRecordPort,
+} from "./modules/stripe-webhook.js";
 
 type BuildApp = (dependencies: ApiDependencies) => Promise<FastifyInstance>;
 type Listen = (
@@ -62,10 +68,10 @@ async function productionDependencies(config: ApiConfig): Promise<{
     applicationName: "syntholo-system-api",
   });
   try {
-    await Promise.all([
+    const [, , attestedSystemDatabase] = await Promise.all([
       assertDatabaseCapability(memberDatabase, "syntholo_member_api"),
       assertDatabaseCapability(staffDatabase, "syntholo_staff_api"),
-      assertDatabaseCapability(systemDatabase, "syntholo_system_api"),
+      attestSystemDatabase(systemDatabase),
     ]);
     const workosJwks = createRemoteWorkosJwks(new URL(config.workosJwksUrl));
     const sessions = new StaffSessionRepository(staffDatabase);
@@ -79,6 +85,16 @@ async function productionDependencies(config: ApiConfig): Promise<{
           privateKey: config.mux.signingPrivateKey,
         })
       : undefined;
+    const stripeConfig = config.stripe.kind === "configured" ? config.stripe : undefined;
+    const stripeProvider = stripeConfig === undefined
+      ? undefined
+      : createStripeAdapter({
+          apiRestrictedKey: stripeConfig.apiRestrictedKey,
+          checkoutSuccessUrl: stripeConfig.checkoutSuccessUrl,
+          checkoutCancelUrl: stripeConfig.checkoutCancelUrl,
+          portalConfigurationId: stripeConfig.portalConfigurationId,
+          portalReturnUrl: stripeConfig.portalReturnUrl,
+        });
     return {
       dependencies: {
         releaseSha: config.releaseSha,
@@ -207,6 +223,20 @@ async function productionDependencies(config: ApiConfig): Promise<{
             repository: new SystemMuxEventRepository(systemDatabase),
             secret: config.mux.webhookSecret,
             clock: { now: () => new Date() },
+          }),
+        } : { kind: "disabled" },
+        stripe: stripeConfig !== undefined && stripeProvider !== undefined ? {
+          kind: "enabled",
+          provider: stripeProvider,
+          handler: createStripeWebhookHandler({
+            binding: stripeConfig.endpointBinding,
+            clock: { now: () => new Date() },
+            endpointSecrets: stripeConfig.webhookSecrets,
+            record: createStripeWebhookRecordPort({
+              binding: stripeConfig.endpointBinding,
+              clock: { now: () => new Date() },
+              database: attestedSystemDatabase,
+            }),
           }),
         } : { kind: "disabled" },
         close: async () =>
