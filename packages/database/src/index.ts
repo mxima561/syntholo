@@ -11,7 +11,9 @@ export {
 export { AccountRepository } from "./repositories/accounts.js";
 export { ContentCommandConflictError, StaffContentCommandRepository } from "./repositories/content.js";
 export { LearningPrerequisiteInputError, WorkerLearningRepository } from "./repositories/learning-worker.js";
+export { ImplementationCompletionInputError, WorkerImplementationRepository } from "./repositories/implementation-worker.js";
 export { LearningRepositoryError, MemberLearningRepository } from "./repositories/learning.js";
+export { ImplementationRepositoryError, MemberImplementationRepository, SystemImplementationRepository } from "./repositories/implementation.js";
 export type { LearningPlaybackTarget } from "./repositories/learning.js";
 export type { ContentPreviewRecord, CreateContentPreviewInput } from "./repositories/content.js";
 export { StaffMuxAssetRepository, SystemMuxEventRepository, WorkerContentMediaRepository } from "./repositories/content-media.js";

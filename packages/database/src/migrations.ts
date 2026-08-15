@@ -17,6 +17,7 @@ export const PUBLISHED_MIGRATIONS = Object.freeze([
   { idx: 8, when: 1786676400000, tag: "0009_content", hash: "2cf79d036accf426172ab2249e690e34c17a8f145c8e2afa72bb8e3994425922" },
   { idx: 9, when: 1786683600000, tag: "0010_content_assets", hash: "65e621c5754cb490c50dff009854433815dae8ee3fd3a6410de9dea6080fcb43" },
   { idx: 10, when: 1786770000000, tag: "0011_learning", hash: "2e37ec9d4bfeee1ad0319ae81172fac4107a87c798bd2f0eed79eb75ee0e2ccf" },
+  { idx: 11, when: 1786856400000, tag: "0012_implementation", hash: "dabb54d9842c3e06c67e1ef5b17f42312011ffb133275b4dd346afd2465939a9" },
 ] as const);
 
 type Journal = Readonly<{

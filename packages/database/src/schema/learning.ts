@@ -91,6 +91,7 @@ export const courseCompletions = pgTable("course_completions", {
   foreignKey({ columns: [table.enrollmentId, table.accountId, table.membershipId, table.courseId, table.courseVersionId], foreignColumns: [enrollments.id, enrollments.accountId, enrollments.membershipId, enrollments.courseId, enrollments.courseVersionId], name: "course_completions_enrollment_fk" }).onDelete("restrict").onUpdate("restrict"),
   unique("course_completions_enrollment_unique").on(table.enrollmentId),
   unique("course_completions_exact_unique").on(table.id, table.accountId, table.membershipId, table.enrollmentId, table.courseId, table.courseVersionId),
+  index("course_completions_implementation_lookup_idx").on(table.accountId, table.courseId, table.completedAt, table.id),
   check("course_completions_hash_check", sql`${table.requiredLessonSetHash} ~ '^[0-9a-f]{64}$'`),
 ]);
 

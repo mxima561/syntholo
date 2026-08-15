@@ -44,6 +44,7 @@ function productionApiEnvironment(
     WORKOS_ISSUER: "https://api.workos.test",
     WORKOS_JWKS_URL: "https://api.workos.test/sso/jwks/client_staff",
     STAFF_SESSION_ENCRYPTION_KEYS: `1:${encryptionKey}`,
+    IMPLEMENTATION_CURSOR_SECRET: "implementation-cursor-secret-at-least-32-bytes",
     ...patch,
   };
 }
@@ -1057,6 +1058,7 @@ describe("API configuration and startup", () => {
         WORKOS_ISSUER: "https://api.workos.test",
         WORKOS_JWKS_URL: "https://api.workos.test/sso/jwks/client_staff",
         STAFF_SESSION_ENCRYPTION_KEYS: `1:${encryptionKey}`,
+        IMPLEMENTATION_CURSOR_SECRET: "implementation-cursor-secret-at-least-32-bytes",
       }),
     ).toEqual({
       environment: "production",
@@ -1076,6 +1078,7 @@ describe("API configuration and startup", () => {
       workosIssuer: "https://api.workos.test",
       workosJwksUrl: "https://api.workos.test/sso/jwks/client_staff",
       sessionEncryptionKeys: `1:${encryptionKey}`,
+      implementationCursorSecret: "implementation-cursor-secret-at-least-32-bytes",
       mux: { kind: "disabled" },
     });
   });
@@ -1146,6 +1149,7 @@ describe("API configuration and startup", () => {
       WORKOS_ISSUER: "https://api.workos.test",
       WORKOS_JWKS_URL: "https://api.workos.test/sso/jwks/client_staff",
       STAFF_SESSION_ENCRYPTION_KEYS: `1:${encryptionKey}`,
+      IMPLEMENTATION_CURSOR_SECRET: "implementation-cursor-secret-at-least-32-bytes",
     };
 
     expect(() => parseApiConfig({ ...environment, RELEASE_SHA: "ABC" }, releaseSha))
@@ -1154,6 +1158,15 @@ describe("API configuration and startup", () => {
       ...environment,
       RELEASE_SHA: "1123456789abcdef0123456789abcdef01234567",
     }, releaseSha)).toThrow("API_CONFIG_INVALID");
+  });
+
+  it("rejects a missing or weak implementation cursor signing secret", () => {
+    expect(() => parseApiConfig(productionApiEnvironment({
+      IMPLEMENTATION_CURSOR_SECRET: undefined,
+    }), releaseSha)).toThrow("API_CONFIG_INVALID");
+    expect(() => parseApiConfig(productionApiEnvironment({
+      IMPLEMENTATION_CURSOR_SECRET: "too-short",
+    }), releaseSha)).toThrow("API_CONFIG_INVALID");
   });
 
   it.each([

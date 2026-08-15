@@ -104,6 +104,25 @@ describe("database readiness projection", () => {
           table_acl_ready: true,
           track_table_ready: true,
         }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          contract_version: "0012_implementation.v1",
+          migration_created_at: "1786856400000",
+          migration_hash: "dabb54d9842c3e06c67e1ef5b17f42312011ffb133275b4dd346afd2465939a9",
+          table_ready: true,
+          structure_ready: true,
+          immutability_ready: true,
+          rls_ready: true,
+          policy_ready: true,
+          table_acl_ready: true,
+          function_ready: true,
+          function_acl_ready: true,
+          public_execute_denied: true,
+          receipt_binding_ready: true,
+          upstream_fk_ready: true,
+          seed_backfill_ready: true,
+        }],
       });
 
     await expect(checkDatabaseReadiness(
@@ -124,6 +143,9 @@ describe("database readiness projection", () => {
     );
     expect(query).toHaveBeenNthCalledWith(4,
       "select contract_version, migration_created_at, migration_hash, asset_table_ready, track_table_ready, binding_ready, receipt_constraint_ready, table_acl_ready, function_acl_ready, public_execute_denied, empty_catalog from public.syntholo_content_assets_readiness_v1()",
+    );
+    expect(query).toHaveBeenNthCalledWith(5,
+      "select contract_version, migration_created_at, migration_hash, table_ready, structure_ready, immutability_ready, rls_ready, policy_ready, table_acl_ready, function_ready, function_acl_ready, public_execute_denied, receipt_binding_ready, upstream_fk_ready, seed_backfill_ready from public.syntholo_implementation_readiness_v1()",
     );
   });
 

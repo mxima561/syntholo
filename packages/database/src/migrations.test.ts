@@ -28,6 +28,14 @@ afterEach(async () => {
 });
 
 describe("published migration inventory", () => {
+  it("reserves 0012 as journal index eleven after the immutable learning migration", () => {
+    expect(PUBLISHED_MIGRATIONS.at(-1)).toMatchObject({
+      idx: 11,
+      when: 1786856400000,
+      tag: "0012_implementation",
+    });
+  });
+
   it("serializes atomic migrations and makes only 0008 constraints immediate", async () => {
     const queries: string[] = [];
     let released = false;
@@ -56,15 +64,15 @@ describe("published migration inventory", () => {
 
     expect(queries[0]).toBe("select pg_advisory_lock($1::integer,$2::integer)");
     expect(queries.at(-1)).toBe("select pg_advisory_unlock($1::integer,$2::integer)");
-    expect(queries.filter((query) => query === "begin")).toHaveLength(5);
-    expect(queries.filter((query) => query === "commit")).toHaveLength(5);
+    expect(queries.filter((query) => query === "begin")).toHaveLength(6);
+    expect(queries.filter((query) => query === "commit")).toHaveLength(6);
     expect(queries.filter((query) => query === "set constraints all immediate"))
       .toHaveLength(1);
     const immediate = queries.indexOf("set constraints all immediate");
     expect(queries[immediate - 1]).toBe("begin");
     expect(queries.filter((query) => query.startsWith(
       "insert into drizzle.__drizzle_migrations",
-    ))).toHaveLength(4);
+    ))).toHaveLength(5);
     expect(released).toBe(true);
   });
 
@@ -138,6 +146,116 @@ describe("published migration inventory", () => {
     expect(activeAccess).toBeLessThan(replay);
   });
 
+  it("keeps implementation drafts shape-valid while reserving completeness for final and live state", async () => {
+    const sql = await readFile(join(migrationsFolder, "0012_implementation.sql"), "utf8");
+
+    expect(sql).toContain(
+      "implementation_workflows_arrays_check CHECK(public.syntholo_implementation_text_array_valid_v1(approved_tools,25,255) AND public.syntholo_implementation_text_array_valid_v1(steps,25,2000))",
+    );
+    expect(sql).toContain(
+      "public.syntholo_implementation_text_array_complete_v1(approved_tools)",
+    );
+    expect(sql).toContain(
+      "public.syntholo_implementation_text_array_complete_v1(steps)",
+    );
+    expect(sql).toContain("syntholo_implementation_workflow_content_match_v1");
+    expect(sql).toContain("IMPLEMENTATION_WORKFLOW_CONTENT_MISMATCH");
+  });
+
+  it("claims an implementation idempotency key before inserting its receipt and revalidates locked access", async () => {
+    const sql = await readFile(join(migrationsFolder, "0012_implementation.sql"), "utf8");
+    const start = sql.indexOf("CREATE FUNCTION public.syntholo_implementation_save_version_v1");
+    const end = sql.indexOf("REVOKE ALL ON FUNCTION public.syntholo_implementation_save_version_v1", start);
+    const command = sql.slice(start, end);
+
+    const authorization = command.indexOf("aca.status='active'");
+    const claim = command.indexOf("pg_try_advisory_xact_lock");
+    const receiptInsert = command.indexOf("INSERT INTO public.api_command_receipts");
+    const lockedRevalidation = command.indexOf("FOR SHARE OF m,e,aca");
+    const replay = command.indexOf("IF receipt.status='completed' THEN RETURN receipt.response; END IF;");
+    const versionInsert = command.indexOf("INSERT INTO public.implementation_artifact_versions");
+
+    expect(authorization).toBeGreaterThanOrEqual(0);
+    expect(claim).toBeGreaterThan(authorization);
+    expect(receiptInsert).toBeGreaterThan(claim);
+    expect(lockedRevalidation).toBeGreaterThan(authorization);
+    expect(claim).toBeGreaterThan(lockedRevalidation);
+    expect(replay).toBeGreaterThan(lockedRevalidation);
+    expect(versionInsert).toBeGreaterThan(lockedRevalidation);
+
+    for (const signature of [
+      "syntholo_implementation_get_v1",
+      "syntholo_implementation_versions_v1",
+    ]) {
+      const stableStart = sql.indexOf(`CREATE FUNCTION public.${signature}`);
+      const stableEnd = sql.indexOf(`REVOKE ALL ON FUNCTION public.${signature}`, stableStart);
+      const stableBody = sql.slice(stableStart, stableEnd);
+      expect(stableBody).not.toContain("FOR SHARE");
+      expect(stableBody).not.toContain("FOR UPDATE");
+    }
+  });
+
+  it("publishes exact implementation indexes, receipt uniqueness, immutable roots, and catalog attestation", async () => {
+    const sql = await readFile(join(migrationsFolder, "0012_implementation.sql"), "utf8");
+
+    expect(sql).toContain("CONSTRAINT implementation_versions_source_command_receipt_id_unique UNIQUE(source_command_receipt_id)");
+    expect(sql).toContain("implementation_versions_history_idx ON public.implementation_artifact_versions(artifact_id,created_at DESC,id DESC)");
+    expect(sql).toContain("course_completions_implementation_lookup_idx ON public.course_completions(account_id,course_id,completed_at,id)");
+    expect(sql).toContain("implementation_artifacts_delete_immutable BEFORE DELETE");
+    expect(sql).toContain("pg_get_constraintdef");
+    expect(sql).toContain("pg_get_indexdef");
+    expect(sql).toContain("pg_get_expr(p.polqual,p.polrelid)");
+    expect(sql).toContain("pg_get_functiondef");
+    expect(sql).toContain("expected_checks(table_name,constraint_name,definition)");
+    expect(sql).not.toContain("required_token");
+    expect(sql).toContain("e.definition<>a.definition");
+  });
+
+  it("forward-closes system capability attestation around the exact implementation seed command", async () => {
+    const sql = await readFile(join(migrationsFolder, "0012_implementation.sql"), "utf8");
+    const start = sql.indexOf("CREATE OR REPLACE FUNCTION public.syntholo_attest_runtime_capability");
+    const end = sql.indexOf("WITH source AS (", start);
+    const attestation = sql.slice(start, end);
+
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(attestation).toContain("'syntholo_implementation_seed_workspace_v1(uuid)'");
+    expect(attestation).toContain("'syntholo_implementation_readiness_v1()'");
+    expect(attestation.match(/syntholo_implementation_seed_workspace_v1\(uuid\)/gu)).toHaveLength(1);
+    expect(attestation.match(/syntholo_implementation_readiness_v1\(\)/gu)).toHaveLength(1);
+    const systemGrants = [...sql.matchAll(/GRANT EXECUTE ON FUNCTION public\.(syntholo_implementation_[^(;]+\([^;]*?\)) TO ([^;]+);/gu)]
+      .filter((match) => match[2]?.includes("syntholo_system_api"))
+      .map((match) => match[1])
+      .sort();
+    expect(systemGrants).toEqual([
+      "syntholo_implementation_readiness_v1()",
+      "syntholo_implementation_seed_workspace_v1(uuid)",
+    ]);
+    expect(sql).toContain("expected_runtime_attestation(signature,body_hash)");
+    expect(sql).toContain("actual_body_hash=body_hash) FROM runtime_attestation");
+  });
+
+  it("binds implementation recompute to the exact member-authored learning event", async () => {
+    const sql = await readFile(join(migrationsFolder, "0012_implementation.sql"), "utf8");
+    const start = sql.indexOf("CREATE FUNCTION public.syntholo_implementation_record_course_completion_v1");
+    const end = sql.indexOf("REVOKE ALL ON FUNCTION public.syntholo_implementation_record_course_completion_v1", start);
+    const command = sql.slice(start, end);
+
+    expect(command).toContain("o.actor_type='member'");
+    expect(command).toContain("source_event.actor_id=member_identity.member_identity_id::text");
+    expect(command).toContain("source_event.correlation_id");
+  });
+
+  it("selects the workflow portfolio head without applying unsupported aggregates to UUIDs", async () => {
+    const sql = await readFile(join(migrationsFolder, "0012_implementation.sql"), "utf8");
+    const start = sql.indexOf("CREATE FUNCTION public.syntholo_implementation_recompute_completion_v1");
+    const end = sql.indexOf("REVOKE ALL ON FUNCTION public.syntholo_implementation_recompute_completion_v1", start);
+    const command = sql.slice(start, end);
+
+    expect(command).not.toMatch(/(?:min|max)\((?:a|v)\.id\)/u);
+    expect(command).toContain("SELECT a.id,v.id INTO portfolio_artifact,portfolio_version");
+    expect(command).toContain("a.kind='workflow_portfolio'");
+  });
+
   it("closes the server-derived lesson hash input before applying its encoding", async () => {
     const sql = await readFile(join(migrationsFolder, "0011_learning.sql"), "utf8");
     const functionStart = sql.indexOf("CREATE FUNCTION public.syntholo_lesson_draft_hash_v1");
@@ -152,10 +270,36 @@ describe("published migration inventory", () => {
   });
 
   it("attests OLD and NEW trigger predicates through PostgreSQL trigger definitions", async () => {
-    const sql = await readFile(join(migrationsFolder, "0011_learning.sql"), "utf8");
+    for (const migration of ["0011_learning.sql", "0012_implementation.sql"]) {
+      const sql = await readFile(join(migrationsFolder, migration), "utf8");
 
-    expect(sql).toContain("pg_get_triggerdef(t.oid,true)");
-    expect(sql).not.toContain("pg_get_expr(t.tgqual,t.tgrelid)");
+      expect(sql).toContain("pg_get_triggerdef(t.oid,true)");
+      expect(sql).not.toContain("pg_get_expr(t.tgqual,t.tgrelid)");
+    }
+  });
+
+  it("normalizes PostgreSQL zero-based int2vector index options before exact equality", async () => {
+    const sql = await readFile(join(migrationsFolder, "0012_implementation.sql"), "utf8");
+    expect(sql).toContain(
+      "ARRAY(SELECT option FROM unnest(i.indoption::smallint[]) WITH ORDINALITY option_value(option,ordinal) ORDER BY ordinal) index_options",
+    );
+    expect(sql).not.toContain("i.indoption::smallint[] index_options");
+  });
+
+  it("matches PostgreSQL's schema-qualified deparse for implementation CHECK helpers", async () => {
+    const sql = await readFile(join(migrationsFolder, "0012_implementation.sql"), "utf8");
+    const start = sql.indexOf("expected_checks(table_name,constraint_name,definition)");
+    const end = sql.indexOf("), actual_checks AS", start);
+    const expectedChecks = sql.slice(start, end);
+    for (const helper of [
+      "public.syntholo_implementation_content_valid_v1",
+      "public.syntholo_canonical_jsonb_text_v1",
+      "public.syntholo_implementation_text_valid_v1",
+      "public.syntholo_implementation_text_array_valid_v1",
+      "public.syntholo_implementation_text_complete_v1",
+      "public.syntholo_implementation_text_array_complete_v1",
+    ]) expect(expectedChecks).toContain(helper);
+    expect(expectedChecks).not.toMatch(/(?<!public\.)syntholo_(?:implementation_(?:content_valid|text_valid|text_array_valid|text_complete|text_array_complete)|canonical_jsonb_text)_v1/u);
   });
 
   it("qualifies completion receipt persistence away from PL/pgSQL variable ambiguity", async () => {
@@ -258,6 +402,7 @@ describe("published migration inventory", () => {
       { idx: 8, when: 1786676400000, tag: "0009_content", hash: "2cf79d036accf426172ab2249e690e34c17a8f145c8e2afa72bb8e3994425922" },
       { idx: 9, when: 1786683600000, tag: "0010_content_assets", hash: "65e621c5754cb490c50dff009854433815dae8ee3fd3a6410de9dea6080fcb43" },
       { idx: 10, when: 1786770000000, tag: "0011_learning", hash: "2e37ec9d4bfeee1ad0319ae81172fac4107a87c798bd2f0eed79eb75ee0e2ccf" },
+      { idx: 11, when: 1786856400000, tag: "0012_implementation", hash: "dabb54d9842c3e06c67e1ef5b17f42312011ffb133275b4dd346afd2465939a9" },
     ]);
   });
 

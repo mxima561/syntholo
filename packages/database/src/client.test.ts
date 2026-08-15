@@ -1,9 +1,31 @@
+import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { createDatabase } from "./client.js";
 
 const unusedDatabaseUrl = "postgres://test:test@127.0.0.1:1/not_used";
 
 describe("createDatabase", () => {
+  it("keeps the TypeScript system capability allowlist identical to the SQL attestation", async () => {
+    const [clientSource, migration] = await Promise.all([
+      readFile(new URL("./client.ts", import.meta.url), "utf8"),
+      readFile(new URL("../drizzle/0012_implementation.sql", import.meta.url), "utf8"),
+    ]);
+    const sqlStart = migration.indexOf("CREATE OR REPLACE FUNCTION public.syntholo_attest_runtime_capability");
+    const sqlEnd = migration.indexOf("WITH source AS (", sqlStart);
+    const clientStart = clientSource.indexOf("p.oid::regprocedure::text not in (");
+    const clientEnd = clientSource.indexOf("))) or (n.nspname = 'public'", clientStart);
+    const signatures = (source: string) => [...source.matchAll(/'(syntholo_[^']+\([^']*\))'/gu)]
+      .map((match) => match[1]!)
+      .sort();
+    const sqlAllowlist = signatures(migration.slice(sqlStart, sqlEnd));
+    const clientAllowlist = signatures(clientSource.slice(clientStart, clientEnd));
+
+    expect(sqlStart).toBeGreaterThanOrEqual(0);
+    expect(clientStart).toBeGreaterThanOrEqual(0);
+    expect(sqlAllowlist).toHaveLength(27);
+    expect(clientAllowlist).toEqual(sqlAllowlist);
+  });
+
   it.each(["", "   "])("rejects a blank database URL", (url) => {
     expect(() =>
       createDatabase({ url, applicationName: "database-unit-test" }),

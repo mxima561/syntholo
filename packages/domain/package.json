@@ -11,7 +11,8 @@
     "./identity/actor": "./src/identity/actor.ts",
     "./content": "./src/content/index.ts",
     "./learning": "./src/learning/index.ts",
-    "./commerce": "./src/commerce/index.ts"
+    "./commerce": "./src/commerce/index.ts",
+    "./implementation": "./src/implementation/index.ts"
   },
   "scripts": {
     "lint": "eslint --config ../../eslint.config.mjs src",

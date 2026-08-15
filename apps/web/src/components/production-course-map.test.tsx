@@ -44,6 +44,36 @@ afterEach(() => {
 });
 
 describe("ProductionCourseMap", () => {
+  it("keeps the course usable when the dashboard rollout flag is v3", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION", "3");
+    useAuth.mockReturnValue({
+      getToken: vi.fn(async () => "clerk-token"), isLoaded: true, isSignedIn: true, sessionId: "session-one",
+    });
+    const v3 = {
+      ...response,
+      schemaVersion: 3,
+      implementation: {
+        state: "available",
+        artifacts: {
+          schemaVersion: 1,
+          items: ["readiness_map", "ai_policy", "workflow_portfolio", "enablement_checklist", "roadmap"].map((kind, index) => ({ id: `30000000-0000-4000-8000-00000000000${index + 1}`, kind, title: `Artifact ${index + 1}`, currentVersion: 0, currentState: null, currentVersionId: null, updatedAt: null, authorLabel: null })),
+          nextCursor: null,
+          implementationCompletion: { completed: false, completedAt: null },
+        },
+      },
+    };
+    const fetcher = vi.fn(async () => new Response(JSON.stringify(v3), {
+      status: 200,
+      headers: { "content-type": "application/json", "syntholo-dashboard-version": "3" },
+    }));
+    vi.stubGlobal("fetch", fetcher);
+    render(<ProductionCourseMap />);
+    expect(await screen.findByRole("heading", { name: "Syntholo Academy" })).toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledWith("/v1/member/dashboard", expect.objectContaining({
+      headers: { authorization: "Bearer clerk-token", "syntholo-dashboard-version": "3" },
+    }));
+  });
+
   it("loads only the negotiated actor-owned v2 course and never a demo fixture", async () => {
     vi.stubEnv("NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION", "2");
     useAuth.mockReturnValue({

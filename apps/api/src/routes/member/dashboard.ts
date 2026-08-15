@@ -1,6 +1,7 @@
 import { MemberDashboardQuerySchema } from "@syntholo/contracts/member-dashboard";
 import {
   DatabaseDependencyUnavailableError,
+  ImplementationRepositoryError,
   MemberAccessUnavailableError,
 } from "@syntholo/database";
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
@@ -9,6 +10,7 @@ import type { AuthRouteDependencies } from "../../auth/types.js";
 import {
   getMemberDashboard,
   getMemberDashboardV2,
+  getMemberDashboardV3,
   MemberDashboardActorUnavailableError,
 } from "../../modules/member/get-dashboard.js";
 import { AppError } from "../../plugins/error-handler.js";
@@ -34,7 +36,7 @@ function requestHasBody(request: FastifyRequest): boolean {
     || request.body !== undefined;
 }
 
-function selectVersion(request: FastifyRequest): 1 | 2 {
+function selectVersion(request: FastifyRequest): 1 | 2 | 3 {
   const values = rawHeaderValues(request, VERSION_HEADER);
   if (values.length === 0) return 1;
   if (values.length !== 1 || values[0]?.includes(",")) {
@@ -42,6 +44,7 @@ function selectVersion(request: FastifyRequest): 1 | 2 {
   }
   if (values[0] === "1") return 1;
   if (values[0] === "2") return 2;
+  if (values[0] === "3") return 3;
   throw new AppError("VALIDATION_ERROR", 400, "Request validation failed");
 }
 
@@ -69,7 +72,8 @@ export const memberDashboardRoutes: FastifyPluginAsync<
             access: dependencies.member.access,
             clock: dashboard.clock,
           })
-        : await getMemberDashboardV2(
+        : version === 2
+          ? await getMemberDashboardV2(
             actor,
             request.id,
             {
@@ -79,7 +83,20 @@ export const memberDashboardRoutes: FastifyPluginAsync<
               learning: dependencies.member.learning
                 ?? (() => { throw new Error("MEMBER_LEARNING_NOT_COMPOSED"); })(),
             },
-          );
+          )
+          : await getMemberDashboardV3(
+              actor,
+              request.id,
+              {
+                accounts: dashboard.accounts,
+                access: dependencies.member.access,
+                clock: dashboard.clock,
+                learning: dependencies.member.learning
+                  ?? (() => { throw new Error("MEMBER_LEARNING_NOT_COMPOSED"); })(),
+                implementation: dependencies.member.implementation
+                  ?? (() => { throw new Error("MEMBER_IMPLEMENTATION_NOT_COMPOSED"); })(),
+              },
+            );
       void reply.header("syntholo-dashboard-version", String(version));
       void reply.type("application/json; charset=utf-8");
       return response;
@@ -91,6 +108,16 @@ export const memberDashboardRoutes: FastifyPluginAsync<
         throw new AppError("UNAUTHENTICATED", 401, "Authentication required");
       }
       if (error instanceof DatabaseDependencyUnavailableError) {
+        throw new AppError(
+          "DEPENDENCY_UNAVAILABLE",
+          503,
+          "Service temporarily unavailable",
+        );
+      }
+      if (
+        error instanceof ImplementationRepositoryError
+        && error.code === "IMPLEMENTATION_DEPENDENCY_FAILED"
+      ) {
         throw new AppError(
           "DEPENDENCY_UNAVAILABLE",
           503,

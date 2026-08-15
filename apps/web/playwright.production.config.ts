@@ -32,7 +32,7 @@ export default defineConfig({
         API_UPSTREAM_ORIGIN: "https://api.syntholo.test",
         APP_MODE: "production",
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_Y2xlcmsudGVzdCQ=",
-        NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION: "2",
+        NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION: "3",
         RELEASE_SHA: releaseSha,
         VERCEL_ENV: "production",
         VERCEL: "1",

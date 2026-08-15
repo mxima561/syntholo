@@ -524,6 +524,59 @@ describe("durable outbox dispatch and handler receipts", () => {
     ]);
   });
 
+  it("keeps certificate and implementation receipts independent for one learning completion", async () => {
+    const eventId = "20000000-0000-4000-8000-000000000040";
+    await harness.database.pool.query(
+      `insert into outbox_events
+       (event_id, actor_type, actor_id, correlation_id, type, aggregate_id,
+        occurred_at, payload, available_at)
+       values ($1,'member','20000000-0000-4000-8000-000000000041',$2,
+         'learning.course_completed.v1',$3,$4,
+         '{"courseCompletionId":"20000000-0000-4000-8000-000000000042"}',$4)`,
+      [eventId, "20000000-0000-4000-8000-000000000043",
+        "20000000-0000-4000-8000-000000000042", now],
+    );
+    const eventClaim = (await outbox.claim(1, "learning-fanout", now))[0]!;
+    await expect(outbox.dispatch(eventClaim, [
+      "learning.certificate_prerequisite_record",
+      "implementation.completion_recompute",
+    ], now)).resolves.toEqual({ jobsCreated: 2, kind: "published" });
+
+    const claimedJobs = await jobs.claim(2, "fanout-worker", now);
+    const certificateJob = claimedJobs.find(({ payload }) =>
+      payload.handlerName === "learning.certificate_prerequisite_record"
+    )!;
+    expect(certificateJob.payload).toEqual({
+      eventId,
+      handlerName: "learning.certificate_prerequisite_record",
+    });
+    const certificateReceipt = await receipts.acquire(certificateJob, now);
+    if (certificateReceipt.kind !== "acquired") throw new Error("EXPECTED_CERTIFICATE_RECEIPT");
+    await expect(receipts.complete(certificateReceipt, new Date(now.getTime() + 1)))
+      .resolves.toEqual({ kind: "completed" });
+    await expect(jobs.complete(certificateJob, new Date(now.getTime() + 2)))
+      .resolves.toEqual({ kind: "completed" });
+
+    const implementationJob = claimedJobs.find(({ payload }) =>
+      payload.handlerName === "implementation.completion_recompute"
+    )!;
+    expect(implementationJob.payload).toEqual({
+      eventId,
+      handlerName: "implementation.completion_recompute",
+    });
+    await expect(receipts.acquire(implementationJob, new Date(now.getTime() + 3)))
+      .resolves.toMatchObject({ kind: "acquired", eventId });
+    const persisted = await harness.database.pool.query(
+      `select handler_name,status from event_handler_receipts
+       where event_id=$1 order by handler_name`,
+      [eventId],
+    );
+    expect(persisted.rows).toEqual([
+      { handler_name: "implementation.completion_recompute", status: "processing" },
+      { handler_name: "learning.certificate_prerequisite_record", status: "completed" },
+    ]);
+  });
+
   it("reclaims an expired outbox lease and fences the stale publisher", async () => {
     await seedEvent();
     const stale = (await outbox.claim(1, "outbox-stale", now))[0]!;

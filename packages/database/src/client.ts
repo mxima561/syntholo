@@ -300,6 +300,8 @@ export async function assertDatabaseCapability(
                     'syntholo_expire_included_support(uuid,uuid,text,uuid,timestamp with time zone)',
                     'syntholo_expire_invitation(uuid,uuid,text,uuid,timestamp with time zone)',
                     'syntholo_fulfill_product(uuid,uuid,text,text,text,text,uuid,timestamp with time zone,timestamp with time zone,timestamp with time zone)',
+                    'syntholo_implementation_readiness_v1()',
+                    'syntholo_implementation_seed_workspace_v1(uuid)',
                     'syntholo_lock_scoped_system_account(uuid)',
                     'syntholo_mux_apply_event_v1(text,text,text,text,timestamp with time zone,text,text,text,bigint,text,text,text,text,text,boolean,text,text)',
                     'syntholo_open_dispute(uuid,uuid,text,text,uuid,timestamp with time zone)',

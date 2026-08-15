@@ -1,12 +1,18 @@
 import {
   MemberDashboardResponseSchema,
   MemberDashboardV2ResponseSchema,
+  MemberDashboardV3ResponseSchema,
   type MemberDashboardResponse,
   type MemberDashboardV2Response,
+  type MemberDashboardV3Response,
 } from "@syntholo/contracts/member-dashboard";
+import type { ArtifactListResponse } from "@syntholo/contracts/implementation";
 import type { MemberCourseResponse } from "@syntholo/contracts/learning";
 import { MemberAccessResponseSchema } from "@syntholo/contracts/entitlements";
-import { memberReadParentDeadline } from "@syntholo/database";
+import {
+  ImplementationRepositoryError,
+  memberReadParentDeadline,
+} from "@syntholo/database";
 import type { EffectiveAccess, MemberActor } from "@syntholo/domain";
 
 type AccountSummary = Readonly<{ id: string; name: string }>;
@@ -35,6 +41,16 @@ export type MemberDashboardV2Dependencies = MemberDashboardDependencies & Readon
       correlationId: string,
       parentDeadline?: number,
     ): Promise<MemberCourseResponse | null>;
+  };
+}>;
+
+export type MemberDashboardV3Dependencies = MemberDashboardV2Dependencies & Readonly<{
+  implementation: {
+    list(
+      actor: MemberActor,
+      correlationId: string,
+      parentDeadline?: number,
+    ): Promise<ArtifactListResponse>;
   };
 }>;
 
@@ -130,12 +146,34 @@ function nextLearningStep(course: MemberCourseResponse): MemberDashboardV2Respon
   };
 }
 
-export async function getMemberDashboardV2(
+type MemberDashboardV2Projection = Omit<
+  MemberDashboardV2Response,
+  "schemaVersion" | "generatedAt"
+>;
+
+function blockedProjection(
+  account: AccountSummary,
+  access: EffectiveAccess,
+): MemberDashboardV2Projection {
+  return {
+    account: { id: account.id, name: account.name },
+    access: MemberAccessResponseSchema.parse(access),
+    experience: { state: "access_required" },
+    learning: { state: "blocked", reason: "course_access_required" },
+    nextBestStep: {
+      kind: "access_blocker",
+      reason: "academy_course_required",
+      target: "program_options",
+    },
+  };
+}
+
+async function resolveMemberDashboardV2(
   actor: MemberActor,
   correlationId: string,
   dependencies: MemberDashboardV2Dependencies,
-): Promise<MemberDashboardV2Response> {
-  const parentDeadline = memberReadParentDeadline();
+  parentDeadline: number,
+): Promise<MemberDashboardV2Projection> {
   const account = await dependencies.accounts.getById(
     { accountId: actor.accountId },
     actor.accountId,
@@ -146,19 +184,7 @@ export async function getMemberDashboardV2(
     await dependencies.access.getEffectiveAccess(actor, parentDeadline),
   );
   if (!preAccess.capabilities.academy_course) {
-    return MemberDashboardV2ResponseSchema.parse({
-      schemaVersion: 2,
-      generatedAt: dependencies.clock.now().toISOString(),
-      account: { id: account.id, name: account.name },
-      access: preAccess,
-      experience: { state: "access_required" },
-      learning: { state: "blocked", reason: "course_access_required" },
-      nextBestStep: {
-        kind: "access_blocker",
-        reason: "academy_course_required",
-        target: "program_options",
-      },
-    });
+    return blockedProjection(account, preAccess);
   }
   const course = await dependencies.learning.getDashboardCourse(
     actor,
@@ -169,24 +195,10 @@ export async function getMemberDashboardV2(
     await dependencies.access.getEffectiveAccess(actor, parentDeadline),
   );
   if (!access.capabilities.academy_course) {
-    return MemberDashboardV2ResponseSchema.parse({
-      schemaVersion: 2,
-      generatedAt: dependencies.clock.now().toISOString(),
-      account: { id: account.id, name: account.name },
-      access,
-      experience: { state: "access_required" },
-      learning: { state: "blocked", reason: "course_access_required" },
-      nextBestStep: {
-        kind: "access_blocker",
-        reason: "academy_course_required",
-        target: "program_options",
-      },
-    });
+    return blockedProjection(account, access);
   }
   if (course === null) {
-    return MemberDashboardV2ResponseSchema.parse({
-      schemaVersion: 2,
-      generatedAt: dependencies.clock.now().toISOString(),
+    return {
       account: { id: account.id, name: account.name },
       access,
       experience: { state: "no_enrollment" },
@@ -196,15 +208,88 @@ export async function getMemberDashboardV2(
         reason: "academy_enrollment_missing",
         target: "retry",
       },
-    });
+    };
   }
-  return MemberDashboardV2ResponseSchema.parse({
-    schemaVersion: 2,
-    generatedAt: dependencies.clock.now().toISOString(),
+  return {
     account: { id: account.id, name: account.name },
     access,
     experience: { state: "ready" },
     learning: { state: "available", course },
     nextBestStep: nextLearningStep(course),
+  };
+}
+
+export async function getMemberDashboardV2(
+  actor: MemberActor,
+  correlationId: string,
+  dependencies: MemberDashboardV2Dependencies,
+): Promise<MemberDashboardV2Response> {
+  const projection = await resolveMemberDashboardV2(
+    actor,
+    correlationId,
+    dependencies,
+    memberReadParentDeadline(),
+  );
+  return MemberDashboardV2ResponseSchema.parse({
+    schemaVersion: 2,
+    generatedAt: dependencies.clock.now().toISOString(),
+    ...projection,
+  });
+}
+
+export async function getMemberDashboardV3(
+  actor: MemberActor,
+  correlationId: string,
+  dependencies: MemberDashboardV3Dependencies,
+): Promise<MemberDashboardV3Response> {
+  const parentDeadline = memberReadParentDeadline();
+  let projection = await resolveMemberDashboardV2(
+    actor,
+    correlationId,
+    dependencies,
+    parentDeadline,
+  );
+  let artifacts: ArtifactListResponse | null = null;
+  if (projection.experience.state === "ready") {
+    try {
+      artifacts = await dependencies.implementation.list(
+        actor,
+        correlationId,
+        parentDeadline,
+      );
+    } catch (error) {
+      if (!(error instanceof ImplementationRepositoryError)
+        || error.code !== "IMPLEMENTATION_NOT_FOUND") throw error;
+      const access = MemberAccessResponseSchema.parse(
+        await dependencies.access.getEffectiveAccess(actor, parentDeadline),
+      );
+      if (access.capabilities.academy_course) throw error;
+      projection = blockedProjection(projection.account, access);
+    }
+    if (artifacts !== null) {
+      const access = MemberAccessResponseSchema.parse(
+        await dependencies.access.getEffectiveAccess(actor, parentDeadline),
+      );
+      if (!access.capabilities.academy_course) {
+        artifacts = null;
+        projection = blockedProjection(projection.account, access);
+      } else {
+        projection = { ...projection, access };
+      }
+    }
+  }
+  const implementation = projection.experience.state === "access_required"
+    ? { state: "blocked" as const, reason: "course_access_required" as const }
+    : projection.experience.state === "no_enrollment"
+      ? { state: "empty" as const, reason: "no_enrollment" as const }
+      : {
+          state: "available" as const,
+          artifacts: artifacts!,
+        };
+  return MemberDashboardV3ResponseSchema.parse({
+    schemaVersion: 3,
+    generatedAt: dependencies.clock.now().toISOString(),
+    ...projection,
+    implementation,
   });
 }

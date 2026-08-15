@@ -1,5 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BusinessOsPage from "./business-os/page";
 import CommunityPage from "./community/page";
@@ -63,7 +65,11 @@ describe("production member routes", () => {
     render(await route());
 
     expect(screen.getByRole("status")).toHaveTextContent(
-      _path === "/learn/course" ? "Loading your course" : "Checking your Academy access",
+      _path === "/learn/course"
+        ? "Loading your course"
+        : _path === "/learn/plan" || _path === "/learn/workflows"
+          ? "Loading your implementation workspace"
+          : "Checking your Academy access",
     );
     expect(screen.queryByText(/Maria Chen|Northstar Advisory/u)).not.toBeInTheDocument();
     if (_path === "/learn") {
@@ -78,8 +84,16 @@ describe("production member routes", () => {
     expect(screen.getByRole("navigation", { name: "Member navigation" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/learn");
     expect(screen.getByRole("link", { name: "Course" })).toHaveAttribute("href", "/learn/course");
+    expect(screen.getByRole("link", { name: "Plan" })).toHaveAttribute("href", "/learn/plan");
+    expect(screen.getByRole("link", { name: "Workflows" })).toHaveAttribute("href", "/learn/workflows");
     expect(screen.getByText("Signed-in member workspace")).toBeInTheDocument();
     expect(screen.queryByText(/Maria Chen|Northstar Advisory/u)).not.toBeInTheDocument();
+  });
+
+  it("keeps all four production mobile links in one 44px navigation row", async () => {
+    const css = await readFile(resolve(process.cwd(), "src/styles/responsive.css"), "utf8");
+    expect(css).toContain(".production-member-sidebar nav, .production-member-sidebar .nav-group:first-child { grid-template-columns: repeat(4, minmax(0, 1fr)); }");
+    expect(css).toContain(".member-sidebar .nav-group a { min-height: 44px; }");
   });
 
   it("preserves the local prototype only when demo mode is explicit", async () => {

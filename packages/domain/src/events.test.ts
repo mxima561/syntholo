@@ -172,4 +172,53 @@ describe("domain event envelope", () => {
       { accountId: null, occurredAt },
     )).not.toThrow();
   });
+
+  it.each([
+    ["learning.course_completed.v1", "10000000-0000-4000-8000-000000000010", {
+      courseCompletionId: "10000000-0000-4000-8000-000000000010",
+      accountId: "10000000-0000-4000-8000-000000000011",
+      membershipId: "10000000-0000-4000-8000-000000000012",
+      enrollmentId: "10000000-0000-4000-8000-000000000013",
+      courseId: "10000000-0000-4000-8000-000000000014",
+      courseVersionId: "10000000-0000-4000-8000-000000000015",
+    }],
+    ["implementation.artifact_version_saved.v1", "10000000-0000-4000-8000-000000000021", {
+      artifactId: "10000000-0000-4000-8000-000000000020",
+      artifactVersionId: "10000000-0000-4000-8000-000000000021",
+      version: 1,
+      state: "draft",
+    }],
+    ["implementation.program_completed.v1", "10000000-0000-4000-8000-000000000030", {
+      completionId: "10000000-0000-4000-8000-000000000030",
+      courseId: "10000000-0000-4000-8000-000000000031",
+      courseCompletionId: "10000000-0000-4000-8000-000000000032",
+    }],
+  ] as const)("registers strict safe payload authority for %s", (type, aggregateId, payload) => {
+    expect(() => createDomainEvent({
+      aggregateId,
+      eventId: "10000000-0000-4000-8000-000000000001",
+      payload,
+      type,
+    }, { accountId: "10000000-0000-4000-8000-000000000011", occurredAt })).not.toThrow();
+    expect(() => createDomainEvent({
+      aggregateId: "aggregate_1",
+      eventId: "10000000-0000-4000-8000-000000000001",
+      payload: { ...payload, content: "PRIVATE_ARTIFACT_CONTENT" },
+      type,
+    }, { accountId: null, occurredAt })).toThrow("DOMAIN_EVENT_INVALID");
+    expect(() => createDomainEvent({
+      aggregateId: "10000000-0000-4000-8000-000000000099",
+      eventId: "10000000-0000-4000-8000-000000000001",
+      payload,
+      type,
+    }, { accountId: "10000000-0000-4000-8000-000000000011", occurredAt })).toThrow("DOMAIN_EVENT_INVALID");
+    if (type.startsWith("implementation.")) {
+      expect(() => createDomainEvent({
+        aggregateId,
+        eventId: "10000000-0000-4000-8000-000000000001",
+        payload,
+        type,
+      }, { accountId: null, occurredAt })).toThrow("DOMAIN_EVENT_INVALID");
+    }
+  });
 });

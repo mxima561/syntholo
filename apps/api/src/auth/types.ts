@@ -8,6 +8,13 @@ import type {
   MemberLessonResponse,
   ResumeLessonRequest,
 } from "@syntholo/contracts/learning";
+import type {
+  ArtifactDetailResponse,
+  ArtifactListResponse,
+  ArtifactVersionsResponse,
+  SaveArtifactVersionRequest,
+  SaveArtifactVersionResponse,
+} from "@syntholo/contracts/implementation";
 import type { EncryptedValue, StaffSessionCrypto } from "./session-crypto.js";
 
 export type AuthEnvironment = "local" | "test" | "staging" | "production";
@@ -114,6 +121,12 @@ export interface AuthRouteDependencies {
       }>>;
       resumeLesson(actor: MemberActor, correlationId: string, lessonId: string, input: ResumeLessonRequest, parentDeadline?: number): Promise<MemberLessonProgress>;
       completeLesson(actor: MemberActor, correlationId: string, lessonId: string, input: CompleteLessonRequest, idempotencyKey: string, parentDeadline?: number): Promise<CompleteLessonResponse>;
+    };
+    implementation?: {
+      list(actor: MemberActor, correlationId: string, parentDeadline?: number): Promise<ArtifactListResponse>;
+      get(actor: MemberActor, correlationId: string, artifactId: string, parentDeadline?: number): Promise<ArtifactDetailResponse>;
+      versions(actor: MemberActor, correlationId: string, artifactId: string, input: Readonly<{ limit: number; cursor?: string }>, parentDeadline?: number): Promise<ArtifactVersionsResponse>;
+      saveVersion(actor: MemberActor, correlationId: string, artifactId: string, input: SaveArtifactVersionRequest, idempotencyKey: string, parentDeadline?: number): Promise<SaveArtifactVersionResponse>;
     };
     playback?: {
       sign(input: Readonly<{ playbackId: string; durationSeconds: number; now: Date }>): Promise<Readonly<{

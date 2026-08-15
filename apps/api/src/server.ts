@@ -6,6 +6,7 @@ import {
   createDatabase,
   MemberIdentityRepository,
   MemberEntitlementReadRepository,
+  MemberImplementationRepository,
   MemberLearningRepository,
   StaffIdentityRepository,
   StaffContentCommandRepository,
@@ -121,6 +122,10 @@ async function productionDependencies(config: ApiConfig): Promise<{
                 clock: { now: () => new Date() },
               },
               learning: new MemberLearningRepository(memberDatabase),
+              implementation: new MemberImplementationRepository(
+                memberDatabase,
+                config.implementationCursorSecret,
+              ),
               ...(playbackSigner === undefined ? {} : {
                 playback: {
                   sign: playbackSigner.sign,

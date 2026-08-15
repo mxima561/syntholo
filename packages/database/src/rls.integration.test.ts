@@ -91,6 +91,12 @@ const foundationTables = [
   "enrollment_version_transitions",
   "enrollments",
   "event_handler_receipts",
+  "implementation_artifact_versions",
+  "implementation_artifacts",
+  "implementation_completion_artifact_snapshots",
+  "implementation_completion_workflow_snapshots",
+  "implementation_completions",
+  "implementation_workflows",
   "job_attempts",
   "jobs",
   "lesson_accessibility_decisions",
@@ -136,7 +142,6 @@ function loginDatabaseUrl(
   url.username = roleName;
   url.password = password;
   url.pathname = `/${database}`;
-  url.search = "";
   return url.toString();
 }
 
@@ -280,7 +285,6 @@ function databaseName(kind: string): string {
 function databaseUrl(baseUrl: string, name: string): string {
   const url = new URL(baseUrl);
   url.pathname = `/${name}`;
-  url.search = "";
   return url.toString();
 }
 
@@ -508,7 +512,7 @@ describe.sequential("capability role provisioning migration", () => {
           "select count(*)::text as count from drizzle.__drizzle_migrations",
         )
       ));
-      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["11", "11"]);
+      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["12", "12"]);
       const passwords = await maintenance.query<{
         rolname: string;
         rolpasswordisnull: boolean;
@@ -635,6 +639,24 @@ describe.sequential("capability role provisioning migration", () => {
       await maintenance.query(resetConfig);
     }
   }, 20_000);
+});
+
+describe("runtime login database URL", () => {
+  it("preserves required transport security query parameters when changing login authority", () => {
+    const rewritten = new URL(loginDatabaseUrl(
+      "postgresql://owner:secret@db.example.test/syntholo?sslmode=require&channel_binding=require&connect_timeout=5",
+      "runtime_member",
+      "new-secret",
+      "tenant_database",
+    ));
+    expect(rewritten.username).toBe("runtime_member");
+    expect(rewritten.pathname).toBe("/tenant_database");
+    expect(Object.fromEntries(rewritten.searchParams)).toEqual({
+      channel_binding: "require",
+      connect_timeout: "5",
+      sslmode: "require",
+    });
+  });
 });
 
 describe("PostgreSQL account role boundary", () => {
@@ -1417,16 +1439,29 @@ describe("PostgreSQL account role boundary", () => {
       privilege_type: string;
       table_name: string;
     }>(
-      `select grantee, table_name, privilege_type
-       from information_schema.role_table_grants
-       where table_schema = 'public'
-         and grantee = any($1::text[])
+      `select role.rolname grantee, relation.relname table_name, acl.privilege_type
+       from pg_class relation
+       join pg_namespace namespace on namespace.oid=relation.relnamespace
+       cross join lateral aclexplode(relation.relacl) acl
+       join pg_roles role on role.oid=acl.grantee
+       where namespace.nspname = 'public'
+         and role.rolname = any($1::text[])
        order by grantee, table_name, privilege_type`,
       [capabilityRoles],
     );
     const runtimeGrants = grants.rows.filter(({ grantee }) =>
       grantee !== "syntholo_migrator"
     );
+    const implementationTables = new Set([
+      "implementation_artifact_versions",
+      "implementation_artifacts",
+      "implementation_completion_artifact_snapshots",
+      "implementation_completion_workflow_snapshots",
+      "implementation_completions",
+      "implementation_workflows",
+    ]);
+    expect(runtimeGrants.filter(({ table_name }) => implementationTables.has(table_name)))
+      .toEqual([]);
 
     expect(runtimeGrants).toEqual([
       ...[
@@ -1731,10 +1766,13 @@ describe("PostgreSQL account role boundary", () => {
       privilege_type: string;
       table_name: string;
     }>(
-      `select table_name, privilege_type
-       from information_schema.role_table_grants
-       where table_schema = 'public'
-         and grantee = 'syntholo_migrator'
+      `select relation.relname table_name, acl.privilege_type
+       from pg_class relation
+       join pg_namespace namespace on namespace.oid=relation.relnamespace
+       cross join lateral aclexplode(relation.relacl) acl
+       join pg_roles role on role.oid=acl.grantee
+       where namespace.nspname = 'public'
+         and role.rolname = 'syntholo_migrator'
        order by table_name, privilege_type`,
     );
     const appendOnlyTables = new Set([
@@ -1747,15 +1785,22 @@ describe("PostgreSQL account role boundary", () => {
       "commerce_reconciliations",
       "seat_invitations",
     ]);
+    const serverVersion = await harness.database.pool.query<{ version: number }>(
+      "select current_setting('server_version_num')::integer version",
+    );
+    const maintainPrivileges = (serverVersion.rows[0]?.version ?? 0) >= 170_000
+      ? ["MAINTAIN"]
+      : [];
     expect(migratorTableGrants.rows).toEqual(foundationTables.flatMap(
       (table_name) => {
         const privileges = table_name === "access_decision_audit"
           ? ["INSERT", "SELECT"]
           : appendOnlyTables.has(table_name)
-            ? ["INSERT", "REFERENCES", "SELECT", "TRIGGER"]
+            ? ["INSERT", ...maintainPrivileges, "REFERENCES", "SELECT", "TRIGGER"]
             : [
               "DELETE",
               "INSERT",
+              ...maintainPrivileges,
               "REFERENCES",
               "SELECT",
               "TRIGGER",
@@ -1851,12 +1896,12 @@ describe("PostgreSQL account role boundary", () => {
       const afterUpgrade = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterUpgrade.rows[0]?.count).toBe("11");
+      expect(afterUpgrade.rows[0]?.count).toBe("12");
       await migrateDatabase(upgradeDb);
       const afterRerun = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterRerun.rows[0]?.count).toBe("11");
+      expect(afterRerun.rows[0]?.count).toBe("12");
       const normalized = await upgradeDb.pool.query(
         `select
           (select bool_and(actor_id is not null and correlation_id is not null)
@@ -1911,7 +1956,7 @@ describe("PostgreSQL account role boundary", () => {
       const freshJournal = await freshDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(freshJournal.rows[0]?.count).toBe("11");
+      expect(freshJournal.rows[0]?.count).toBe("12");
     } finally {
       await Promise.allSettled([
         upgradeDb?.close(),

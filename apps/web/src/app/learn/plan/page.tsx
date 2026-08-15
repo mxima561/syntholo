@@ -1,8 +1,8 @@
-import { ProductionMemberAccess } from "@/components/production-member-access";
+import { ProductionImplementationWorkspace } from "@/components/production-implementation-workspace";
 import { isDemoMode } from "@/lib/config/mode";
 
 export default async function PlanPage() {
-  if (!isDemoMode()) return <ProductionMemberAccess />;
+  if (!isDemoMode()) return <ProductionImplementationWorkspace view="plan" />;
   const [{ ImplementationPlan }, { demoArtifacts }] = await Promise.all([
     import("@/features/implementation/implementation-plan"),
     import("@/lib/demo/data"),

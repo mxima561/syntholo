@@ -80,6 +80,20 @@ describe("member learning routes", () => {
     await app.close();
   });
 
+  it("preserves the published printable-ASCII learning idempotency key contract", async () => {
+    const { result, learning } = dependencies();
+    const app = await buildApp(result);
+    const key = "complete:intent!0001";
+    const response = await app.inject({
+      method: "POST", url: `/v1/member/lessons/${lessonId}/complete`,
+      headers: { authorization: "Bearer member-token", "content-type": "application/json", "idempotency-key": key },
+      payload: { method: "transcript" },
+    });
+    expect(response.statusCode, response.payload).toBe(200);
+    expect(learning.completeLesson).toHaveBeenCalledWith(actor, expect.any(String), lessonId, { method: "transcript" }, key);
+    await app.close();
+  });
+
   it("returns a truthful transcript fallback without any token when Mux signing is unavailable", async () => {
     const { result } = dependencies(); const app = await buildApp(result);
     const response = await app.inject({ method: "GET", url: `/v1/member/lessons/${lessonId}/playback`, headers: { authorization: "Bearer member-token" } });

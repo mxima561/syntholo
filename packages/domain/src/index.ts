@@ -14,6 +14,7 @@ export type { Actor, MemberActor, StaffActor } from "./identity/actor.js";
 export * from "./content/index.js";
 export * from "./learning/index.js";
 export * from "./commerce/index.js";
+export * from "./implementation/index.js";
 export { trustedActorAuthenticationTime } from "./identity/authentication.js";
 export {
   CAPABILITIES,

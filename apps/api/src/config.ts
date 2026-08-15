@@ -46,6 +46,7 @@ const ApiEnvironmentSchema = z.object({
   WORKOS_ISSUER: optionalNonemptyString,
   WORKOS_JWKS_URL: optionalNonemptyString,
   STAFF_SESSION_ENCRYPTION_KEYS: optionalNonemptyString,
+  IMPLEMENTATION_CURSOR_SECRET: optionalNonemptyString,
   MUX_CONTENT_ENABLED: z.enum(["true", "false"]).default("false"),
   MUX_ENVIRONMENT_ID: optionalNonemptyString,
   MUX_WEBHOOK_SECRET: optionalNonemptyString,
@@ -71,6 +72,7 @@ export type ApiConfig = Readonly<{
   workosIssuer: string;
   workosJwksUrl: string;
   sessionEncryptionKeys: string;
+  implementationCursorSecret: string;
   mux: Readonly<{ kind: "disabled" }> | Readonly<{
     kind: "configured";
     environmentId: string;
@@ -107,9 +109,13 @@ export function parseApiConfig(
       workosIssuer: result.WORKOS_ISSUER,
       workosJwksUrl: result.WORKOS_JWKS_URL,
       sessionEncryptionKeys: result.STAFF_SESSION_ENCRYPTION_KEYS,
+      implementationCursorSecret: result.IMPLEMENTATION_CURSOR_SECRET,
     };
     if (Object.values(required).some((value) => value === undefined)) {
       throw new Error("missing config");
+    }
+    if (Buffer.byteLength(required.implementationCursorSecret as string, "utf8") < 32) {
+      throw new Error("implementation cursor secret is too short");
     }
     if (
       embeddedReleaseSha !== undefined
@@ -166,6 +172,7 @@ export function parseApiConfig(
       workosClientId: required.workosClientId as string,
       workosOrganizationId: required.workosOrganizationId as string,
       sessionEncryptionKeys: required.sessionEncryptionKeys as string,
+      implementationCursorSecret: required.implementationCursorSecret as string,
       webOrigin,
       workosIssuer,
       workosJwksUrl,

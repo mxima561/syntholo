@@ -554,14 +554,30 @@ describe("outbox and production lifecycle", () => {
     })).toEqual(["content.readiness_recompute"]);
   });
 
-  it("routes course completion only to the certificate prerequisite projection", () => {
+  it("fans course completion out to independent certificate and implementation handlers", () => {
     expect(handlersForOutboxEvent({
       attempt: 1, claimGeneration: 1,
       claimToken: "10000000-0000-4000-8000-000000000001",
       eventId: "10000000-0000-4000-8000-000000000002",
       eventType: "learning.course_completed.v1",
       leaseExpiresAt: new Date(now.getTime() + 10_000), maxAttempts: 5, workerId: "worker-test",
-    })).toEqual(["learning.certificate_prerequisite_record"]);
+    })).toEqual([
+      "learning.certificate_prerequisite_record",
+      "implementation.completion_recompute",
+    ]);
+  });
+
+  it.each([
+    "implementation.artifact_version_saved.v1",
+    "implementation.program_completed.v1",
+  ])("registers emitted %s for the safe audit projection", (eventType) => {
+    expect(handlersForOutboxEvent({
+      attempt: 1, claimGeneration: 1,
+      claimToken: "10000000-0000-4000-8000-000000000001",
+      eventId: "10000000-0000-4000-8000-000000000002",
+      eventType,
+      leaseExpiresAt: new Date(now.getTime() + 10_000), maxAttempts: 5, workerId: "worker-test",
+    })).toEqual(["foundation_audit_projection"]);
   });
 
   it("classifies permanent routing failures and injects retry jitter", async () => {

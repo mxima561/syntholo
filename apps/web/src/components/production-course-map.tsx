@@ -1,7 +1,10 @@
 "use client";
 
 import { useAuth } from "@clerk/react";
-import type { MemberDashboardV2Response } from "@syntholo/contracts/member-dashboard";
+import type {
+  MemberDashboardV2Response,
+  MemberDashboardV3Response,
+} from "@syntholo/contracts/member-dashboard";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { createMemberApiClient } from "@/lib/api/client";
@@ -13,7 +16,7 @@ import {
 
 type Resolution =
   | { sessionId: string; state: "unavailable" }
-  | { sessionId: string; state: "resolved"; dashboard: MemberDashboardV2Response };
+  | { sessionId: string; state: "resolved"; dashboard: MemberDashboardV2Response | MemberDashboardV3Response };
 
 export function ProductionCourseMap() {
   const { getToken, isLoaded, isSignedIn, sessionId } = useAuth();
@@ -33,7 +36,9 @@ export function ProductionCourseMap() {
           signal: controller.signal,
         });
         const dashboard = await parseMemberDashboardResponse(response, requestedVersion);
-        if (dashboard.schemaVersion !== 2) throw new Error("COURSE_MAP_V2_REQUIRED");
+        if (dashboard.schemaVersion !== 2 && dashboard.schemaVersion !== 3) {
+          throw new Error("COURSE_MAP_LEARNING_REQUIRED");
+        }
         if (!controller.signal.aborted) setResolution({ sessionId: currentSessionId, state: "resolved", dashboard });
       } catch {
         if (!controller.signal.aborted) setResolution({ sessionId: currentSessionId, state: "unavailable" });

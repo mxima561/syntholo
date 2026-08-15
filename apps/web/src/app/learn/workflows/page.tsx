@@ -1,8 +1,8 @@
-import { ProductionMemberAccess } from "@/components/production-member-access";
+import { ProductionImplementationWorkspace } from "@/components/production-implementation-workspace";
 import { isDemoMode } from "@/lib/config/mode";
 
 export default async function WorkflowsPage() {
-  if (!isDemoMode()) return <ProductionMemberAccess />;
+  if (!isDemoMode()) return <ProductionImplementationWorkspace view="workflows" />;
   const [{ WorkflowBoard }, { demoArtifacts }] = await Promise.all([
     import("@/features/implementation/workflow-board"),
     import("@/lib/demo/data"),

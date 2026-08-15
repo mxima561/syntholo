@@ -107,6 +107,29 @@ const dashboardV2 = {
     target: { courseId, lessonId: availableLessonId },
   },
 } as const;
+const dashboardV3 = {
+  ...dashboardV2,
+  schemaVersion: 3,
+  implementation: {
+    state: "available",
+    artifacts: {
+      schemaVersion: 1,
+      items: ["readiness_map", "ai_policy", "workflow_portfolio", "enablement_checklist", "roadmap"]
+        .map((kind, index) => ({
+          id: `30000000-0000-4000-8000-00000000000${index + 1}`,
+          kind,
+          title: ["Readiness map", "AI policy", "Workflow portfolio", "Enablement checklist", "90-day roadmap"][index],
+          currentVersion: index === 0 ? 1 : 0,
+          currentState: index === 0 ? "draft" : null,
+          currentVersionId: index === 0 ? "40000000-0000-4000-8000-000000000001" : null,
+          updatedAt: index === 0 ? "2026-08-15T12:00:00.000Z" : null,
+          authorLabel: index === 0 ? "You" : null,
+        })),
+      nextCursor: null,
+      implementationCompletion: { completed: false, completedAt: null },
+    },
+  },
+} as const;
 
 function json(body: unknown, init: ResponseInit = {}) {
   const headers = new Headers(init.headers);
@@ -135,12 +158,30 @@ afterEach(() => {
 });
 
 describe("ProductionMemberDashboard", () => {
-  it("keeps v1 as the safe rollout default and accepts only the explicit v2 flag", () => {
+  it("keeps v1 as the safe rollout default and accepts only explicit supported flags", () => {
     expect(dashboardRequestVersion()).toBe("1");
     vi.stubEnv("NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION", "invalid");
     expect(dashboardRequestVersion()).toBe("1");
     vi.stubEnv("NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION", "2");
     expect(dashboardRequestVersion()).toBe("2");
+    vi.stubEnv("NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION", "3");
+    expect(dashboardRequestVersion()).toBe("3");
+  });
+
+  it("dual-parses negotiated v3 and renders implementation progress without replacing the learning next step", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION", "3");
+    const fetcher = vi.fn(async () => json(dashboardV3, {
+      status: 200,
+      headers: { "syntholo-dashboard-version": "3" },
+    }));
+    signedIn(fetcher);
+    render(<ProductionMemberDashboard />);
+    expect(await screen.findByRole("heading", { name: "Syntholo Academy" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Implementation workspace" })).toBeInTheDocument();
+    expect(screen.getByText("1 of 5 artifacts started")).toBeInTheDocument();
+    expect(fetcher).toHaveBeenCalledWith("/v1/member/dashboard", expect.objectContaining({
+      headers: { authorization: "Bearer clerk-token", "syntholo-dashboard-version": "3" },
+    }));
   });
 
   it("does not request while Clerk is loading or signed out", () => {

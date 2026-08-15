@@ -69,6 +69,15 @@ type ReadinessDatabase = Readonly<{
         table_acl_ready?: boolean;
         track_table_ready?: boolean;
         public_execute_denied?: boolean;
+        function_ready?: boolean;
+        immutability_ready?: boolean;
+        policy_ready?: boolean;
+        receipt_binding_ready?: boolean;
+        rls_ready?: boolean;
+        seed_backfill_ready?: boolean;
+        structure_ready?: boolean;
+        table_ready?: boolean;
+        upstream_fk_ready?: boolean;
         writer_compatibility_ready?: boolean;
       }>;
     }>>;
@@ -178,6 +187,31 @@ export async function checkDatabaseReadiness(
     ) {
       throw new Error("content-assets projection mismatch");
     }
+    const implementation = await database.pool.query(
+      "select contract_version, migration_created_at, migration_hash, table_ready, structure_ready, immutability_ready, rls_ready, policy_ready, table_acl_ready, function_ready, function_acl_ready, public_execute_denied, receipt_binding_ready, upstream_fk_ready, seed_backfill_ready from public.syntholo_implementation_readiness_v1()",
+    );
+    const implementationRow = implementation.rows[0];
+    const implementationMigration = PUBLISHED_MIGRATIONS[11];
+    if (
+      implementation.rows.length !== 1
+      || implementationRow === undefined
+      || implementationMigration === undefined
+      || implementationRow.contract_version !== "0012_implementation.v1"
+      || implementationRow.migration_created_at !== String(implementationMigration.when)
+      || implementationRow.migration_hash !== implementationMigration.hash
+      || implementationRow.table_ready !== true
+      || implementationRow.structure_ready !== true
+      || implementationRow.immutability_ready !== true
+      || implementationRow.rls_ready !== true
+      || implementationRow.policy_ready !== true
+      || implementationRow.table_acl_ready !== true
+      || implementationRow.function_ready !== true
+      || implementationRow.function_acl_ready !== true
+      || implementationRow.public_execute_denied !== true
+      || implementationRow.receipt_binding_ready !== true
+      || implementationRow.upstream_fk_ready !== true
+      || implementationRow.seed_backfill_ready !== true
+    ) throw new Error("implementation projection mismatch");
     return { latencyMs: Date.now() - started, status: "ok" };
   } catch {
     throw new Error("DATABASE_NOT_READY");

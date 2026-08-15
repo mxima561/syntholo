@@ -7,7 +7,6 @@ function loginUrl(baseUrl: string, roleName: string, password: string): string {
   const url = new URL(baseUrl);
   url.username = roleName;
   url.password = password;
-  url.search = "";
   return url.toString();
 }
 

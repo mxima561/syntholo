@@ -33,6 +33,22 @@ const lessonId = "10000000-0000-4000-8000-000000000021";
 const lessonVersionId = "10000000-0000-4000-8000-000000000022";
 const nextLessonId = "10000000-0000-4000-8000-000000000023";
 const availableAt = "2026-08-14T20:00:00.000Z";
+const implementationKinds = ["readiness_map", "ai_policy", "workflow_portfolio", "enablement_checklist", "roadmap"] as const;
+const implementationArtifacts = {
+  schemaVersion: 1,
+  items: implementationKinds.map((kind, index) => ({
+    id: `30000000-0000-4000-8000-00000000000${index + 1}`,
+    kind,
+    title: ["Readiness map", "AI policy", "Workflow portfolio", "Enablement checklist", "90-day roadmap"][index],
+    currentVersion: 0,
+    currentState: null,
+    currentVersionId: null,
+    updatedAt: null,
+    authorLabel: null,
+  })),
+  nextCursor: null,
+  implementationCompletion: { completed: false, completedAt: null },
+};
 
 const access = {
   accountId,
@@ -63,9 +79,10 @@ const course = {
 };
 
 const dashboard = {
-  schemaVersion: 2, generatedAt: "2026-08-14T20:00:00.123Z",
+  schemaVersion: 3, generatedAt: "2026-08-14T20:00:00.123Z",
   account: { id: accountId, name: "Production Browser Account" }, access,
   experience: { state: "ready" }, learning: { state: "available", course },
+  implementation: { state: "available", artifacts: implementationArtifacts },
   nextBestStep: { kind: "lesson", reason: "next_required_lesson", target: { courseId, lessonId } },
 };
 
@@ -124,8 +141,14 @@ test("production Clerk bearer journey opens the pinned course, resumes transcrip
     idempotencyKey?: string;
   }> = [];
   await page.route("**/v1/member/dashboard", (route) => json(route, dashboard, 200, {
-    "syntholo-dashboard-version": "2", vary: "Authorization, Syntholo-Dashboard-Version",
+    "syntholo-dashboard-version": "3", vary: "Authorization, Syntholo-Dashboard-Version",
   }));
+  await page.route("**/v1/member/artifacts", (route) => json(route, implementationArtifacts));
+  await page.route(/\/v1\/member\/artifacts\/[^/?]+$/u, (route) => {
+    const artifactId = new URL(route.request().url()).pathname.split("/").at(-1);
+    const artifact = implementationArtifacts.items.find(({ id }) => id === artifactId)!;
+    return json(route, { schemaVersion: 1, artifact, content: null });
+  });
   await page.route(`**/v1/member/lessons/${lessonId}`, (route) => json(route, lesson));
   await page.route(`**/v1/member/lessons/${lessonId}/playback`, (route) => json(route, degradedPlayback));
   await page.route(`**/v1/member/lessons/${lessonId}/resume`, (route) => json(route, {
@@ -153,6 +176,12 @@ test("production Clerk bearer journey opens the pinned course, resumes transcrip
   await page.goto("/learn");
   await expect(page.getByRole("heading", { name: "Production Browser Account" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Production Browser Academy" })).toBeVisible();
+  await page.getByRole("link", { name: "Plan", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your implementation plan" })).toBeVisible();
+  await page.getByRole("link", { name: "Workflows", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Your business workflows" })).toBeVisible();
+  await page.getByRole("link", { name: "Home" }).click();
+  await expect(page.getByRole("heading", { name: "Production Browser Account" })).toBeVisible();
   await page.getByRole("link", { name: "Open the full course map" }).click();
   await expect(page).toHaveURL(/\/learn\/course$/u);
   await page.getByRole("link", { name: /Map the constraint/u }).click();
@@ -171,7 +200,7 @@ test("production Clerk bearer journey opens the pinned course, resumes transcrip
   expect(requests.every((request) => request.authorization === "Bearer production-browser-clerk-token")).toBe(true);
   expect(requests.find((request) => request.path === "/v1/member/dashboard")).toMatchObject({
     cookie: undefined,
-    dashboardVersion: "2",
+    dashboardVersion: "3",
   });
   expect(requests.find((request) => request.path.endsWith("/resume"))?.body).toBe(JSON.stringify({
     expectedVersion: 0, path: "transcript", position: { blockId: "transcript-2" },

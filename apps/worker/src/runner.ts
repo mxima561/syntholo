@@ -11,6 +11,7 @@ import {
   PermanentOutboxDispatchError,
   WorkerContentMediaRepository,
   WorkerLearningRepository,
+  WorkerImplementationRepository,
   type ClassifiedJobFailure,
   type ClaimedJob,
   type HandlerReceiptClaim,
@@ -31,6 +32,7 @@ import { emitWorkerHealth, type WorkerHealthStatus } from "./health.js";
 import { createMuxReconcileJobHandler } from "./handlers/content/mux.js";
 import { createContentReadinessRecomputeHandler } from "./handlers/content/readiness-recompute.js";
 import { createCertificatePrerequisiteRecordHandler } from "./handlers/learning/certificate-prerequisite-record.js";
+import { createImplementationCompletionRecomputeHandler } from "./handlers/implementation/completion-recompute.js";
 
 export type WorkerJob = Readonly<{
   id: string;
@@ -362,7 +364,13 @@ export function handlersForOutboxEvent(
     case "content.readiness_approved.v1":
       return Object.freeze(["content.readiness_recompute"]);
     case "learning.course_completed.v1":
-      return Object.freeze(["learning.certificate_prerequisite_record"]);
+      return Object.freeze([
+        "learning.certificate_prerequisite_record",
+        "implementation.completion_recompute",
+      ]);
+    case "implementation.artifact_version_saved.v1":
+    case "implementation.program_completed.v1":
+      return Object.freeze(["foundation_audit_projection"]);
     default:
       throw new HandlerFailure({ code: "JOB_INPUT_INVALID", permanent: true });
   }
@@ -536,6 +544,7 @@ async function main(): Promise<void> {
     const receipts = new HandlerReceiptRepository(database, { leaseMs: 60_000 });
     const content = new WorkerContentMediaRepository(database);
     const learning = new WorkerLearningRepository(database);
+    const implementation = new WorkerImplementationRepository(database);
     const mux = config.mux?.enabled === true;
     if (mux && (config.mux.environmentId === undefined
       || config.mux.tokenId === undefined || config.mux.tokenSecret === undefined)) {
@@ -555,6 +564,7 @@ async function main(): Promise<void> {
         entitlement_reconciliation_queue: async () => undefined,
         "content.readiness_recompute": createContentReadinessRecomputeHandler(content),
         "learning.certificate_prerequisite_record": createCertificatePrerequisiteRecordHandler(learning),
+        "implementation.completion_recompute": createImplementationCompletionRecomputeHandler(implementation),
       }),
       "content.mux_reconcile.v1": muxHandler,
     });

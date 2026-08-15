@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { MemberAccessResponseSchema } from "@syntholo/contracts/entitlements";
 import { MemberCourseResponseSchema } from "./learning/course";
+import { ArtifactListResponseSchema } from "./implementation/artifacts";
 
 const UuidSchema = z.string().uuid();
 
@@ -340,4 +341,63 @@ export type MemberDashboardV2NextBestStep = z.infer<
 export type MemberDashboardV2Response = z.infer<
   typeof MemberDashboardV2ResponseSchema
 >;
-export type MemberDashboardWireResponse = MemberDashboardResponse | MemberDashboardV2Response;
+
+export const MemberDashboardV3ImplementationSchema = z.discriminatedUnion("state", [
+  z.object({
+    state: z.literal("blocked"),
+    reason: z.literal("course_access_required"),
+  }).strict(),
+  z.object({
+    state: z.literal("empty"),
+    reason: z.literal("no_enrollment"),
+  }).strict(),
+  z.object({
+    state: z.literal("available"),
+    artifacts: ArtifactListResponseSchema,
+  }).strict(),
+]);
+
+export const MemberDashboardV3ResponseSchema = z.object({
+  schemaVersion: z.literal(3),
+  generatedAt: UtcMillisecondInstantSchema,
+  account: z.object({ id: UuidSchema, name: AccountNameSchema }).strict(),
+  access: MemberAccessResponseSchema,
+  experience: z.object({
+    state: z.enum(["access_required", "no_enrollment", "ready"]),
+  }).strict(),
+  learning: MemberDashboardV2LearningSchema,
+  implementation: MemberDashboardV3ImplementationSchema,
+  nextBestStep: MemberDashboardV2NextBestStepSchema,
+}).strict().superRefine((value, context) => {
+  const v2 = MemberDashboardV2ResponseSchema.safeParse({
+    schemaVersion: 2,
+    generatedAt: value.generatedAt,
+    account: value.account,
+    access: value.access,
+    experience: value.experience,
+    learning: value.learning,
+    nextBestStep: value.nextBestStep,
+  });
+  if (!v2.success) {
+    context.addIssue({ code: "custom", message: "V3 learning projection is inconsistent" });
+  }
+  const expected = value.experience.state === "access_required"
+    ? "blocked"
+    : value.experience.state === "no_enrollment"
+      ? "empty"
+      : "available";
+  if (value.implementation.state !== expected) {
+    context.addIssue({ code: "custom", message: "Implementation state disagrees with experience" });
+  }
+});
+
+export type MemberDashboardV3Implementation = z.infer<
+  typeof MemberDashboardV3ImplementationSchema
+>;
+export type MemberDashboardV3Response = z.infer<
+  typeof MemberDashboardV3ResponseSchema
+>;
+export type MemberDashboardWireResponse =
+  | MemberDashboardResponse
+  | MemberDashboardV2Response
+  | MemberDashboardV3Response;

@@ -10,7 +10,6 @@ function loginUrl(baseUrl: string, roleName: string, password: string): string {
   const url = new URL(baseUrl);
   url.username = roleName;
   url.password = password;
-  url.search = "";
   return url.toString();
 }
 
@@ -87,7 +86,7 @@ describe("authentication migration and ACLs", () => {
       "staff_login_attempts",
       "staff_sessions",
     ]);
-    expect(journal.rows[0]?.count).toBe("11");
+    expect(journal.rows[0]?.count).toBe("12");
   });
 
   it("rejects malformed cryptographic field lengths", async () => {

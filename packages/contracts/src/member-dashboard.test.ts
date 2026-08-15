@@ -109,6 +109,23 @@ function dashboardV2(overrides: Record<string, unknown> = {}) {
   };
 }
 
+const implementationArtifacts = {
+  schemaVersion: 1,
+  items: ["readiness_map", "ai_policy", "workflow_portfolio", "enablement_checklist", "roadmap"]
+    .map((kind, index) => ({
+      id: `30000000-0000-4000-8000-00000000000${index + 1}`,
+      kind,
+      title: ["Readiness map", "AI policy", "Workflow portfolio", "Enablement checklist", "90-day roadmap"][index],
+      currentVersion: 0,
+      currentState: null,
+      currentVersionId: null,
+      updatedAt: null,
+      authorLabel: null,
+    })),
+  nextCursor: null,
+  implementationCompletion: { completed: false, completedAt: null },
+} as const;
+
 describe("member dashboard contract", () => {
   it("resolves only through the narrow package export used by the production web client", async () => {
     const packageJson = JSON.parse(await readFile(
@@ -147,6 +164,32 @@ describe("member dashboard contract", () => {
         target: { courseId, lessonId: "10000000-0000-4000-8000-000000000099" },
       },
     })).success).toBe(false);
+  });
+
+  it("publishes additive v3 implementation state without changing learning precedence", async () => {
+    const { MemberDashboardV3ResponseSchema } = await import("./member-dashboard.js");
+    const value = {
+      ...dashboardV2(),
+      schemaVersion: 3,
+      implementation: { state: "available", artifacts: implementationArtifacts },
+    };
+    expect(MemberDashboardV3ResponseSchema.parse(value)).toMatchObject({
+      schemaVersion: 3,
+      nextBestStep: dashboardV2().nextBestStep,
+      implementation: {
+        state: "available",
+        artifacts: { implementationCompletion: { completed: false } },
+      },
+    });
+    expect(MemberDashboardV3ResponseSchema.safeParse({
+      ...value,
+      nextBestStep: { kind: "course", reason: "required_lesson_locked", target: { courseId } },
+    }).success).toBe(false);
+    expect(MemberDashboardV3ResponseSchema.safeParse({
+      ...value,
+      experience: { state: "access_required" },
+      implementation: { state: "available", artifacts: implementationArtifacts },
+    }).success).toBe(false);
   });
 
   it("accepts exact v2 access, enrollment, locked, and completion states", async () => {

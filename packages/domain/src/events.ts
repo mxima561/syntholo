@@ -45,7 +45,63 @@ const registeredDomainEventTypes = new Set([
   "foundation.aggregate_created.v1",
   "foundation.lock_lost.v1",
   "foundation.notification_sent.v1",
+  "learning.course_completed.v1",
+  "implementation.artifact_version_saved.v1",
+  "implementation.program_completed.v1",
 ]);
+
+function exactKeys(payload: JsonObject, keys: readonly string[]): boolean {
+  return Object.keys(payload).sort().join(",") === [...keys].sort().join(",");
+}
+
+function assertRegisteredPayload(
+  type: string,
+  aggregateId: string,
+  payload: JsonObject,
+  provenance: DomainEventProvenance,
+): void {
+  const uuidFields = (keys: readonly string[]) => keys.every((key) =>
+    typeof payload[key] === "string" && canonicalUuidPattern.test(payload[key]));
+  switch (type) {
+    case "learning.course_completed.v1": {
+      const keys = ["courseCompletionId", "accountId", "membershipId", "enrollmentId", "courseId", "courseVersionId"] as const;
+      if (
+        !exactKeys(payload, keys)
+        || !uuidFields(keys)
+        || aggregateId !== payload.courseCompletionId
+        || provenance.accountId !== payload.accountId
+      ) throw new Error("DOMAIN_EVENT_INVALID");
+      return;
+    }
+    case "implementation.artifact_version_saved.v1": {
+      const keys = ["artifactId", "artifactVersionId", "version", "state"] as const;
+      if (
+        !exactKeys(payload, keys)
+        || !uuidFields(["artifactId", "artifactVersionId"])
+        || !Number.isInteger(payload.version)
+        || typeof payload.version !== "number"
+        || payload.version < 1
+        || payload.version > 2_147_483_647
+        || (payload.state !== "draft" && payload.state !== "final")
+        || aggregateId !== payload.artifactVersionId
+        || provenance.accountId === null
+      ) throw new Error("DOMAIN_EVENT_INVALID");
+      return;
+    }
+    case "implementation.program_completed.v1": {
+      const keys = ["completionId", "courseId", "courseCompletionId"] as const;
+      if (
+        !exactKeys(payload, keys)
+        || !uuidFields(keys)
+        || aggregateId !== payload.completionId
+        || provenance.accountId === null
+      ) {
+        throw new Error("DOMAIN_EVENT_INVALID");
+      }
+      return;
+    }
+  }
+}
 
 function assertEventInput(
   input: DomainEventInput<string, JsonObject>,
@@ -154,6 +210,7 @@ export function createDomainEvent<
   try {
     assertEventInput(input, provenance);
     const payload = copyJsonObject(input.payload) as TPayload;
+    assertRegisteredPayload(input.type, input.aggregateId, payload, provenance);
     return Object.freeze({
       eventId: input.eventId,
       type: input.type,

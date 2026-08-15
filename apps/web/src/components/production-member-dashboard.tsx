@@ -4,7 +4,9 @@ import { useAuth } from "@clerk/react";
 import {
   MemberDashboardResponseSchema,
   MemberDashboardV2ResponseSchema,
+  MemberDashboardV3ResponseSchema,
   type MemberDashboardV2Response,
+  type MemberDashboardV3Response,
   type MemberDashboardWireResponse,
 } from "@syntholo/contracts/member-dashboard";
 import { ApiErrorSchema } from "@syntholo/contracts/http";
@@ -67,7 +69,7 @@ async function parseApiError(response: Response): Promise<{
 
 export async function parseMemberDashboardResponse(
   response: Response,
-  requestedVersion: "1" | "2",
+  requestedVersion: "1" | "2" | "3",
 ): Promise<MemberDashboardWireResponse> {
   if (
     !response.ok
@@ -76,7 +78,10 @@ export async function parseMemberDashboardResponse(
   const version = response.headers.get("syntholo-dashboard-version");
   if (version !== requestedVersion) throw new Error("MEMBER_DASHBOARD_RESPONSE_INVALID");
   const payload: unknown = await response.json();
-  if (version === "2") {
+  if (version === "3") {
+    const parsed = MemberDashboardV3ResponseSchema.safeParse(payload);
+    if (parsed.success) return parsed.data;
+  } else if (version === "2") {
     const parsed = MemberDashboardV2ResponseSchema.safeParse(payload);
     if (parsed.success) return parsed.data;
   } else if (version === "1") {
@@ -86,8 +91,9 @@ export async function parseMemberDashboardResponse(
   throw new Error("MEMBER_DASHBOARD_RESPONSE_INVALID");
 }
 
-export function dashboardRequestVersion(): "1" | "2" {
-  return process.env.NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION === "2" ? "2" : "1";
+export function dashboardRequestVersion(): "1" | "2" | "3" {
+  const version = process.env.NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION;
+  return version === "2" || version === "3" ? version : "1";
 }
 
 function RetryButton({ onRetry }: Readonly<{ onRetry(): void }>) {
@@ -107,7 +113,7 @@ function availableLabel(value: string): string {
 }
 
 export function ProductionCourseSpine({ dashboard, showOpenCourseLink = true }: Readonly<{
-  dashboard: MemberDashboardV2Response;
+  dashboard: MemberDashboardV2Response | MemberDashboardV3Response;
   showOpenCourseLink?: boolean;
 }>) {
   if (dashboard.learning.state !== "available") return null;
@@ -211,7 +217,23 @@ function DashboardShell({ dashboard, onRetry }: Readonly<{
         <h1>{dashboard.account.name}</h1>
         <p>Academy access is active · {seats}</p>
       </header>
-      {dashboard.schemaVersion === 2 ? <ProductionCourseSpine dashboard={dashboard} /> : null}
+      {dashboard.schemaVersion === 2 || dashboard.schemaVersion === 3
+        ? <ProductionCourseSpine dashboard={dashboard} />
+        : null}
+      {dashboard.schemaVersion === 3 && dashboard.implementation.state === "available" ? (
+        <section aria-labelledby="implementation-workspace-title" className="production-dashboard-panel">
+          <span className="micro-label">Implementation</span>
+          <h2 id="implementation-workspace-title">Implementation workspace</h2>
+          <p>
+            {dashboard.implementation.artifacts.items.filter(({ currentVersion }) => currentVersion > 0).length}
+            {" of 5 artifacts started"}
+          </p>
+          <div className="production-dashboard-actions">
+            <Link className="button button-dark button-medium" href="/learn/plan">Open implementation plan</Link>
+            <Link className="button button-secondary button-medium" href="/learn/workflows">Open workflows</Link>
+          </div>
+        </section>
+      ) : null}
       {dashboard.schemaVersion === 1 && dashboard.experience.state === "partial" ? (
         <section className="production-dashboard-panel" role="status">
           <span className="micro-label">Current status</span>

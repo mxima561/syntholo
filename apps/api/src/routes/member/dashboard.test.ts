@@ -1,11 +1,13 @@
 import type { EffectiveAccess, MemberActor } from "@syntholo/domain";
 import {
   DatabaseDependencyUnavailableError,
+  ImplementationRepositoryError,
   MemberAccessUnavailableError,
 } from "@syntholo/database";
 import {
   MemberDashboardResponseSchema,
   MemberDashboardV2ResponseSchema,
+  MemberDashboardV3ResponseSchema,
 } from "@syntholo/contracts/member-dashboard";
 import { memberActor } from "@syntholo/testing";
 import { describe, expect, it, vi } from "vitest";
@@ -63,6 +65,7 @@ function dependencies(input: {
   authenticate?: () => Promise<unknown>;
   clock?: () => Date;
   dashboardCourse?: () => Promise<unknown>;
+  artifacts?: () => Promise<unknown>;
 } = {}) {
   const events: string[] = [];
   const authenticateRequest = vi.fn(async () => {
@@ -73,7 +76,14 @@ function dependencies(input: {
       authorizedParty: "https://app.syntholo.test",
     };
   });
-  const getById = vi.fn(async () => {
+  const getById = vi.fn(async (
+    scope: Readonly<{ accountId: string }>,
+    id: string,
+    parentDeadline?: number,
+  ) => {
+    void scope;
+    void id;
+    void parentDeadline;
     events.push("account");
     return input.account?.() ?? {
       id: actor.accountId,
@@ -84,7 +94,8 @@ function dependencies(input: {
       updatedAt: now,
     };
   });
-  const getEffectiveAccess = vi.fn(async (member: MemberActor) => {
+  const getEffectiveAccess = vi.fn(async (member: MemberActor, parentDeadline?: number) => {
+    void parentDeadline;
     events.push("access");
     return input.effectiveAccess?.(member) ?? access();
   });
@@ -92,9 +103,33 @@ function dependencies(input: {
     events.push("clock");
     return input.clock?.() ?? now;
   });
-  const getDashboardCourse = vi.fn(async () => {
+  const getDashboardCourse = vi.fn(async (
+    member: MemberActor,
+    correlationId: string,
+    parentDeadline?: number,
+  ) => {
+    void member;
+    void correlationId;
+    void parentDeadline;
     events.push("learning");
     return input.dashboardCourse?.() ?? dashboardCourse;
+  });
+  const listArtifacts = vi.fn(async (
+    member: MemberActor,
+    correlationId: string,
+    parentDeadline?: number,
+  ) => {
+    void member;
+    void correlationId;
+    void parentDeadline;
+    events.push("implementation");
+    return input.artifacts?.() ?? {
+      schemaVersion: 1,
+      items: ["readiness_map", "ai_policy", "workflow_portfolio", "enablement_checklist", "roadmap"]
+        .map((kind, index) => ({ id: `30000000-0000-4000-8000-00000000000${index + 1}`, kind, title: `Artifact ${index + 1}`, currentVersion: 0, currentState: null, currentVersionId: null, updatedAt: null, authorLabel: null })),
+      nextCursor: null,
+      implementationCompletion: { completed: false, completedAt: null },
+    };
   });
   const member = {
     webOrigin: "https://app.syntholo.test",
@@ -107,6 +142,7 @@ function dependencies(input: {
     learning: {
       getDashboardCourse,
     },
+    implementation: { list: listArtifacts },
   } as unknown as AuthRouteDependencies["member"];
   const result: ApiDependencies = {
     releaseSha: "1111111111111111111111111111111111111111",
@@ -138,7 +174,7 @@ function dependencies(input: {
   };
   return {
     result, events, authenticateRequest, getById, getEffectiveAccess,
-    getDashboardCourse, clock,
+    getDashboardCourse, listArtifacts, clock,
   };
 }
 
@@ -226,6 +262,101 @@ describe("GET /v1/member/dashboard", () => {
     await app.close();
   });
 
+  it("returns additive v3 implementation roots while preserving the v2 learning next step", async () => {
+    const fixture = dependencies();
+    const app = await buildApp(fixture.result);
+    const response = await app.inject({
+      method: "GET", url: "/v1/member/dashboard",
+      headers: { authorization: "Bearer member-token", "syntholo-dashboard-version": "3" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(MemberDashboardV3ResponseSchema.parse(response.json())).toMatchObject({
+      schemaVersion: 3,
+      learning: { state: "available", course: dashboardCourse },
+      implementation: { state: "available", artifacts: { items: expect.any(Array) } },
+      nextBestStep: { kind: "course", reason: "required_lesson_locked" },
+    });
+    expect(response.headers["syntholo-dashboard-version"]).toBe("3");
+    expect(fixture.events).toEqual([
+      "authenticate", "account", "access", "learning", "access", "implementation", "access", "clock",
+    ]);
+    const deadline = fixture.getById.mock.calls[0]?.[2];
+    expect(deadline).toEqual(expect.any(Number));
+    expect(fixture.getEffectiveAccess.mock.calls.every((call) => call[1] === deadline)).toBe(true);
+    expect(fixture.getDashboardCourse.mock.calls[0]?.[2]).toBe(deadline);
+    expect(fixture.listArtifacts.mock.calls[0]?.[2]).toBe(deadline);
+    await app.close();
+  });
+
+  it("suppresses implementation content when Academy access is revoked after its read", async () => {
+    const effectiveAccess = vi.fn()
+      .mockResolvedValueOnce(access(true))
+      .mockResolvedValueOnce(access(true))
+      .mockResolvedValueOnce(access(false));
+    const fixture = dependencies({ effectiveAccess });
+    const app = await buildApp(fixture.result);
+    const response = await app.inject({
+      method: "GET", url: "/v1/member/dashboard",
+      headers: { authorization: "Bearer member-token", "syntholo-dashboard-version": "3" },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      schemaVersion: 3,
+      experience: { state: "access_required" },
+      learning: { state: "blocked", reason: "course_access_required" },
+      implementation: { state: "blocked", reason: "course_access_required" },
+    });
+    expect(response.payload).not.toContain("Artifact 1");
+    expect(fixture.listArtifacts).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("distinguishes a revoked implementation NOT_FOUND from an active workspace invariant failure", async () => {
+    const notFound = async () => { throw new ImplementationRepositoryError("IMPLEMENTATION_NOT_FOUND"); };
+    const revokedAccess = vi.fn()
+      .mockResolvedValueOnce(access(true))
+      .mockResolvedValueOnce(access(true))
+      .mockResolvedValueOnce(access(false));
+    const revoked = dependencies({ effectiveAccess: revokedAccess, artifacts: notFound });
+    const revokedApp = await buildApp(revoked.result);
+    const revokedResponse = await revokedApp.inject({
+      method: "GET", url: "/v1/member/dashboard",
+      headers: { authorization: "Bearer member-token", "syntholo-dashboard-version": "3" },
+    });
+    expect(revokedResponse.statusCode).toBe(200);
+    expect(revokedResponse.json()).toMatchObject({
+      experience: { state: "access_required" },
+      implementation: { state: "blocked" },
+    });
+    await revokedApp.close();
+
+    const active = dependencies({ artifacts: notFound });
+    const activeApp = await buildApp(active.result);
+    const activeResponse = await activeApp.inject({
+      method: "GET", url: "/v1/member/dashboard",
+      headers: { authorization: "Bearer member-token", "syntholo-dashboard-version": "3" },
+    });
+    expect(activeResponse.statusCode).toBe(500);
+    expect(activeResponse.json()).toMatchObject({ error: { code: "INTERNAL_ERROR" } });
+    expect(activeResponse.payload).not.toContain("IMPLEMENTATION_NOT_FOUND");
+    await activeApp.close();
+  });
+
+  it("maps a typed v3 implementation dependency failure to the canonical safe 503", async () => {
+    const fixture = dependencies({
+      artifacts: async () => { throw new ImplementationRepositoryError("IMPLEMENTATION_DEPENDENCY_FAILED"); },
+    });
+    const app = await buildApp(fixture.result);
+    const response = await app.inject({
+      method: "GET", url: "/v1/member/dashboard",
+      headers: { authorization: "Bearer member-token", "syntholo-dashboard-version": "3" },
+    });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ error: { code: "DEPENDENCY_UNAVAILABLE" } });
+    expect(response.payload).not.toContain("IMPLEMENTATION_DEPENDENCY_FAILED");
+    await app.close();
+  });
+
   it("revalidates effective access after learning and suppresses a course revoked during the read", async () => {
     const effectiveAccess = vi.fn()
       .mockResolvedValueOnce(access(true))
@@ -281,7 +412,7 @@ describe("GET /v1/member/dashboard", () => {
   it.each([
     ["/v1/member/dashboard?accountId=10000000-0000-4000-8000-000000000002", {}, 400],
     ["/v1/member/dashboard?unknown=1", {}, 400],
-    ["/v1/member/dashboard", { "syntholo-dashboard-version": "3" }, 400],
+    ["/v1/member/dashboard", { "syntholo-dashboard-version": "4" }, 400],
     ["/v1/member/dashboard", { "syntholo-dashboard-version": "1, 2" }, 400],
   ])("validates request/version before authentication: %s %#", async (url, headers, status) => {
     const fixture = dependencies();
