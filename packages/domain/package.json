@@ -9,7 +9,8 @@
     "./entitlements/internal": "./src/entitlements/internal.ts",
     "./events": "./src/events.ts",
     "./identity/actor": "./src/identity/actor.ts",
-    "./content": "./src/content/index.ts"
+    "./content": "./src/content/index.ts",
+    "./learning": "./src/learning/index.ts"
   },
   "scripts": {
     "lint": "eslint --config ../../eslint.config.mjs src",

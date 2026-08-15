@@ -63,7 +63,7 @@ describe("production member routes", () => {
     render(await route());
 
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Checking your Academy access",
+      _path === "/learn/course" ? "Loading your course" : "Checking your Academy access",
     );
     expect(screen.queryByText(/Maria Chen|Northstar Advisory/u)).not.toBeInTheDocument();
     if (_path === "/learn") {
@@ -71,10 +71,14 @@ describe("production member routes", () => {
     }
   });
 
-  it("does not add the deterministic member shell around production children", async () => {
+  it("adds a production-safe member shell without demo identity", async () => {
     render(await LearnLayout({ children: <p>Production member state</p> }));
 
     expect(screen.getByText("Production member state")).toBeInTheDocument();
+    expect(screen.getByRole("navigation", { name: "Member navigation" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Home" })).toHaveAttribute("href", "/learn");
+    expect(screen.getByRole("link", { name: "Course" })).toHaveAttribute("href", "/learn/course");
+    expect(screen.getByText("Signed-in member workspace")).toBeInTheDocument();
     expect(screen.queryByText(/Maria Chen|Northstar Advisory/u)).not.toBeInTheDocument();
   });
 

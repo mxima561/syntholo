@@ -37,6 +37,10 @@ export const CreatePreviewRequestSchema = z.object({
   expectedVersion: VersionSchema, reason: ReasonSchema,
 }).strict();
 
+export const GetCoursePreviewQuerySchema = z.object({
+  draftRevision: z.coerce.number().int().positive().optional(),
+}).strict();
+
 export const PublishLessonRequestSchema = z.object({
   expectedVersion: VersionSchema, reason: ReasonSchema,
 }).strict();
@@ -60,11 +64,20 @@ export const ContentPublicationIssueSchema = z.object({
 }).strict();
 export const ContentPublicationIssuesSchema = ContentPublicationIssueSchema.array().max(1_000);
 
+export const DerivedCoursePreviewResponseSchema = z.object({
+  draftRevision: VersionSchema,
+  candidateManifestHash: z.string().regex(/^[0-9a-f]{64}$/u),
+  manifest: z.record(z.string(), z.unknown()),
+  publicationIssues: ContentPublicationIssuesSchema,
+}).strict();
+
 export const PublicationIssueSchema = ContentPublicationIssueSchema;
 export type ContentPublicationIssue = z.infer<typeof ContentPublicationIssueSchema>;
 export type PublicationIssue = ContentPublicationIssue;
 
 export const ContentPublicationConflictCodeSchema = z.enum([
-  "CONTENT_NOT_READY", "MANIFEST_CHANGED", "COURSE_HEAD_CHANGED",
+  "CONTENT_NOT_READY", "MANIFEST_CHANGED", "COURSE_HEAD_CHANGED", "PREVIEW_ALREADY_PUBLISHED",
+  "IDEMPOTENCY_KEY_REUSED", "IDEMPOTENCY_IN_PROGRESS", "VERSION_CONFLICT",
+  "LESSON_DRAFT_ALREADY_PUBLISHED",
 ]);
 export type ContentPublicationConflictCode = z.infer<typeof ContentPublicationConflictCodeSchema>;

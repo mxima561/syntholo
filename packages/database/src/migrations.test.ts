@@ -56,15 +56,15 @@ describe("published migration inventory", () => {
 
     expect(queries[0]).toBe("select pg_advisory_lock($1::integer,$2::integer)");
     expect(queries.at(-1)).toBe("select pg_advisory_unlock($1::integer,$2::integer)");
-    expect(queries.filter((query) => query === "begin")).toHaveLength(4);
-    expect(queries.filter((query) => query === "commit")).toHaveLength(4);
+    expect(queries.filter((query) => query === "begin")).toHaveLength(5);
+    expect(queries.filter((query) => query === "commit")).toHaveLength(5);
     expect(queries.filter((query) => query === "set constraints all immediate"))
       .toHaveLength(1);
     const immediate = queries.indexOf("set constraints all immediate");
     expect(queries[immediate - 1]).toBe("begin");
     expect(queries.filter((query) => query.startsWith(
       "insert into drizzle.__drizzle_migrations",
-    ))).toHaveLength(3);
+    ))).toHaveLength(4);
     expect(released).toBe(true);
   });
 
@@ -119,6 +119,61 @@ describe("published migration inventory", () => {
     expect(previewCommand).toContain("RAISE EXCEPTION 'CONTENT_PUBLICATION_PIPELINE_INCOMPLETE'");
     expect(previewCommand.indexOf("CONTENT_PUBLICATION_PIPELINE_INCOMPLETE"))
       .toBeLessThan(previewCommand.indexOf("INSERT INTO public.content_previews"));
+  });
+
+  it("authorizes the exact active learning access before replaying a completion receipt", async () => {
+    const sql = await readFile(join(migrationsFolder, "0011_learning.sql"), "utf8");
+    const functionStart = sql.indexOf("CREATE FUNCTION public.syntholo_learning_complete_lesson_v1");
+    const functionEnd = sql.indexOf(
+      "REVOKE ALL ON FUNCTION public.syntholo_learning_complete_lesson_v1",
+      functionStart,
+    );
+    const command = sql.slice(functionStart, functionEnd);
+
+    expect(functionStart).toBeGreaterThanOrEqual(0);
+    expect(functionEnd).toBeGreaterThan(functionStart);
+    const activeAccess = command.indexOf("aca.status='active'");
+    const replay = command.indexOf("IF receipt.status='completed' THEN RETURN receipt.response; END IF;");
+    expect(activeAccess).toBeGreaterThanOrEqual(0);
+    expect(activeAccess).toBeLessThan(replay);
+  });
+
+  it("closes the server-derived lesson hash input before applying its encoding", async () => {
+    const sql = await readFile(join(migrationsFolder, "0011_learning.sql"), "utf8");
+    const functionStart = sql.indexOf("CREATE FUNCTION public.syntholo_lesson_draft_hash_v1");
+    const functionEnd = sql.indexOf(
+      "REVOKE ALL ON FUNCTION public.syntholo_lesson_draft_hash_v1",
+      functionStart,
+    );
+    const hashFunction = sql.slice(functionStart, functionEnd);
+
+    expect(hashFunction).toContain("archived_at IS NULL),'[]'::jsonb))),'UTF8')),'hex')");
+    expect(hashFunction).not.toContain("archived_at IS NULL),'[]'::jsonb)))),'UTF8')");
+  });
+
+  it("attests OLD and NEW trigger predicates through PostgreSQL trigger definitions", async () => {
+    const sql = await readFile(join(migrationsFolder, "0011_learning.sql"), "utf8");
+
+    expect(sql).toContain("pg_get_triggerdef(t.oid,true)");
+    expect(sql).not.toContain("pg_get_expr(t.tgqual,t.tgrelid)");
+  });
+
+  it("qualifies completion receipt persistence away from PL/pgSQL variable ambiguity", async () => {
+    const sql = await readFile(join(migrationsFolder, "0011_learning.sql"), "utf8");
+    const functionStart = sql.indexOf("CREATE FUNCTION public.syntholo_learning_complete_lesson_v1");
+    const functionEnd = sql.indexOf("REVOKE ALL ON FUNCTION public.syntholo_learning_complete_lesson_v1", functionStart);
+    const command = sql.slice(functionStart, functionEnd);
+
+    expect(command).toContain("UPDATE public.api_command_receipts AS command_receipt SET");
+    expect(command).toContain("response=response_payload");
+    expect(command).not.toContain("response=response,");
+  });
+
+  it("qualifies both staff publication receipt writes away from PL/pgSQL ambiguity", async () => {
+    const sql = await readFile(join(migrationsFolder, "0011_learning.sql"), "utf8");
+
+    expect(sql.match(/UPDATE public\.api_command_receipts AS command_receipt SET/g)).toHaveLength(4);
+    expect(sql).not.toContain("response=response,");
   });
 
   it("does not widen migrator grants on pre-0009 protected tables", async () => {
@@ -202,6 +257,7 @@ describe("published migration inventory", () => {
       { idx: 7, when: 1786669200000, tag: "0008_account_name", hash: "505693d0977b3cf51b156ac792605be7bf6e4a5c89c5ead8d4c728d1c298f513" },
       { idx: 8, when: 1786676400000, tag: "0009_content", hash: "2cf79d036accf426172ab2249e690e34c17a8f145c8e2afa72bb8e3994425922" },
       { idx: 9, when: 1786683600000, tag: "0010_content_assets", hash: "65e621c5754cb490c50dff009854433815dae8ee3fd3a6410de9dea6080fcb43" },
+      { idx: 10, when: 1786770000000, tag: "0011_learning", hash: "2e37ec9d4bfeee1ad0319ae81172fac4107a87c798bd2f0eed79eb75ee0e2ccf" },
     ]);
   });
 

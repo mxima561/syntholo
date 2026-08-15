@@ -1,6 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ProductionMemberDashboard } from "./production-member-dashboard";
+import {
+  dashboardRequestVersion,
+  ProductionMemberDashboard,
+} from "./production-member-dashboard";
 
 const useAuth = vi.hoisted(() => vi.fn());
 vi.mock("@clerk/react", () => ({ useAuth }));
@@ -45,6 +48,65 @@ const dashboard = {
     target: "retry",
   },
 } as const;
+const courseId = "10000000-0000-4000-8000-000000000041";
+const availableLessonId = "10000000-0000-4000-8000-000000000042";
+const lockedLessonId = "10000000-0000-4000-8000-000000000043";
+const dashboardV2 = {
+  schemaVersion: 2,
+  generatedAt: "2026-08-14T16:00:00.123Z",
+  account: dashboard.account,
+  access: dashboard.access,
+  experience: { state: "ready" },
+  learning: {
+    state: "available",
+    course: {
+      schemaVersion: 1,
+      enrollmentId: "10000000-0000-4000-8000-000000000044",
+      course: {
+        id: courseId,
+        versionId: "10000000-0000-4000-8000-000000000045",
+        title: "Syntholo Academy",
+        description: "Build the operating system your growth needs.",
+      },
+      stages: [{
+        id: "10000000-0000-4000-8000-000000000046",
+        title: "Diagnose",
+        order: 1,
+        lessons: [{
+          id: availableLessonId,
+          lessonVersionId: "10000000-0000-4000-8000-000000000047",
+          order: 1,
+          required: true,
+          title: "Map the constraint",
+          summary: "Name the bottleneck before changing the system.",
+          durationSeconds: 600,
+          releaseRule: { kind: "immediate" },
+          availability: "available",
+          availableAt: "2026-08-14T16:00:00.000Z",
+          progress: "not_started",
+        }, {
+          id: lockedLessonId,
+          lessonVersionId: "10000000-0000-4000-8000-000000000048",
+          order: 2,
+          required: true,
+          title: "Measure the system",
+          summary: "Create the baseline your team can trust.",
+          durationSeconds: 600,
+          releaseRule: { kind: "elapsed_days", days: 7 },
+          availability: "locked",
+          availableAt: "2026-08-21T16:00:00.000Z",
+          progress: "not_started",
+        }],
+      }],
+      progress: { completedRequired: 0, requiredTotal: 18, percent: 0 },
+    },
+  },
+  nextBestStep: {
+    kind: "lesson",
+    reason: "next_required_lesson",
+    target: { courseId, lessonId: availableLessonId },
+  },
+} as const;
 
 function json(body: unknown, init: ResponseInit = {}) {
   const headers = new Headers(init.headers);
@@ -68,10 +130,19 @@ function signedIn(fetcher: typeof fetch, getToken = vi.fn(async () => "clerk-tok
 
 afterEach(() => {
   useAuth.mockReset();
+  vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 
 describe("ProductionMemberDashboard", () => {
+  it("keeps v1 as the safe rollout default and accepts only the explicit v2 flag", () => {
+    expect(dashboardRequestVersion()).toBe("1");
+    vi.stubEnv("NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION", "invalid");
+    expect(dashboardRequestVersion()).toBe("1");
+    vi.stubEnv("NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION", "2");
+    expect(dashboardRequestVersion()).toBe("2");
+  });
+
   it("does not request while Clerk is loading or signed out", () => {
     const fetcher = vi.fn();
     vi.stubGlobal("fetch", fetcher);
@@ -87,26 +158,42 @@ describe("ProductionMemberDashboard", () => {
     expect(fetcher).not.toHaveBeenCalled();
   });
 
-  it("requests exact v1 over the bearer-only same-origin boundary and renders real partial data", async () => {
-    const fetcher = vi.fn(async () => json(dashboard, { status: 200 }));
+  it("requests exact v2 and renders the real course spine with locked lessons as nonlinks", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION", "2");
+    const fetcher = vi.fn(async () => json(dashboardV2, {
+      status: 200,
+      headers: { "syntholo-dashboard-version": "2" },
+    }));
     const getToken = signedIn(fetcher);
     render(<ProductionMemberDashboard />);
 
     expect(await screen.findByRole("heading", { name: "Acme Advisory" })).toBeInTheDocument();
     expect(screen.getByText(/1 of 3 seats reserved/u)).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "Dashboard data is still coming online" }))
-      .toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Syntholo Academy" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Map the constraint/u })).toHaveAttribute(
+      "href",
+      `/learn/course/${availableLessonId}`,
+    );
+    expect(screen.queryByRole("link", { name: /Measure the system/u })).not.toBeInTheDocument();
+    expect(screen.getByText(/Available Aug 21/u)).toBeInTheDocument();
     expect(getToken).toHaveBeenCalledTimes(1);
     expect(fetcher).toHaveBeenCalledWith("/v1/member/dashboard", expect.objectContaining({
       cache: "no-store",
       credentials: "omit",
       headers: {
         authorization: "Bearer clerk-token",
-        "syntholo-dashboard-version": "1",
+        "syntholo-dashboard-version": "2",
       },
       signal: expect.any(AbortSignal),
     }));
     expect(document.body).not.toHaveTextContent(/Maria|Northstar|Naomi|coach online|progress/iu);
+  });
+
+  it("dual-parses an explicit v1 response during the negotiated rollout", async () => {
+    signedIn(vi.fn(async () => json(dashboard, { status: 200 })));
+    render(<ProductionMemberDashboard />);
+    expect(await screen.findByRole("heading", { name: "Dashboard data is still coming online" }))
+      .toBeInTheDocument();
   });
 
   it("renders access-required, no-enrollment, and ready as distinct honest states", async () => {
@@ -168,12 +255,16 @@ describe("ProductionMemberDashboard", () => {
   });
 
   it("renders a correlated degraded state for 503 and retries with a fresh token", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION", "2");
     const correlationId = "40000000-0000-4000-8000-000000000002";
     const fetcher = vi.fn()
       .mockResolvedValueOnce(json({
         error: { code: "DEPENDENCY_UNAVAILABLE", message: "Service temporarily unavailable", correlationId },
       }, { status: 503, headers: { "x-correlation-id": correlationId } }))
-      .mockResolvedValueOnce(json(dashboard, { status: 200 }));
+      .mockResolvedValueOnce(json(dashboardV2, {
+        status: 200,
+        headers: { "syntholo-dashboard-version": "2" },
+      }));
     const getToken = signedIn(fetcher, vi.fn()
       .mockResolvedValueOnce("first-token")
       .mockResolvedValueOnce("second-token"));
@@ -188,6 +279,7 @@ describe("ProductionMemberDashboard", () => {
 
   it.each([
     [json(dashboard, { headers: { "syntholo-dashboard-version": "2" } }), "version mismatch"],
+    [json(dashboardV2, { headers: { "syntholo-dashboard-version": "1" } }), "reverse version mismatch"],
     [new Response("not json", { status: 200, headers: { "content-type": "application/json", "syntholo-dashboard-version": "1" } }), "invalid JSON"],
     [json({ ...dashboard, account: { ...dashboard.account, id: "10000000-0000-4000-8000-000000000002" } }), "invariant mismatch"],
     [new Response(JSON.stringify(dashboard), { status: 200, headers: { "content-type": "text/plain", "syntholo-dashboard-version": "1" } }), "non-JSON"],
@@ -212,14 +304,15 @@ describe("ProductionMemberDashboard", () => {
   });
 
   it("ignores an in-flight prior-session result after the session changes", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SYNTHOLO_DASHBOARD_VERSION", "2");
     let resolveFirst!: (response: Response) => void;
     const first = new Promise<Response>((resolve) => { resolveFirst = resolve; });
     const fetcher = vi.fn()
       .mockReturnValueOnce(first)
       .mockResolvedValueOnce(json({
-        ...dashboard,
-        account: { ...dashboard.account, name: "Second Account" },
-      }));
+        ...dashboardV2,
+        account: { ...dashboardV2.account, name: "Second Account" },
+      }, { headers: { "syntholo-dashboard-version": "2" } }));
     const auth = {
       getToken: vi.fn(async () => "token"),
       isLoaded: true,
@@ -232,7 +325,7 @@ describe("ProductionMemberDashboard", () => {
     useAuth.mockReturnValue({ ...auth, sessionId: "session-two" });
     rerender(<ProductionMemberDashboard />);
     expect(await screen.findByRole("heading", { name: "Second Account" })).toBeInTheDocument();
-    resolveFirst(json(dashboard));
+    resolveFirst(json(dashboardV2, { headers: { "syntholo-dashboard-version": "2" } }));
     await waitFor(() => expect(screen.queryByText("Acme Advisory")).not.toBeInTheDocument());
   });
 });

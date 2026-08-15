@@ -8,6 +8,7 @@ import { authenticateMember } from "../../auth/member.js";
 import type { AuthRouteDependencies } from "../../auth/types.js";
 import {
   getMemberDashboard,
+  getMemberDashboardV2,
   MemberDashboardActorUnavailableError,
 } from "../../modules/member/get-dashboard.js";
 import { AppError } from "../../plugins/error-handler.js";
@@ -33,16 +34,14 @@ function requestHasBody(request: FastifyRequest): boolean {
     || request.body !== undefined;
 }
 
-function selectVersion(request: FastifyRequest): 1 {
+function selectVersion(request: FastifyRequest): 1 | 2 {
   const values = rawHeaderValues(request, VERSION_HEADER);
   if (values.length === 0) return 1;
   if (values.length !== 1 || values[0]?.includes(",")) {
     throw new AppError("VALIDATION_ERROR", 400, "Request validation failed");
   }
   if (values[0] === "1") return 1;
-  if (values[0] === "2") {
-    throw new AppError("NOT_ACCEPTABLE", 406, "Requested representation is unavailable");
-  }
+  if (values[0] === "2") return 2;
   throw new AppError("VALIDATION_ERROR", 400, "Request validation failed");
 }
 
@@ -64,11 +63,23 @@ export const memberDashboardRoutes: FastifyPluginAsync<
     const dashboard = dependencies.member.dashboard;
     if (dashboard === undefined) throw new Error("MEMBER_DASHBOARD_NOT_COMPOSED");
     try {
-      const response = await getMemberDashboard(actor, {
-        accounts: dashboard.accounts,
-        access: dependencies.member.access,
-        clock: dashboard.clock,
-      });
+      const response = version === 1
+        ? await getMemberDashboard(actor, {
+            accounts: dashboard.accounts,
+            access: dependencies.member.access,
+            clock: dashboard.clock,
+          })
+        : await getMemberDashboardV2(
+            actor,
+            request.id,
+            {
+              accounts: dashboard.accounts,
+              access: dependencies.member.access,
+              clock: dashboard.clock,
+              learning: dependencies.member.learning
+                ?? (() => { throw new Error("MEMBER_LEARNING_NOT_COMPOSED"); })(),
+            },
+          );
       void reply.header("syntholo-dashboard-version", String(version));
       void reply.type("application/json; charset=utf-8");
       return response;

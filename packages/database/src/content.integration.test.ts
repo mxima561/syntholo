@@ -106,7 +106,7 @@ describe("content publication closed commands", () => {
         "select public.syntholo_content_create_preview_v1($1,1,$2,$3,$4::jsonb,'[]'::jsonb,'Launch approval')",
         [courseId, assertedManifest, assertedHash, assertedManifest],
       )).rejects.toMatchObject({
-        message: expect.stringContaining("CONTENT_PUBLICATION_PIPELINE_INCOMPLETE"),
+        code: "42501",
       });
     } finally {
       await client.query("rollback");

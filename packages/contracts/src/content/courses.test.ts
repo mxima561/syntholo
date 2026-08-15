@@ -54,7 +54,9 @@ describe("content course command contracts", () => {
       providerError: "private",
     })).toThrow();
     expect(ContentPublicationConflictCodeSchema.options).toEqual([
-      "CONTENT_NOT_READY", "MANIFEST_CHANGED", "COURSE_HEAD_CHANGED",
+      "CONTENT_NOT_READY", "MANIFEST_CHANGED", "COURSE_HEAD_CHANGED", "PREVIEW_ALREADY_PUBLISHED",
+      "IDEMPOTENCY_KEY_REUSED", "IDEMPOTENCY_IN_PROGRESS", "VERSION_CONFLICT",
+      "LESSON_DRAFT_ALREADY_PUBLISHED",
     ]);
   });
 });

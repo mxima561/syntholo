@@ -37,7 +37,7 @@ describe("Drizzle configuration paths", () => {
     const rootSql = await exportedSql(repositoryRoot);
 
     expect(rootSql).toBe(workspaceSql);
-    expect(rootSql.match(/CREATE TABLE/g)).toHaveLength(53);
+    expect(rootSql.match(/CREATE TABLE/g)).toHaveLength(60);
     await expect(access(`${repositoryRoot}/drizzle`)).rejects.toThrow();
   }, 15_000);
 });

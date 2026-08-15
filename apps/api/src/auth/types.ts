@@ -1,5 +1,13 @@
 import type { MemberActor, StaffActor } from "@syntholo/domain";
 import type { ContentPublicationIssue } from "@syntholo/contracts/content";
+import type {
+  CompleteLessonRequest,
+  CompleteLessonResponse,
+  MemberCourseResponse,
+  MemberLessonProgress,
+  MemberLessonResponse,
+  ResumeLessonRequest,
+} from "@syntholo/contracts/learning";
 import type { EncryptedValue, StaffSessionCrypto } from "./session-crypto.js";
 
 export type AuthEnvironment = "local" | "test" | "staging" | "production";
@@ -94,6 +102,30 @@ export interface AuthRouteDependencies {
       };
       clock: { now(): Date };
     };
+    learning?: {
+      getDashboardCourse(actor: MemberActor, correlationId: string, parentDeadline?: number): Promise<MemberCourseResponse | null>;
+      getCourse(actor: MemberActor, correlationId: string, courseId: string, parentDeadline?: number): Promise<MemberCourseResponse>;
+      getLesson(actor: MemberActor, correlationId: string, lessonId: string, parentDeadline?: number): Promise<MemberLessonResponse>;
+      getPlaybackTarget(actor: MemberActor, correlationId: string, lessonId: string, parentDeadline?: number): Promise<Readonly<{
+        lessonVersionId: string;
+        durationSeconds: number;
+        mediaState: "waiting" | "preparing" | "ready" | "errored" | "deleted";
+        signedPlaybackId: string | null;
+      }>>;
+      resumeLesson(actor: MemberActor, correlationId: string, lessonId: string, input: ResumeLessonRequest, parentDeadline?: number): Promise<MemberLessonProgress>;
+      completeLesson(actor: MemberActor, correlationId: string, lessonId: string, input: CompleteLessonRequest, idempotencyKey: string, parentDeadline?: number): Promise<CompleteLessonResponse>;
+    };
+    playback?: {
+      sign(input: Readonly<{ playbackId: string; durationSeconds: number; now: Date }>): Promise<Readonly<{
+        playbackToken: string;
+        thumbnailToken?: string;
+        storyboardToken?: string;
+        issuedAt: string;
+        refreshAfter: string;
+        expiresAt: string;
+      }>>;
+      clock: { now(): Date };
+    };
   };
   staff: {
     config: {
@@ -176,12 +208,24 @@ export interface AuthRouteDependencies {
     };
     sleep(milliseconds: number): Promise<void>;
     content?: {
+      derivePreview(input: Readonly<{
+        actor: StaffActor;
+        correlationId: string;
+        courseId: string;
+        draftRevision?: number;
+      }>): Promise<Readonly<{
+        draftRevision: number;
+        candidateManifestHash: string;
+        manifest: Readonly<Record<string, unknown>>;
+        publicationIssues: readonly ContentPublicationIssue[];
+      }>>;
       materializePreview(input: Readonly<{
         actor: StaffActor;
         correlationId: string;
         courseId: string;
         expectedVersion: number;
         reason: string;
+        idempotencyKey: string;
       }>): Promise<Readonly<{
         previewId: string;
         manifestHash: string;
@@ -197,12 +241,28 @@ export interface AuthRouteDependencies {
         expectedManifestHash: string;
         expectedHeadRevision: number;
         reason: string;
+        idempotencyKey: string;
       }>): Promise<Readonly<{
         id: string;
         courseId: string;
         version: number;
         manifestHash: string;
         headRevision: number;
+        publishedAt: string;
+      }>>;
+      publishLesson(input: Readonly<{
+        actor: StaffActor;
+        correlationId: string;
+        lessonId: string;
+        expectedVersion: number;
+        reason: string;
+        idempotencyKey: string;
+      }>): Promise<Readonly<{
+        id: string;
+        lessonId: string;
+        courseId: string;
+        version: number;
+        contentHash: string;
         publishedAt: string;
       }>>;
     };

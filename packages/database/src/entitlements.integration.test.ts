@@ -456,7 +456,7 @@ describe.sequential("entitlement authority database", () => {
       `select hash,created_at::text created_at
        from drizzle.__drizzle_migrations order by id`,
     );
-    expect(journal.rowCount).toBe(10);
+    expect(journal.rowCount).toBe(11);
     expect(journal.rows.slice(3, 5)).toEqual([
       {
         created_at: "1786640400000",
@@ -685,6 +685,7 @@ describe.sequential("entitlement authority database", () => {
     const quoteIdentifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
     const migrationFolder = await mkdtemp(join(tmpdir(), "syntholo-0004-"));
     let upgrade: Database | undefined;
+    let cleanupError: Error | undefined;
     try {
       await maintenance.query(`create database ${quoteIdentifier(databaseName)}`);
       await mkdir(join(migrationFolder, "meta"));
@@ -750,7 +751,7 @@ describe.sequential("entitlement authority database", () => {
         from accounts where id='30000000-0000-4000-8000-000000000003'
       `);
       expect(upgraded.rows).toEqual([{
-        journal_count: 10,
+        journal_count: 11,
         owner_established_at: "2026-01-02T03:04:05.123Z",
       }]);
       const afterUpgrade = await upgrade.pool.query<{
@@ -776,13 +777,20 @@ describe.sequential("entitlement authority database", () => {
           from drizzle.__drizzle_migrations order by id`);
       expect(rerun.rows).toEqual(afterUpgrade.rows);
     } finally {
-      await upgrade?.close().catch(() => undefined);
-      await maintenance.query(
-        `drop database if exists ${quoteIdentifier(databaseName)} with (force)`,
-      ).catch(() => undefined);
-      await maintenance.end();
-      await rm(migrationFolder, { recursive: true, force: true });
+      try {
+        await upgrade?.close();
+        const remaining = await maintenance.query<{ count: number }>(
+          "select count(*)::int count from pg_stat_activity where datname=$1 and pid<>pg_backend_pid()",
+          [databaseName],
+        );
+        if (remaining.rows[0]?.count !== 0) cleanupError = new Error("ENTITLEMENT_UPGRADE_CONNECTION_LEAK");
+        else await maintenance.query(`drop database if exists ${quoteIdentifier(databaseName)}`);
+      } finally {
+        await maintenance.end().catch(() => undefined);
+        await rm(migrationFolder, { recursive: true, force: true }).catch(() => undefined);
+      }
     }
+    if (cleanupError !== undefined) throw cleanupError;
   }, 30_000);
 
   it("attests the fifth inert system capability and denies cross-capability use", async () => {

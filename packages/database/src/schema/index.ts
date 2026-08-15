@@ -31,3 +31,4 @@ export {
   seatReservations,
 } from "./entitlements.js";
 export * from "./content.js";
+export * from "./learning.js";

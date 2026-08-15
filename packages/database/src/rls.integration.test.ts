@@ -57,6 +57,7 @@ const customerTables = [
 
 const foundationTables = [
   "access_decision_audit",
+  "account_course_accesses",
   "account_hold_sources",
   "account_holds",
   "accounts",
@@ -65,6 +66,7 @@ const foundationTables = [
   "audit_events",
   "business_os_setup_receipts",
   "business_os_subscription_cancellations",
+  "certificate_prerequisites",
   "club_subscription_cancellations",
   "commerce_fulfillment_receipts",
   "commerce_reconciliations",
@@ -82,9 +84,12 @@ const foundationTables = [
   "course_version_lessons",
   "course_versions",
   "courses",
+  "course_completions",
   "entitlement_commands",
   "entitlement_grants",
   "entitlement_sources",
+  "enrollment_version_transitions",
+  "enrollments",
   "event_handler_receipts",
   "job_attempts",
   "jobs",
@@ -93,6 +98,8 @@ const foundationTables = [
   "lesson_disclosure_decisions",
   "lesson_disclosure_review_heads",
   "lesson_drafts",
+  "lesson_completions",
+  "lesson_progress",
   "lesson_version_resources",
   "lesson_versions",
   "lessons",
@@ -501,7 +508,7 @@ describe.sequential("capability role provisioning migration", () => {
           "select count(*)::text as count from drizzle.__drizzle_migrations",
         )
       ));
-      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["10", "10"]);
+      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["11", "11"]);
       const passwords = await maintenance.query<{
         rolname: string;
         rolpasswordisnull: boolean;
@@ -1423,9 +1430,16 @@ describe("PostgreSQL account role boundary", () => {
 
     expect(runtimeGrants).toEqual([
       ...[
+        "account_course_accesses",
         "account_holds",
         "accounts",
+        "certificate_prerequisites",
+        "course_completions",
         "entitlement_grants",
+        "enrollment_version_transitions",
+        "enrollments",
+        "lesson_completions",
+        "lesson_progress",
         "member_identities",
         "memberships",
         "seat_reservations",
@@ -1516,6 +1530,7 @@ describe("PostgreSQL account role boundary", () => {
         table_name,
       })),
       ...[
+        ["certificate_prerequisites", ["INSERT", "SELECT"]],
         ["provider_event_receipts", ["INSERT", "SELECT", "UPDATE"]],
       ].flatMap(([table_name, privileges]) =>
         (privileges as string[]).map((privilege_type) => ({
@@ -1836,12 +1851,12 @@ describe("PostgreSQL account role boundary", () => {
       const afterUpgrade = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterUpgrade.rows[0]?.count).toBe("10");
+      expect(afterUpgrade.rows[0]?.count).toBe("11");
       await migrateDatabase(upgradeDb);
       const afterRerun = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterRerun.rows[0]?.count).toBe("10");
+      expect(afterRerun.rows[0]?.count).toBe("11");
       const normalized = await upgradeDb.pool.query(
         `select
           (select bool_and(actor_id is not null and correlation_id is not null)
@@ -1896,7 +1911,7 @@ describe("PostgreSQL account role boundary", () => {
       const freshJournal = await freshDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(freshJournal.rows[0]?.count).toBe("10");
+      expect(freshJournal.rows[0]?.count).toBe("11");
     } finally {
       await Promise.allSettled([
         upgradeDb?.close(),

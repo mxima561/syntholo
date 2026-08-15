@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
 
 const accountId = "10000000-0000-4000-8000-000000000001";
+const courseId = "10000000-0000-4000-8000-000000000041";
+const lessonId = "10000000-0000-4000-8000-000000000042";
+const lessonVersionId = "10000000-0000-4000-8000-000000000043";
 
 const unavailable = {
   learning: { state: "unavailable", reason: "module_not_implemented" },
@@ -60,6 +63,52 @@ function dashboard(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function dashboardV2(overrides: Record<string, unknown> = {}) {
+  const course = {
+    schemaVersion: 1,
+    enrollmentId: "10000000-0000-4000-8000-000000000044",
+    course: {
+      id: courseId,
+      versionId: "10000000-0000-4000-8000-000000000045",
+      title: "Syntholo Academy",
+      description: "The implementation course.",
+    },
+    stages: [{
+      id: "10000000-0000-4000-8000-000000000046",
+      title: "Diagnose",
+      order: 1,
+      lessons: [{
+        id: lessonId,
+        lessonVersionId,
+        order: 1,
+        required: true,
+        title: "Map the constraint",
+        summary: "Name the bottleneck before changing the system.",
+        durationSeconds: 600,
+        releaseRule: { kind: "immediate" },
+        availability: "available",
+        availableAt: "2026-08-14T16:00:00.000Z",
+        progress: "not_started",
+      }],
+    }],
+    progress: { completedRequired: 0, requiredTotal: 18, percent: 0 },
+  } as const;
+  return {
+    schemaVersion: 2,
+    generatedAt: "2026-08-14T16:00:00.000Z",
+    account: { id: accountId, name: "Acme Advisory" },
+    access: access(true),
+    experience: { state: "ready" },
+    learning: { state: "available", course },
+    nextBestStep: {
+      kind: "lesson",
+      reason: "next_required_lesson",
+      target: { courseId, lessonId },
+    },
+    ...overrides,
+  };
+}
+
 describe("member dashboard contract", () => {
   it("resolves only through the narrow package export used by the production web client", async () => {
     const packageJson = JSON.parse(await readFile(
@@ -82,6 +131,66 @@ describe("member dashboard contract", () => {
 
     expect(contract.canonicalizeAccountName("  Cafe\u0301  ")).toBe("Café");
     expect(contract.MemberDashboardResponseSchema.parse(dashboard()).schemaVersion).toBe(1);
+  });
+
+  it("publishes a strict v2 learning projection with a server-selected next lesson", async () => {
+    const { MemberDashboardV2ResponseSchema } = await import("./member-dashboard.js");
+    expect(MemberDashboardV2ResponseSchema.parse(dashboardV2())).toMatchObject({
+      schemaVersion: 2,
+      experience: { state: "ready" },
+      nextBestStep: { kind: "lesson", target: { courseId, lessonId } },
+    });
+    expect(MemberDashboardV2ResponseSchema.safeParse(dashboardV2({
+      nextBestStep: {
+        kind: "lesson",
+        reason: "next_required_lesson",
+        target: { courseId, lessonId: "10000000-0000-4000-8000-000000000099" },
+      },
+    })).success).toBe(false);
+  });
+
+  it("accepts exact v2 access, enrollment, locked, and completion states", async () => {
+    const { MemberDashboardV2ResponseSchema } = await import("./member-dashboard.js");
+    const course = dashboardV2().learning.course;
+    const lockedCourse = {
+      ...course,
+      stages: course.stages.map((stage) => ({
+        ...stage,
+        lessons: stage.lessons.map((lesson) => ({ ...lesson, availability: "locked" })),
+      })),
+    };
+    const values = [
+      dashboardV2({
+        access: access(false),
+        experience: { state: "access_required" },
+        learning: { state: "blocked", reason: "course_access_required" },
+        nextBestStep: { kind: "access_blocker", reason: "academy_course_required", target: "program_options" },
+      }),
+      dashboardV2({
+        experience: { state: "no_enrollment" },
+        learning: { state: "empty", reason: "no_enrollment" },
+        nextBestStep: { kind: "enrollment_blocker", reason: "academy_enrollment_missing", target: "retry" },
+      }),
+      dashboardV2({
+        learning: { state: "available", course: lockedCourse },
+        nextBestStep: { kind: "course", reason: "required_lesson_locked", target: { courseId } },
+      }),
+      dashboardV2({
+        learning: {
+          state: "available",
+          course: {
+            ...course,
+            stages: course.stages.map((stage) => ({
+              ...stage,
+              lessons: stage.lessons.map((lesson) => ({ ...lesson, progress: "completed" })),
+            })),
+            progress: { completedRequired: 18, requiredTotal: 18, percent: 100 },
+          },
+        },
+        nextBestStep: { kind: "course", reason: "required_lessons_completed", target: { courseId } },
+      }),
+    ];
+    expect(values.every((value) => MemberDashboardV2ResponseSchema.safeParse(value).success)).toBe(true);
   });
 
   it.each([

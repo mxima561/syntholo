@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 import { isDemoMode } from "@/lib/config/mode";
+import { ProductionMemberShell } from "@/components/production-member-shell";
 
 export default async function LearnLayout({ children }: { children: ReactNode }) {
-  if (!isDemoMode()) return children;
+  if (!isDemoMode()) return <ProductionMemberShell>{children}</ProductionMemberShell>;
   const [{ MemberShell }, { demoMembers, demoOrganization }] = await Promise.all([
     import("@/components/member-shell"),
     import("@/lib/demo/data"),

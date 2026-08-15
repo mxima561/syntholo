@@ -87,7 +87,7 @@ describe("authentication migration and ACLs", () => {
       "staff_login_attempts",
       "staff_sessions",
     ]);
-    expect(journal.rows[0]?.count).toBe("10");
+    expect(journal.rows[0]?.count).toBe("11");
   });
 
   it("rejects malformed cryptographic field lengths", async () => {

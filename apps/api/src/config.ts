@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { decodeMuxSigningPrivateKey } from "@syntholo/integrations";
 import { parseStaffSessionKeyRing } from "./auth/session-crypto.js";
 import { artifactReleaseSha } from "./release.js";
 
@@ -48,6 +49,8 @@ const ApiEnvironmentSchema = z.object({
   MUX_CONTENT_ENABLED: z.enum(["true", "false"]).default("false"),
   MUX_ENVIRONMENT_ID: optionalNonemptyString,
   MUX_WEBHOOK_SECRET: optionalNonemptyString,
+  MUX_SIGNING_KEY_ID: optionalNonemptyString,
+  MUX_SIGNING_PRIVATE_KEY: optionalNonemptyString,
 });
 
 export type ApiConfig = Readonly<{
@@ -72,6 +75,8 @@ export type ApiConfig = Readonly<{
     kind: "configured";
     environmentId: string;
     webhookSecret: string;
+    signingKeyId: string;
+    signingPrivateKey: string;
   }>;
 }>;
 
@@ -124,12 +129,18 @@ export function parseApiConfig(
     const muxValues = [
       result.MUX_ENVIRONMENT_ID,
       result.MUX_WEBHOOK_SECRET,
+      result.MUX_SIGNING_KEY_ID,
+      result.MUX_SIGNING_PRIVATE_KEY,
     ];
+    const signingPrivateKey = result.MUX_SIGNING_PRIVATE_KEY === undefined
+      ? undefined
+      : decodeMuxSigningPrivateKey(result.MUX_SIGNING_PRIVATE_KEY);
     if ((!muxEnabled && muxValues.some((value) => value !== undefined))
       || (muxEnabled && muxValues.some((value) => value === undefined))
       || (result.MUX_ENVIRONMENT_ID !== undefined
         && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$/u.test(result.MUX_ENVIRONMENT_ID))
-      || (result.MUX_WEBHOOK_SECRET !== undefined && result.MUX_WEBHOOK_SECRET.length < 16)) {
+      || (result.MUX_WEBHOOK_SECRET !== undefined && result.MUX_WEBHOOK_SECRET.length < 16)
+      || (result.MUX_SIGNING_KEY_ID !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$/u.test(result.MUX_SIGNING_KEY_ID))) {
       throw new Error("Mux configuration invalid");
     }
     parseStaffSessionKeyRing(required.sessionEncryptionKeys as string);
@@ -162,6 +173,8 @@ export function parseApiConfig(
         kind: "configured" as const,
         environmentId: result.MUX_ENVIRONMENT_ID as string,
         webhookSecret: result.MUX_WEBHOOK_SECRET as string,
+        signingKeyId: result.MUX_SIGNING_KEY_ID as string,
+        signingPrivateKey: signingPrivateKey as string,
       }) : Object.freeze({ kind: "disabled" as const }),
     });
   } catch {

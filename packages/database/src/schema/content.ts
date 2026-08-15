@@ -184,7 +184,7 @@ export const lessonVersions = pgTable("lesson_versions", {
   accessibilityDecisionId: uuidReference("accessibility_decision_id"), accessibilityDecisionSequence: integer("accessibility_decision_sequence").notNull(),
   disclosureDecisionId: uuidReference("disclosure_decision_id"), disclosureDecisionSequence: integer("disclosure_decision_sequence").notNull(),
   contentHash: text("content_hash").notNull(), publishedByStaffId: uuidReference("published_by_staff_id").references(() => staffIdentities.id, { onDelete: "restrict", onUpdate: "restrict" }),
-  publishReason: text("publish_reason").notNull(), publishedAt: time("published_at").notNull().defaultNow(),
+  publishReason: text("publish_reason").notNull(), publishedAt: time("published_at").notNull().defaultNow(), sourceDraftRevision: integer("source_draft_revision"),
 }, (table) => [
   foreignKey({ columns: [table.lessonId, table.courseId], foreignColumns: [lessons.id, lessons.courseId], name: "lesson_versions_lesson_course_fk" }).onDelete("restrict").onUpdate("restrict"),
   foreignKey({ columns: [table.accessibilityDecisionId, table.lessonId, table.accessibilityDecisionSequence], foreignColumns: [lessonAccessibilityDecisions.id, lessonAccessibilityDecisions.lessonId, lessonAccessibilityDecisions.decisionSequence], name: "lesson_versions_accessibility_decision_fk" }).onDelete("restrict").onUpdate("restrict"),
@@ -192,6 +192,8 @@ export const lessonVersions = pgTable("lesson_versions", {
   foreignKey({ columns: [table.mediaAssetId], foreignColumns: [contentMediaAssets.id], name: "lesson_versions_media_asset_fk" }).onDelete("restrict").onUpdate("restrict"),
   unique("lesson_versions_lesson_version_unique").on(table.lessonId, table.version),
   unique("lesson_versions_id_lesson_course_unique").on(table.id, table.lessonId, table.courseId),
+  uniqueIndex("lesson_versions_source_draft_unique").on(table.lessonId, table.sourceDraftRevision).where(sql`${table.sourceDraftRevision} is not null`),
+  check("lesson_versions_source_draft_revision_check", sql`${table.sourceDraftRevision} is null or ${table.sourceDraftRevision}>0`),
   check("lesson_versions_content_hash_check", sql`${table.contentHash} ~ '^[0-9a-f]{64}$'`),
   check("lesson_versions_release_rule_check", releaseRuleCheck(table.releaseRule)),
 ]);
@@ -287,6 +289,7 @@ export const courseVersions = pgTable("course_versions", {
 }, (table) => [
   foreignKey({ columns: [table.sourcePreviewId, table.courseId, table.manifestHash], foreignColumns: [contentPreviews.id, contentPreviews.courseId, contentPreviews.manifestHash], name: "course_versions_source_preview_fk" }).onDelete("restrict").onUpdate("restrict"),
   unique("course_versions_course_version_unique").on(table.courseId, table.version),
+  unique("course_versions_source_preview_unique").on(table.sourcePreviewId),
   unique("course_versions_id_course_hash_unique").on(table.id, table.courseId, table.manifestHash),
   unique("course_versions_id_course_unique").on(table.id, table.courseId),
 ]);

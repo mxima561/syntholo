@@ -78,6 +78,16 @@ describe("database readiness projection", () => {
           object_type_ready: true,
           public_execute_denied: true,
           table_acl_ready: true,
+          learning_acl_ready: true,
+          learning_contract_version: "0011_learning.v1",
+          learning_function_ready: true,
+          learning_immutability_ready: true,
+          learning_migration_created_at: "1786770000000",
+          learning_migration_hash: "2e37ec9d4bfeee1ad0319ae81172fac4107a87c798bd2f0eed79eb75ee0e2ccf",
+          learning_public_execute_denied: true,
+          learning_rls_ready: true,
+          learning_structure_ready: true,
+          learning_table_ready: true,
         }],
       })
       .mockResolvedValueOnce({
@@ -110,7 +120,7 @@ describe("database readiness projection", () => {
       "select contract_version, migration_created_at, migration_hash, predicate_ready, constraint_ready, writer_compatibility_ready, acl_ready from public.syntholo_account_name_readiness_v1()",
     );
     expect(query).toHaveBeenNthCalledWith(3,
-      "select contract_version, migration_created_at, migration_hash, object_count, object_owner_ready, object_type_ready, immutable_triggers_ready, table_acl_ready, function_acl_ready, public_execute_denied, empty_catalog from public.syntholo_content_readiness_v1()",
+      "select contract_version, migration_created_at, migration_hash, object_count, object_owner_ready, object_type_ready, immutable_triggers_ready, table_acl_ready, function_acl_ready, public_execute_denied, empty_catalog, learning_contract_version, learning_migration_created_at, learning_migration_hash, learning_table_ready, learning_structure_ready, learning_immutability_ready, learning_rls_ready, learning_acl_ready, learning_function_ready, learning_public_execute_denied from public.syntholo_content_readiness_v1()",
     );
     expect(query).toHaveBeenNthCalledWith(4,
       "select contract_version, migration_created_at, migration_hash, asset_table_ready, track_table_ready, binding_ready, receipt_constraint_ready, table_acl_ready, function_acl_ready, public_execute_denied, empty_catalog from public.syntholo_content_assets_readiness_v1()",

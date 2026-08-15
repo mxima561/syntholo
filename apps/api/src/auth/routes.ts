@@ -9,6 +9,9 @@ import {
 import type { AuthRouteDependencies } from "./types.js";
 import { memberAccessRoutes } from "../routes/member/access.js";
 import { memberDashboardRoutes } from "../routes/member/dashboard.js";
+import { memberLearningRoutes } from "../routes/member/learning.js";
+import { memberLessonPlaybackRoutes } from "../routes/member/lesson-playback.js";
+import { memberProgressRoutes } from "../routes/member/progress.js";
 import { staffContentRoutes } from "../routes/staff/content.js";
 
 export const authRoutes: FastifyPluginAsync<AuthRouteDependencies> = async (
@@ -17,6 +20,20 @@ export const authRoutes: FastifyPluginAsync<AuthRouteDependencies> = async (
 ) => {
   await app.register(memberAccessRoutes, { member: dependencies.member });
   await app.register(memberDashboardRoutes, { member: dependencies.member });
+  if (dependencies.member.learning !== undefined) {
+    await app.register(memberLearningRoutes, {
+      member: dependencies.member,
+      learning: dependencies.member.learning,
+    });
+    await app.register(memberProgressRoutes, {
+      member: dependencies.member,
+      learning: dependencies.member.learning,
+    });
+    await app.register(memberLessonPlaybackRoutes, {
+      member: dependencies.member,
+      learning: dependencies.member.learning,
+    });
+  }
   if (dependencies.staff.content !== undefined) {
     await app.register(staffContentRoutes, {
       staff: dependencies.staff,

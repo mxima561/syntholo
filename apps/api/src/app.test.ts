@@ -1082,6 +1082,8 @@ describe("API configuration and startup", () => {
 
   it("keeps Mux uncomposed by default and rejects every partial provider configuration", () => {
     const base = productionApiEnvironment();
+    const signingPrivateKey = `-----BEGIN PRIVATE KEY-----\n${"a".repeat(100)}\n-----END PRIVATE KEY-----`;
+    const encodedSigningPrivateKey = Buffer.from(signingPrivateKey, "utf8").toString("base64");
     expect(parseApiConfig(base, releaseSha).mux).toEqual({ kind: "disabled" });
     for (const patch of [
       { MUX_CONTENT_ENABLED: "true" },
@@ -1097,11 +1099,23 @@ describe("API configuration and startup", () => {
       SYSTEM_DATABASE_URL: "postgres://system:password@example.test/db",
       MUX_ENVIRONMENT_ID: "env_staging",
       MUX_WEBHOOK_SECRET: "mux-webhook-secret-value",
+      MUX_SIGNING_KEY_ID: "mux-signing-key-1",
+      MUX_SIGNING_PRIVATE_KEY: signingPrivateKey,
     }, releaseSha).mux).toEqual({
       kind: "configured",
       environmentId: "env_staging",
       webhookSecret: "mux-webhook-secret-value",
+      signingKeyId: "mux-signing-key-1",
+      signingPrivateKey,
     });
+    expect(parseApiConfig({
+      ...base,
+      MUX_CONTENT_ENABLED: "true",
+      MUX_ENVIRONMENT_ID: "env_staging",
+      MUX_WEBHOOK_SECRET: "mux-webhook-secret",
+      MUX_SIGNING_KEY_ID: "mux-signing-key",
+      MUX_SIGNING_PRIVATE_KEY: encodedSigningPrivateKey,
+    }, releaseSha).mux).toMatchObject({ signingPrivateKey });
   });
 
   it("requires explicit production mode before selecting release staff cookies", () => {

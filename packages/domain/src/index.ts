@@ -12,6 +12,7 @@ export type {
 } from "./events.js";
 export type { Actor, MemberActor, StaffActor } from "./identity/actor.js";
 export * from "./content/index.js";
+export * from "./learning/index.js";
 export { trustedActorAuthenticationTime } from "./identity/authentication.js";
 export {
   CAPABILITIES,

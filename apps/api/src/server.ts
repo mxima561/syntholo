@@ -6,13 +6,16 @@ import {
   createDatabase,
   MemberIdentityRepository,
   MemberEntitlementReadRepository,
+  MemberLearningRepository,
   StaffIdentityRepository,
+  StaffContentCommandRepository,
   StaffLoginAttemptRepository,
   StaffSessionRepository,
   SystemMuxEventRepository,
 } from "@syntholo/database";
 import {
   createClerkSessionAuthenticator,
+  createMuxPlaybackSigner,
   createRemoteWorkosJwks,
   createWorkosStaffClient,
   verifyWorkosAccessToken,
@@ -62,6 +65,13 @@ async function productionDependencies(config: ApiConfig): Promise<{
     ]);
     const workosJwks = createRemoteWorkosJwks(new URL(config.workosJwksUrl));
     const sessions = new StaffSessionRepository(staffDatabase);
+    const content = new StaffContentCommandRepository(staffDatabase);
+    const playbackSigner = config.mux.kind === "configured"
+      ? await createMuxPlaybackSigner({
+          keyId: config.mux.signingKeyId,
+          privateKey: config.mux.signingPrivateKey,
+        })
+      : undefined;
     return {
       dependencies: {
         releaseSha: config.releaseSha,
@@ -110,6 +120,13 @@ async function productionDependencies(config: ApiConfig): Promise<{
                 accounts: new AccountRepository(memberDatabase),
                 clock: { now: () => new Date() },
               },
+              learning: new MemberLearningRepository(memberDatabase),
+              ...(playbackSigner === undefined ? {} : {
+                playback: {
+                  sign: playbackSigner.sign,
+                  clock: { now: () => new Date() },
+                },
+              }),
             },
             staff: {
               config: {
@@ -152,6 +169,12 @@ async function productionDependencies(config: ApiConfig): Promise<{
               }),
               sleep: (milliseconds) =>
                 new Promise((resolve) => setTimeout(resolve, milliseconds)),
+              content: {
+                derivePreview: ({ actor, ...input }) => content.getPreview({ actorId: actor.actorId, ...input }),
+                materializePreview: ({ actor, ...input }) => content.createPreview({ actorId: actor.actorId, ...input }),
+                publishCourse: ({ actor, ...input }) => content.publishCourse({ actorId: actor.actorId, ...input }),
+                publishLesson: ({ actor, ...input }) => content.publishLesson({ actorId: actor.actorId, ...input }),
+              },
             },
           },
         },

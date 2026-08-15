@@ -15,9 +15,23 @@ export function PublicAuthProvider({
 }
 
 export function PublicSignIn() {
-  return <SignIn path="/sign-in" routing="path" signUpUrl="/sign-up" />;
+  return (
+    <SignIn
+      fallbackRedirectUrl="/learn"
+      path="/sign-in"
+      routing="path"
+      signUpUrl="/sign-up"
+    />
+  );
 }
 
 export function PublicSignUp() {
-  return <SignUp path="/sign-up" routing="path" signInUrl="/sign-in" />;
+  return (
+    <SignUp
+      fallbackRedirectUrl="/learn"
+      path="/sign-up"
+      routing="path"
+      signInUrl="/sign-in"
+    />
+  );
 }

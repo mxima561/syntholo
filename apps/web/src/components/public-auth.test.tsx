@@ -9,6 +9,7 @@ describe("public auth routing", () => {
       path: "/sign-in",
       routing: "path",
       signUpUrl: "/sign-up",
+      fallbackRedirectUrl: "/learn",
     });
   });
 
@@ -19,6 +20,7 @@ describe("public auth routing", () => {
       path: "/sign-up",
       routing: "path",
       signInUrl: "/sign-in",
+      fallbackRedirectUrl: "/learn",
     });
   });
 });

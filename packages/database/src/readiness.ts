@@ -44,6 +44,16 @@ type ReadinessDatabase = Readonly<{
         empty_catalog?: boolean;
         function_acl_ready?: boolean;
         immutable_triggers_ready?: boolean;
+        learning_acl_ready?: boolean;
+        learning_contract_version?: string;
+        learning_function_ready?: boolean;
+        learning_immutability_ready?: boolean;
+        learning_migration_created_at?: string;
+        learning_migration_hash?: string;
+        learning_public_execute_denied?: boolean;
+        learning_rls_ready?: boolean;
+        learning_structure_ready?: boolean;
+        learning_table_ready?: boolean;
         migration_count?: number;
         migration_created_at?: string;
         migration_hash?: string;
@@ -111,14 +121,16 @@ export async function checkDatabaseReadiness(
       throw new Error("account-name projection mismatch");
     }
     const content = await database.pool.query(
-      "select contract_version, migration_created_at, migration_hash, object_count, object_owner_ready, object_type_ready, immutable_triggers_ready, table_acl_ready, function_acl_ready, public_execute_denied, empty_catalog from public.syntholo_content_readiness_v1()",
+      "select contract_version, migration_created_at, migration_hash, object_count, object_owner_ready, object_type_ready, immutable_triggers_ready, table_acl_ready, function_acl_ready, public_execute_denied, empty_catalog, learning_contract_version, learning_migration_created_at, learning_migration_hash, learning_table_ready, learning_structure_ready, learning_immutability_ready, learning_rls_ready, learning_acl_ready, learning_function_ready, learning_public_execute_denied from public.syntholo_content_readiness_v1()",
     );
     const contentRow = content.rows[0];
     const contentMigration = PUBLISHED_MIGRATIONS[8];
+    const learningMigration = PUBLISHED_MIGRATIONS[10];
     if (
       content.rows.length !== 1
       || contentRow === undefined
       || contentMigration === undefined
+      || learningMigration === undefined
       || contentRow.contract_version !== "0009_content.v1"
       || contentRow.migration_created_at !== String(contentMigration.when)
       || contentRow.migration_hash !== contentMigration.hash
@@ -130,6 +142,16 @@ export async function checkDatabaseReadiness(
       || contentRow.function_acl_ready !== true
       || contentRow.public_execute_denied !== true
       || typeof contentRow.empty_catalog !== "boolean"
+      || contentRow.learning_contract_version !== "0011_learning.v1"
+      || contentRow.learning_migration_created_at !== String(learningMigration.when)
+      || contentRow.learning_migration_hash !== learningMigration.hash
+      || contentRow.learning_table_ready !== true
+      || contentRow.learning_structure_ready !== true
+      || contentRow.learning_immutability_ready !== true
+      || contentRow.learning_rls_ready !== true
+      || contentRow.learning_acl_ready !== true
+      || contentRow.learning_function_ready !== true
+      || contentRow.learning_public_execute_denied !== true
     ) {
       throw new Error("content projection mismatch");
     }

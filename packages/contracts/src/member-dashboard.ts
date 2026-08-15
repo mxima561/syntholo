@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MemberAccessResponseSchema } from "@syntholo/contracts/entitlements";
+import { MemberCourseResponseSchema } from "./learning/course";
 
 const UuidSchema = z.string().uuid();
 
@@ -222,3 +223,121 @@ export type MemberDashboardNextBestStep = z.infer<
 export type MemberDashboardResponse = z.infer<
   typeof MemberDashboardResponseSchema
 >;
+
+export const MemberDashboardV2LearningSchema = z.discriminatedUnion("state", [
+  z.object({
+    state: z.literal("blocked"),
+    reason: z.literal("course_access_required"),
+  }).strict(),
+  z.object({
+    state: z.literal("empty"),
+    reason: z.literal("no_enrollment"),
+  }).strict(),
+  z.object({
+    state: z.literal("available"),
+    course: MemberCourseResponseSchema,
+  }).strict(),
+]);
+
+export const MemberDashboardV2NextBestStepSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("access_blocker"),
+    reason: z.literal("academy_course_required"),
+    target: z.literal("program_options"),
+  }).strict(),
+  z.object({
+    kind: z.literal("enrollment_blocker"),
+    reason: z.literal("academy_enrollment_missing"),
+    target: z.literal("retry"),
+  }).strict(),
+  z.object({
+    kind: z.literal("lesson"),
+    reason: z.literal("next_required_lesson"),
+    target: z.object({ courseId: UuidSchema, lessonId: UuidSchema }).strict(),
+  }).strict(),
+  z.object({
+    kind: z.literal("course"),
+    reason: z.enum(["required_lesson_locked", "required_lessons_completed"]),
+    target: z.object({ courseId: UuidSchema }).strict(),
+  }).strict(),
+]);
+
+export const MemberDashboardV2ResponseSchema = z.object({
+  schemaVersion: z.literal(2),
+  generatedAt: UtcMillisecondInstantSchema,
+  account: z.object({ id: UuidSchema, name: AccountNameSchema }).strict(),
+  access: MemberAccessResponseSchema,
+  experience: z.object({
+    state: z.enum(["access_required", "no_enrollment", "ready"]),
+  }).strict(),
+  learning: MemberDashboardV2LearningSchema,
+  nextBestStep: MemberDashboardV2NextBestStepSchema,
+}).strict().superRefine((value, context) => {
+  const invalid = (message: string) => context.addIssue({ code: "custom", message });
+  if (value.account.id !== value.access.accountId) invalid("Account IDs disagree");
+  const academyMissing = !value.access.capabilities.academy_course;
+  const noEnrollment = !academyMissing && value.learning.state === "empty";
+  const ready = !academyMissing && value.learning.state === "available";
+  if ((value.experience.state === "access_required") !== academyMissing) {
+    invalid("Access-required state disagrees with access");
+  }
+  if ((value.learning.state === "blocked") !== academyMissing) {
+    invalid("Blocked learning disagrees with access");
+  }
+  if ((value.experience.state === "no_enrollment") !== noEnrollment) {
+    invalid("No-enrollment state disagrees with learning");
+  }
+  if ((value.experience.state === "ready") !== ready) {
+    invalid("Ready state disagrees with learning");
+  }
+  if ((value.nextBestStep.kind === "access_blocker") !== academyMissing) {
+    invalid("Access blocker disagrees with access");
+  }
+  if ((value.nextBestStep.kind === "enrollment_blocker") !== noEnrollment) {
+    invalid("Enrollment blocker disagrees with learning");
+  }
+  if (!ready || value.learning.state !== "available") return;
+  const course = value.learning.course;
+  const candidate = course.stages
+    .flatMap((stage) => stage.lessons.map((lesson) => ({
+      lesson,
+      stageOrder: stage.order,
+    })))
+    .filter(({ lesson }) =>
+      lesson.required
+      && lesson.availability === "available"
+      && lesson.progress !== "completed")
+    .sort((left, right) =>
+      left.stageOrder - right.stageOrder
+      || left.lesson.order - right.lesson.order
+      || left.lesson.id.localeCompare(right.lesson.id))[0]?.lesson ?? null;
+  if (candidate !== null) {
+    const next = value.nextBestStep;
+    if (
+      next.kind !== "lesson"
+      || next.target.courseId !== course.course.id
+      || next.target.lessonId !== candidate.id
+    ) invalid("Next lesson does not match the first available required lesson");
+    return;
+  }
+  const expectedReason = course.progress.completedRequired === course.progress.requiredTotal
+    ? "required_lessons_completed"
+    : "required_lesson_locked";
+  const next = value.nextBestStep;
+  if (
+    next.kind !== "course"
+    || next.reason !== expectedReason
+    || next.target.courseId !== course.course.id
+  ) invalid("Course next step disagrees with learning progress");
+});
+
+export type MemberDashboardV2Learning = z.infer<
+  typeof MemberDashboardV2LearningSchema
+>;
+export type MemberDashboardV2NextBestStep = z.infer<
+  typeof MemberDashboardV2NextBestStepSchema
+>;
+export type MemberDashboardV2Response = z.infer<
+  typeof MemberDashboardV2ResponseSchema
+>;
+export type MemberDashboardWireResponse = MemberDashboardResponse | MemberDashboardV2Response;

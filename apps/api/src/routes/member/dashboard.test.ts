@@ -3,7 +3,10 @@ import {
   DatabaseDependencyUnavailableError,
   MemberAccessUnavailableError,
 } from "@syntholo/database";
-import { MemberDashboardResponseSchema } from "@syntholo/contracts/member-dashboard";
+import {
+  MemberDashboardResponseSchema,
+  MemberDashboardV2ResponseSchema,
+} from "@syntholo/contracts/member-dashboard";
 import { memberActor } from "@syntholo/testing";
 import { describe, expect, it, vi } from "vitest";
 import { buildApp, type ApiDependencies } from "../../app.js";
@@ -17,6 +20,18 @@ const actor = memberActor({
   clerkUserId: "clerk_dashboard",
   authenticatedAt: now,
 });
+const dashboardCourse = {
+  schemaVersion: 1 as const,
+  enrollmentId: "10000000-0000-4000-8000-000000000041",
+  course: {
+    id: "10000000-0000-4000-8000-000000000042",
+    versionId: "10000000-0000-4000-8000-000000000043",
+    title: "Syntholo Academy",
+    description: "The implementation course.",
+  },
+  stages: [],
+  progress: { completedRequired: 0, requiredTotal: 18 as const, percent: 0 },
+};
 
 function access(academyCourse = true): EffectiveAccess {
   return {
@@ -47,6 +62,7 @@ function dependencies(input: {
   effectiveAccess?: (actor: MemberActor) => Promise<unknown>;
   authenticate?: () => Promise<unknown>;
   clock?: () => Date;
+  dashboardCourse?: () => Promise<unknown>;
 } = {}) {
   const events: string[] = [];
   const authenticateRequest = vi.fn(async () => {
@@ -76,6 +92,10 @@ function dependencies(input: {
     events.push("clock");
     return input.clock?.() ?? now;
   });
+  const getDashboardCourse = vi.fn(async () => {
+    events.push("learning");
+    return input.dashboardCourse?.() ?? dashboardCourse;
+  });
   const member = {
     webOrigin: "https://app.syntholo.test",
     audience: "syntholo-member-api",
@@ -84,7 +104,10 @@ function dependencies(input: {
     identities: { findMemberActorByClerkUserId: vi.fn(async () => actor) },
     access: { getEffectiveAccess },
     dashboard: { accounts: { getById }, clock: { now: clock } },
-  } as AuthRouteDependencies["member"];
+    learning: {
+      getDashboardCourse,
+    },
+  } as unknown as AuthRouteDependencies["member"];
   const result: ApiDependencies = {
     releaseSha: "1111111111111111111111111111111111111111",
     health: { dependencies: [] },
@@ -113,7 +136,10 @@ function dependencies(input: {
       },
     },
   };
-  return { result, events, authenticateRequest, getById, getEffectiveAccess, clock };
+  return {
+    result, events, authenticateRequest, getById, getEffectiveAccess,
+    getDashboardCourse, clock,
+  };
 }
 
 describe("GET /v1/member/dashboard", () => {
@@ -162,12 +188,101 @@ describe("GET /v1/member/dashboard", () => {
     await app.close();
   });
 
+  it("returns strict v2 learning from the exact active enrollment without changing default v1", async () => {
+    const fixture = dependencies();
+    const app = await buildApp(fixture.result);
+    const response = await app.inject({
+      method: "GET",
+      url: "/v1/member/dashboard",
+      headers: {
+        authorization: "Bearer member-token",
+        "syntholo-dashboard-version": "2",
+      },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(MemberDashboardV2ResponseSchema.parse(response.json())).toMatchObject({
+      schemaVersion: 2,
+      learning: { state: "available", course: dashboardCourse },
+      nextBestStep: {
+        kind: "course",
+        reason: "required_lesson_locked",
+        target: { courseId: dashboardCourse.course.id },
+      },
+    });
+    expect(response.headers["syntholo-dashboard-version"]).toBe("2");
+    expect(fixture.events).toEqual([
+      "authenticate", "account", "access", "learning", "access", "clock",
+    ]);
+
+    const v1 = await app.inject({
+      method: "GET",
+      url: "/v1/member/dashboard",
+      headers: { authorization: "Bearer member-token" },
+    });
+    expect(v1.statusCode).toBe(200);
+    expect(v1.json()).toMatchObject({ schemaVersion: 1 });
+    expect(fixture.getDashboardCourse).toHaveBeenCalledTimes(1);
+    await app.close();
+  });
+
+  it("revalidates effective access after learning and suppresses a course revoked during the read", async () => {
+    const effectiveAccess = vi.fn()
+      .mockResolvedValueOnce(access(true))
+      .mockResolvedValueOnce(access(false));
+    const fixture = dependencies({ effectiveAccess });
+    const app = await buildApp(fixture.result);
+    const response = await app.inject({
+      method: "GET", url: "/v1/member/dashboard",
+      headers: { authorization: "Bearer member-token", "syntholo-dashboard-version": "2" },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      experience: { state: "access_required" },
+      learning: { state: "blocked", reason: "course_access_required" },
+    });
+    expect(response.payload).not.toContain(dashboardCourse.course.title);
+    expect(fixture.events).toEqual([
+      "authenticate", "account", "access", "learning", "access", "clock",
+    ]);
+    await app.close();
+  });
+
+  it("returns honest v2 access and enrollment blockers without inventing a course", async () => {
+    const accessFixture = dependencies({ effectiveAccess: async () => access(false) });
+    const accessApp = await buildApp(accessFixture.result);
+    const accessResponse = await accessApp.inject({
+      method: "GET", url: "/v1/member/dashboard",
+      headers: { authorization: "Bearer member-token", "syntholo-dashboard-version": "2" },
+    });
+    expect(accessResponse.statusCode).toBe(200);
+    expect(accessResponse.json()).toMatchObject({
+      experience: { state: "access_required" },
+      learning: { state: "blocked", reason: "course_access_required" },
+    });
+    expect(accessFixture.getDashboardCourse).not.toHaveBeenCalled();
+    await accessApp.close();
+
+    const enrollmentFixture = dependencies({ dashboardCourse: async () => null });
+    const enrollmentApp = await buildApp(enrollmentFixture.result);
+    const enrollmentResponse = await enrollmentApp.inject({
+      method: "GET", url: "/v1/member/dashboard",
+      headers: { authorization: "Bearer member-token", "syntholo-dashboard-version": "2" },
+    });
+    expect(enrollmentResponse.statusCode).toBe(200);
+    expect(enrollmentResponse.json()).toMatchObject({
+      experience: { state: "no_enrollment" },
+      learning: { state: "empty", reason: "no_enrollment" },
+    });
+    await enrollmentApp.close();
+  });
+
   it.each([
     ["/v1/member/dashboard?accountId=10000000-0000-4000-8000-000000000002", {}, 400],
     ["/v1/member/dashboard?unknown=1", {}, 400],
     ["/v1/member/dashboard", { "syntholo-dashboard-version": "3" }, 400],
     ["/v1/member/dashboard", { "syntholo-dashboard-version": "1, 2" }, 400],
-    ["/v1/member/dashboard", { "syntholo-dashboard-version": "2" }, 406],
   ])("validates request/version before authentication: %s %#", async (url, headers, status) => {
     const fixture = dependencies();
     const app = await buildApp(fixture.result);
