@@ -17,8 +17,8 @@ const apiEnvironment = {
   STRIPE_RECEIVER_ACCOUNT_ID: "acct_test",
   STRIPE_PORTAL_CONFIGURATION_ID: "bpc_test",
   STRIPE_CHECKOUT_SUCCESS_URL: "https://app.syntholo.com/claim",
-  STRIPE_CHECKOUT_CANCEL_URL: "https://app.syntholo.com/programs",
-  STRIPE_PORTAL_RETURN_URL: "https://app.syntholo.com/settings/billing",
+  STRIPE_CHECKOUT_CANCEL_URL: "https://app.syntholo.com/pricing",
+  STRIPE_PORTAL_RETURN_URL: "https://app.syntholo.com/learn/settings/billing",
   STRIPE_WEBHOOK_CURRENT_KEY_ID: "stripe_webhook_2026_08",
   STRIPE_WEBHOOK_CURRENT_SECRET: shapedWebhookSecret,
   STRIPE_WEBHOOK_PREVIOUS_KEY_ID: "stripe_webhook_2026_07",
@@ -45,9 +45,9 @@ describe("Stripe least-privilege server environments", () => {
     expect(parsed).toEqual({
       apiRestrictedKey: shapedApiKey,
       checkoutSuccessUrl: "https://app.syntholo.com/claim",
-      checkoutCancelUrl: "https://app.syntholo.com/programs",
+      checkoutCancelUrl: "https://app.syntholo.com/pricing",
       portalConfigurationId: "bpc_test",
-      portalReturnUrl: "https://app.syntholo.com/settings/billing",
+      portalReturnUrl: "https://app.syntholo.com/learn/settings/billing",
       endpointBinding: {
         receiverAccountId: "acct_test",
         expectedLivemode: false,

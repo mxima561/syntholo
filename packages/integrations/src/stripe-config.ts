@@ -63,8 +63,8 @@ function canonicalAppUrls(environment: Environment) {
   const portalReturnUrl = exactHttpsUrl(environment.STRIPE_PORTAL_RETURN_URL);
   const urls = [
     [checkoutSuccessUrl, "/claim"],
-    [checkoutCancelUrl, "/programs"],
-    [portalReturnUrl, "/settings/billing"],
+    [checkoutCancelUrl, "/pricing"],
+    [portalReturnUrl, "/learn/settings/billing"],
   ] as const;
   if (urls.some(([value, path]) => new URL(value).pathname !== path)
     || new Set(urls.map(([value]) => new URL(value).origin)).size !== 1) throw new Error("invalid");
