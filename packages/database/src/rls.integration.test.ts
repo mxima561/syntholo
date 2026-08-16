@@ -7,7 +7,7 @@ import { eq, sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { Pool } from "pg";
 import { createDatabase, type Database } from "./client.js";
-import { migrateDatabase } from "./migrations.js";
+import { migrateDatabase, PUBLISHED_MIGRATIONS } from "./migrations.js";
 import {
   accounts,
   auditEvents,
@@ -544,7 +544,10 @@ describe.sequential("capability role provisioning migration", () => {
           "select count(*)::text as count from drizzle.__drizzle_migrations",
         )
       ));
-      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual(["12", "12"]);
+      expect(journals.map(({ rows }) => rows[0]?.count)).toEqual([
+        String(PUBLISHED_MIGRATIONS.length),
+        String(PUBLISHED_MIGRATIONS.length),
+      ]);
       const passwords = await maintenance.query<{
         rolname: string;
         rolpasswordisnull: boolean;
