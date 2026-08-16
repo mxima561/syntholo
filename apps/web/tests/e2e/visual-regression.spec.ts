@@ -1,11 +1,10 @@
 import { expect, test } from "@playwright/test";
 
+// Member and admin surfaces are behind real authentication and render
+// non-deterministic access states when signed out, so they no longer have a
+// stable visual baseline. Only anonymous marketing pages are captured here.
 const pages = [
   ["homepage", "/"],
-  ["member-dashboard", "/learn"],
-  ["course-workspace", "/learn/course/growth-2"],
-  ["support-inbox", "/learn/support"],
-  ["admin-overview", "/admin"],
 ] as const;
 
 for (const [name, path] of pages) {

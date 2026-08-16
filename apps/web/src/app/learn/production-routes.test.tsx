@@ -17,18 +17,10 @@ import SupportPage from "./support/page";
 import TemplatesPage from "./templates/page";
 import WorkflowsPage from "./workflows/page";
 import LearnLayout from "./layout";
-import * as demoRepository from "@/lib/demo/repository";
 
 const useAuth = vi.hoisted(() => vi.fn());
 
 vi.mock("@clerk/react", () => ({ useAuth }));
-vi.mock("@/lib/demo/repository", async (importOriginal) => {
-  const repository = await importOriginal<typeof import("@/lib/demo/repository")>();
-  return {
-    ...repository,
-    getDashboard: vi.fn(repository.getDashboard),
-  };
-});
 
 const routes: readonly [string, () => ReactNode | Promise<ReactNode>][] = [
   ["/learn", () => LearnDashboardPage()],
@@ -48,18 +40,15 @@ const routes: readonly [string, () => ReactNode | Promise<ReactNode>][] = [
 
 describe("production member routes", () => {
   beforeEach(() => {
-    vi.stubEnv("APP_MODE", "production");
     useAuth.mockReturnValue({
       getToken: vi.fn(),
       isLoaded: false,
       isSignedIn: undefined,
       sessionId: undefined,
     });
-    vi.mocked(demoRepository.getDashboard).mockClear();
   });
 
   afterEach(() => {
-    vi.unstubAllEnvs();
     useAuth.mockReset();
   });
 
@@ -76,9 +65,6 @@ describe("production member routes", () => {
           : "Checking your Academy access",
     );
     expect(screen.queryByText(/Maria Chen|Northstar Advisory/u)).not.toBeInTheDocument();
-    if (_path === "/learn") {
-      expect(demoRepository.getDashboard).not.toHaveBeenCalled();
-    }
   });
 
   it("adds a production-safe member shell without demo identity", async () => {
@@ -99,14 +85,5 @@ describe("production member routes", () => {
     const css = await readFile(resolve(process.cwd(), "src/styles/responsive.css"), "utf8");
     expect(css).toContain(".production-member-sidebar nav, .production-member-sidebar .nav-group:first-child { grid-template-columns: repeat(5, minmax(0, 1fr)); }");
     expect(css).toContain(".member-sidebar .nav-group a { min-height: 44px; }");
-  });
-
-  it("preserves the local prototype only when demo mode is explicit", async () => {
-    vi.stubEnv("APP_MODE", "demo");
-
-    render(await LearnDashboardPage());
-
-    expect(screen.getByText(/Northstar Advisory · Academy/u)).toBeInTheDocument();
-    expect(demoRepository.getDashboard).toHaveBeenCalledWith("member-maria");
   });
 });

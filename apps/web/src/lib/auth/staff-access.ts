@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createServerStaffApiClient } from "@/lib/api/client";
 import { parseWebApiConfig } from "@/lib/api/config";
-import { isDemoMode } from "@/lib/config/mode";
 
 const StaffActorSchema = z.object({
   kind: z.literal("staff"),
@@ -78,7 +77,6 @@ const productionAdminAccess = cache(async (): Promise<AdminAccessResolution> => 
 export async function requireAdminAccess(): Promise<
   "authorized" | "forbidden" | "unavailable"
 > {
-  if (isDemoMode()) return "authorized";
   const resolution = await productionAdminAccess();
   if (resolution === "unauthenticated") {
     redirect("/v1/staff/auth/sign-in?returnTo=%2Fadmin");

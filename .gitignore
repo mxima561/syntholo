@@ -13,3 +13,6 @@ work/
 *.tsbuildinfo
 .superpowers/
 .worktrees/
+
+# Knowledge-graph tooling output
+graphify-out/
