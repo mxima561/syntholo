@@ -4,6 +4,10 @@ import {
   parseStripeApiEnvironment,
 } from "@syntholo/integrations";
 import { parseStaffSessionKeyRing } from "./auth/session-crypto.js";
+import {
+  parseCommercePayloadKeyRing,
+  type CommercePayloadKeyRing,
+} from "./modules/commerce/payload-crypto.js";
 import { artifactReleaseSha } from "./release.js";
 
 export type RuntimeEnvironment = Readonly<Record<string, string | undefined>>;
@@ -64,6 +68,7 @@ const ApiEnvironmentSchema = z.object({
   MUX_SIGNING_KEY_ID: optionalNonemptyString,
   MUX_SIGNING_PRIVATE_KEY: optionalNonemptyString,
   STRIPE_COMMERCE_ENABLED: z.enum(["true", "false"]).default("false"),
+  COMMERCE_PAYLOAD_KEYS: optionalNonemptyString,
 });
 
 export type ApiConfig = Readonly<{
@@ -102,6 +107,7 @@ export type ApiConfig = Readonly<{
   }>;
   stripe: Readonly<{ kind: "disabled" }> | (Readonly<{ kind: "configured" }>
     & ReturnType<typeof parseStripeApiEnvironment>);
+  commercePayloadKeys?: CommercePayloadKeyRing;
 }>;
 
 export function parseApiConfig(
@@ -165,6 +171,16 @@ export function parseApiConfig(
     const stripe = stripeEnabled
       ? parseStripeApiEnvironment(environment, { nodeEnv: result.NODE_ENV })
       : undefined;
+    // Commerce commands seal buyer contact details and claim tokens before they
+    // reach PostgreSQL, so the key ring is mandatory exactly when commerce runs
+    // and forbidden otherwise: an unused key in the environment is a key that
+    // can leak without ever being noticed.
+    if (stripeEnabled === (result.COMMERCE_PAYLOAD_KEYS === undefined)) {
+      throw new Error("commerce payload keys must accompany commerce");
+    }
+    const commercePayloadKeys = result.COMMERCE_PAYLOAD_KEYS === undefined
+      ? undefined
+      : parseCommercePayloadKeyRing(result.COMMERCE_PAYLOAD_KEYS);
     if (stripe !== undefined && stripe.endpointBinding.expectedLivemode
       && result.DEPLOYMENT_ENVIRONMENT !== "production") {
       throw new Error("Stripe environment invalid");
@@ -256,6 +272,7 @@ export function parseApiConfig(
       stripe: stripe === undefined
         ? Object.freeze({ kind: "disabled" as const })
         : Object.freeze({ kind: "configured" as const, ...stripe }),
+      ...(commercePayloadKeys === undefined ? {} : { commercePayloadKeys }),
     });
   } catch {
     throw new Error("API_CONFIG_INVALID");

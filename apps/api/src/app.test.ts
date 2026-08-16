@@ -1086,6 +1086,7 @@ describe("API configuration and startup", () => {
 
   it("composes Stripe only from one complete API-bound environment", () => {
     const base = productionApiEnvironment();
+    const payloadKey = Buffer.alloc(32, 7).toString("base64url");
     const configured = {
       STRIPE_COMMERCE_ENABLED: "true",
       DEPLOYMENT_ENVIRONMENT: "staging",
@@ -1093,16 +1094,18 @@ describe("API configuration and startup", () => {
       STRIPE_RECEIVER_ACCOUNT_ID: "acct_test_syntholo",
       STRIPE_PORTAL_CONFIGURATION_ID: "bpc_test_syntholo",
       STRIPE_CHECKOUT_SUCCESS_URL: "https://app.syntholo.test/claim",
-      STRIPE_CHECKOUT_CANCEL_URL: "https://app.syntholo.test/programs",
-      STRIPE_PORTAL_RETURN_URL: "https://app.syntholo.test/settings/billing",
+      STRIPE_CHECKOUT_CANCEL_URL: "https://app.syntholo.test/pricing",
+      STRIPE_PORTAL_RETURN_URL: "https://app.syntholo.test/learn/settings/billing",
       STRIPE_WEBHOOK_CURRENT_KEY_ID: "stripe-webhook-current",
       STRIPE_WEBHOOK_CURRENT_SECRET: `whsec_${"b".repeat(24)}`,
       STRIPE_EXPECTED_LIVEMODE: "false",
       STRIPE_EXPECTED_EVENT_ACCOUNT: "null",
       STRIPE_EXPECTED_EVENT_CONTEXT: "null",
       STRIPE_API_VERSION: "2026-06-24.dahlia",
+      COMMERCE_PAYLOAD_KEYS: `contact-k1:${payloadKey}`,
     };
     expect(parseApiConfig(base, releaseSha).stripe).toEqual({ kind: "disabled" });
+    expect(parseApiConfig(base, releaseSha).commercePayloadKeys).toBeUndefined();
     for (const patch of [
       { STRIPE_COMMERCE_ENABLED: "true" },
       { STRIPE_API_VERSION: "2026-06-24.dahlia" },
@@ -1110,6 +1113,11 @@ describe("API configuration and startup", () => {
       { STRIPE_WORKER_READ_RESTRICTED_KEY: `rk_test_${"w".repeat(24)}` },
       { ...configured, STRIPE_TEST_FAKE: "1" },
       { ...configured, STRIPE_EXPECTED_LIVEMODE: "true" },
+      // Commerce without a payload key ring cannot seal buyer details.
+      { ...configured, COMMERCE_PAYLOAD_KEYS: undefined },
+      // A key ring with no commerce is an unused secret sitting in the environment.
+      { COMMERCE_PAYLOAD_KEYS: `contact-k1:${payloadKey}` },
+      { ...configured, COMMERCE_PAYLOAD_KEYS: "contact-k1:not-base64url-32" },
     ]) expect(() => parseApiConfig({ ...base, ...patch }, releaseSha))
       .toThrow("API_CONFIG_INVALID");
 
