@@ -110,9 +110,9 @@ const oneTimeCommon = { ...common, invoicePolicy: "receipt_only" as const };
 
 const adapterConfig = {
   checkoutSuccessUrl: "https://app.syntholo.com/claim",
-  checkoutCancelUrl: "https://app.syntholo.com/programs",
+  checkoutCancelUrl: "https://app.syntholo.com/pricing",
   portalConfigurationId: "bpc_test",
-  portalReturnUrl: "https://app.syntholo.com/settings/billing",
+  portalReturnUrl: "https://app.syntholo.com/learn/settings/billing",
 };
 
 describe("Stripe hosted adapter", () => {
@@ -290,7 +290,7 @@ describe("Stripe hosted adapter", () => {
     })).resolves.toEqual({ providerSessionId: "bps_test", handoffUrl: "https://billing.stripe.com/p/session/test" });
     expect(fake.calls.portalCreate).toEqual([[{
       customer: "cus_test", configuration: "bpc_test",
-      return_url: "https://app.syntholo.com/settings/billing",
+      return_url: "https://app.syntholo.com/learn/settings/billing",
     }, { idempotencyKey: "portal:01915eb4-207a-7000-8000-000000000009" }]]);
     expect(() => createStripeAdapterWithClient({
       ...adapterConfig,
@@ -298,7 +298,7 @@ describe("Stripe hosted adapter", () => {
     }, fake.value)).toThrowError(expect.objectContaining({ code: "STRIPE_REQUEST_INVALID" }));
     expect(() => createStripeAdapterWithClient({
       ...adapterConfig,
-      checkoutCancelUrl: "https://app.syntholo.com/programs?redirect=https://attacker.test",
+      checkoutCancelUrl: "https://app.syntholo.com/pricing?redirect=https://attacker.test",
     }, fake.value)).toThrowError(expect.objectContaining({ code: "STRIPE_REQUEST_INVALID" }));
     await expect(adapter.createBillingPortal({
       providerCustomerId: "cus_test",

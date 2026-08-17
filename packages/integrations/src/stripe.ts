@@ -548,9 +548,9 @@ export function createStripeAdapterWithClient(
   client: StripeClientPort,
 ) {
   const checkoutSuccessUrl = inputCanonicalUrl(config.checkoutSuccessUrl, "/claim");
-  const checkoutCancelUrl = inputCanonicalUrl(config.checkoutCancelUrl, "/programs");
+  const checkoutCancelUrl = inputCanonicalUrl(config.checkoutCancelUrl, "/pricing");
   const portalConfigurationId = inputId(config.portalConfigurationId);
-  const portalReturnUrl = inputCanonicalUrl(config.portalReturnUrl, "/settings/billing");
+  const portalReturnUrl = inputCanonicalUrl(config.portalReturnUrl, "/learn/settings/billing");
   const appOrigins = [checkoutSuccessUrl, checkoutCancelUrl, portalReturnUrl]
     .map((url) => new URL(url).origin);
   if (new Set(appOrigins).size !== 1) return requestInvalid();
