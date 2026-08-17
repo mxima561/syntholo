@@ -32,7 +32,12 @@ import {
   createStaffSessionCrypto,
   parseStaffSessionKeyRing,
 } from "./auth/session-crypto.js";
-import { parseApiConfig, type ApiConfig, type RuntimeEnvironment } from "./config.js";
+import {
+  diagnoseApiConfig,
+  parseApiConfig,
+  type ApiConfig,
+  type RuntimeEnvironment,
+} from "./config.js";
 import { createMuxWebhookHandler } from "./modules/mux-webhook.js";
 import {
   createStripeWebhookHandler,
@@ -285,6 +290,10 @@ if (isMainModule()) {
     })
     .catch(() => {
       process.stderr.write("API_STARTUP_FAILED\n");
+      // Variable names only; never their values. See diagnoseApiConfig.
+      for (const issue of diagnoseApiConfig(process.env)) {
+        process.stderr.write(`API_CONFIG_ISSUE ${issue}\n`);
+      }
       process.exitCode = 1;
     });
 }

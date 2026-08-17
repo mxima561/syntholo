@@ -110,6 +110,71 @@ export type ApiConfig = Readonly<{
   commercePayloadKeys?: CommercePayloadKeyRing;
 }>;
 
+/**
+ * Names the configuration variables that fail their own validation, so an
+ * operator can fix a misconfigured deployment without a debugging cycle.
+ *
+ * It reports variable NAMES and nothing else: a value that fails validation is
+ * frequently a malformed secret, and echoing it would move that secret into the
+ * deployment log. Callers must keep it that way.
+ */
+export function diagnoseApiConfig(
+  environment: RuntimeEnvironment,
+  embeddedReleaseSha: string | undefined = artifactReleaseSha,
+): readonly string[] {
+  const issues: string[] = [];
+  const present = (key: string): boolean => {
+    const value = environment[key];
+    return typeof value === "string" && value.trim().length > 0;
+  };
+
+  for (const key of [
+    "MEMBER_DATABASE_URL", "STAFF_DATABASE_URL", "SYSTEM_DATABASE_URL",
+    "RELEASE_SHA", "WEB_ORIGIN", "CLERK_SECRET_KEY", "CLERK_PUBLISHABLE_KEY",
+    "CLERK_AUDIENCE", "WORKOS_API_KEY", "WORKOS_CLIENT_ID",
+    "WORKOS_ORGANIZATION_ID", "WORKOS_ISSUER", "WORKOS_JWKS_URL",
+    "STAFF_SESSION_ENCRYPTION_KEYS", "IMPLEMENTATION_CURSOR_SECRET",
+  ]) if (!present(key)) issues.push(`MISSING:${key}`);
+
+  if (
+    embeddedReleaseSha !== undefined
+    && environment.RELEASE_SHA !== embeddedReleaseSha
+  ) issues.push("MISMATCH:RELEASE_SHA");
+
+  const stripeEnabled = environment.STRIPE_COMMERCE_ENABLED === "true";
+  if (stripeEnabled) {
+    if (environment.DEPLOYMENT_ENVIRONMENT === undefined) {
+      issues.push("MISSING:DEPLOYMENT_ENVIRONMENT");
+    }
+    for (const key of [
+      "STRIPE_API_RESTRICTED_KEY", "STRIPE_RECEIVER_ACCOUNT_ID",
+      "STRIPE_PORTAL_CONFIGURATION_ID", "STRIPE_CHECKOUT_SUCCESS_URL",
+      "STRIPE_CHECKOUT_CANCEL_URL", "STRIPE_PORTAL_RETURN_URL",
+      "STRIPE_WEBHOOK_CURRENT_KEY_ID", "STRIPE_WEBHOOK_CURRENT_SECRET",
+      "STRIPE_EXPECTED_LIVEMODE", "STRIPE_EXPECTED_EVENT_ACCOUNT",
+      "STRIPE_EXPECTED_EVENT_CONTEXT", "STRIPE_API_VERSION",
+    ]) if (!present(key)) issues.push(`MISSING:${key}`);
+    try {
+      parseStripeApiEnvironment(environment, { nodeEnv: environment.NODE_ENV });
+    } catch {
+      issues.push("INVALID:STRIPE_ENVIRONMENT");
+    }
+  }
+
+  const payloadKeys = environment.COMMERCE_PAYLOAD_KEYS;
+  if (stripeEnabled !== (payloadKeys !== undefined)) {
+    issues.push("PAIRING:STRIPE_COMMERCE_ENABLED+COMMERCE_PAYLOAD_KEYS");
+  } else if (payloadKeys !== undefined) {
+    try {
+      parseCommercePayloadKeyRing(payloadKeys);
+    } catch {
+      issues.push("INVALID:COMMERCE_PAYLOAD_KEYS");
+    }
+  }
+
+  return Object.freeze(issues);
+}
+
 export function parseApiConfig(
   environment: RuntimeEnvironment,
   embeddedReleaseSha: string | undefined = artifactReleaseSha,

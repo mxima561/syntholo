@@ -1298,14 +1298,23 @@ describe("compiled API artifact", () => {
     const artifact = new URL("../dist/server.js", import.meta.url);
     await expect(access(artifact)).resolves.toBeUndefined();
     await expect(readFile(artifact, "utf8")).resolves.toContain(releaseSha);
-    await expect(
-      execFileAsync(process.execPath, [artifact.pathname], {
-        env: { NODE_ENV: "production", PATH: process.env.PATH },
-      }),
-    ).rejects.toMatchObject({
-      code: 1,
-      stderr: "API_STARTUP_FAILED\n",
-    });
+    const failure = await execFileAsync(process.execPath, [artifact.pathname], {
+      env: {
+        NODE_ENV: "production",
+        PATH: process.env.PATH,
+        // A quoted secret is the exact operator mistake the diagnostic exists
+        // for; its value must never reach the deployment log.
+        STRIPE_API_RESTRICTED_KEY: '"NOT-A-REAL-KEY-CANARY-VALUE-0000"',
+      },
+    }).then(
+      () => undefined,
+      (error: NodeJS.ErrnoException & { code: number; stderr: string }) => error,
+    );
+
+    expect(failure?.code).toBe(1);
+    expect(failure?.stderr.startsWith("API_STARTUP_FAILED\n")).toBe(true);
+    expect(failure?.stderr).toContain("API_CONFIG_ISSUE MISSING:MEMBER_DATABASE_URL");
+    expect(failure?.stderr).not.toContain("CANARY");
   });
 
   it("refuses to build a release artifact without explicit production mode", async () => {
