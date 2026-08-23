@@ -3,6 +3,8 @@ import { z } from "zod";
 const rawSchema = z.object({
   APP_MODE: z.enum(["demo", "production"]).default("demo"),
   APP_URL: z.url().optional(),
+  DATABASE_URL: z.string().min(1).optional(),
+  ADMIN_EMAILS: z.string().optional(),
   MONGODB_URI: z.string().min(1).optional(),
   MONGODB_DATABASE: z.string().min(1).optional(),
   WORKOS_API_KEY: z.string().min(1).optional(),
@@ -56,6 +58,8 @@ export function parseRuntimeEnv(input: Record<string, string | undefined>) {
     mode: parsed.APP_MODE,
     appUrl: parsed.APP_URL ?? "http://localhost:3000",
     vendorsConfigured: configuredCount === productionRequired.length,
+    databaseUrl: parsed.DATABASE_URL,
+    adminEmails: (parsed.ADMIN_EMAILS ?? "").split(",").map((email) => email.trim()).filter(Boolean),
     mongodb: parsed.MONGODB_URI && parsed.MONGODB_DATABASE ? { uri: parsed.MONGODB_URI, database: parsed.MONGODB_DATABASE } : undefined,
     workos: parsed.WORKOS_API_KEY && parsed.WORKOS_CLIENT_ID && parsed.WORKOS_COOKIE_PASSWORD ? { apiKey: parsed.WORKOS_API_KEY, clientId: parsed.WORKOS_CLIENT_ID, cookiePassword: parsed.WORKOS_COOKIE_PASSWORD } : undefined,
     stripe: parsed.STRIPE_SECRET_KEY && parsed.STRIPE_WEBHOOK_SECRET ? { secretKey: parsed.STRIPE_SECRET_KEY, webhookSecret: parsed.STRIPE_WEBHOOK_SECRET, publishableKey: parsed.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY } : undefined,

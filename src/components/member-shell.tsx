@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import {
   BookOpen, CalendarDays, ClipboardCheck, Gauge, Headphones, LayoutGrid,
-  MessageCircle, PanelsTopLeft, Settings, Sparkles, Workflow,
+  MessageCircle, PanelsTopLeft, Settings, ShieldCheck, Sparkles, Workflow,
 } from "lucide-react";
 
 const navGroups = [
@@ -36,7 +36,13 @@ const navGroups = [
   },
 ] as const;
 
-export function MemberShell({ children }: { children: ReactNode }) {
+type MemberShellProps = {
+  children: ReactNode;
+  identity: { initials: string; name: string; subtitle: string };
+  isAdmin: boolean;
+};
+
+export function MemberShell({ children, identity, isAdmin }: MemberShellProps) {
   const pathname = usePathname();
 
   return (
@@ -57,16 +63,30 @@ export function MemberShell({ children }: { children: ReactNode }) {
               })}
             </div>
           ))}
+          {isAdmin ? (
+            <div className="nav-group">
+              <span>Admin</span>
+              <Link className={pathname.startsWith("/admin") ? "active" : ""} href="/admin">
+                <ShieldCheck size={16} /> Admin panel
+              </Link>
+            </div>
+          ) : null}
         </nav>
         <div className="sidebar-program">
           <Sparkles size={15} />
-          <div><span>Academy access</span><strong>Lifetime course</strong><small>Human support through Jul 30, 2027</small></div>
+          <div><span>Academy access</span><strong>Lifetime course</strong><small>{identity.subtitle}</small></div>
         </div>
-        <div className="member-identity"><span>MC</span><div><strong>Maria Chen</strong><small>Northstar Advisory</small></div></div>
+        <div className="member-identity">
+          <span>{identity.initials}</span>
+          <div><strong>{identity.name}</strong><small>Signed in with WorkOS</small></div>
+          <form action="/signout" method="get">
+            <button className="signout-link" type="submit">Sign out</button>
+          </form>
+        </div>
       </aside>
       <div className="member-content">
         <header className="member-topbar">
-          <div><span className="mobile-brand">Syntholo</span><strong>Northstar Advisory</strong><small>AI Operating System Academy</small></div>
+          <div><span className="mobile-brand">Syntholo</span><strong>{identity.name}</strong><small>{identity.subtitle}</small></div>
           <div className="topbar-actions">
             <Link aria-label="Browse lessons and templates" className="topbar-browse" href="/learn/course">
               <BookOpen aria-hidden="true" size={16} />

@@ -4,36 +4,49 @@ import { useState } from "react";
 import { Check, ChevronDown, Download, FileText, Play, RotateCcw } from "lucide-react";
 import type { Lesson } from "@/lib/domain/types";
 import { Button } from "@/components/ui/button";
+import { LessonVideo } from "./lesson-video";
+import { setLessonCompleteAction } from "@/app/learn/actions";
 
 type LessonWorkspaceProps = {
   lesson: Lesson;
   initiallyComplete?: boolean;
+  videoUrl?: string | null;
   onComplete?: (lessonId: string) => void;
 };
 
-export function LessonWorkspace({ lesson, initiallyComplete = false, onComplete }: LessonWorkspaceProps) {
+export function LessonWorkspace({ lesson, initiallyComplete = false, videoUrl, onComplete }: LessonWorkspaceProps) {
   const [complete, setComplete] = useState(initiallyComplete);
+  const [pending, setPending] = useState(false);
   const [showTranscript, setShowTranscript] = useState(false);
-  const [playing, setPlaying] = useState(false);
 
-  function markComplete() {
-    setComplete(true);
-    onComplete?.(lesson.id);
+  async function markComplete(next: boolean) {
+    setPending(true);
+    setComplete(next);
+    try {
+      await setLessonCompleteAction(lesson.id, next);
+      onComplete?.(lesson.id);
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
     <div className="lesson-workspace">
       <section className="lesson-main">
-        <div className={`lesson-player ${playing ? "is-playing" : ""}`}>
-          <button aria-label={playing ? "Pause lesson" : "Play lesson"} onClick={() => setPlaying((value) => !value)} type="button">
-            <Play fill="currentColor" size={22} />
-          </button>
-          <div>
-            <span>{playing ? "Playing practical lesson" : "Video lesson"}</span>
-            <strong>{lesson.durationMinutes} minutes</strong>
+        {videoUrl ? (
+          <LessonVideo src={videoUrl} title={lesson.title} durationMinutes={lesson.durationMinutes} />
+        ) : (
+          <div className="lesson-player is-playing">
+            <button aria-label="Play lesson" type="button">
+              <Play fill="currentColor" size={22} />
+            </button>
+            <div>
+              <span>Video coming soon</span>
+              <strong>{lesson.durationMinutes} minutes</strong>
+            </div>
+            <div className="player-timeline"><i /></div>
           </div>
-          <div className="player-timeline"><i /></div>
-        </div>
+        )}
 
         <div className="lesson-heading">
           <span className="micro-label">Lesson {String(lesson.number).padStart(2, "0")}</span>
@@ -72,9 +85,9 @@ export function LessonWorkspace({ lesson, initiallyComplete = false, onComplete 
           <h2>{complete ? "Lesson completed" : "Ready to apply this?"}</h2>
           <p>{complete ? "Nice work. Your course map and 30-day plan have been updated." : "Complete the practical action, then mark the lesson done."}</p>
           {complete ? (
-            <Button onClick={() => setComplete(false)} size="small" variant="secondary"><RotateCcw size={14} /> Mark incomplete</Button>
+            <Button disabled={pending} onClick={() => markComplete(false)} size="small" variant="secondary"><RotateCcw size={14} /> Mark incomplete</Button>
           ) : (
-            <Button onClick={markComplete} size="small"><Check size={14} /> Mark lesson complete</Button>
+            <Button disabled={pending} onClick={() => markComplete(true)} size="small"><Check size={14} /> Mark lesson complete</Button>
           )}
         </div>
         <div className="human-nudge">
