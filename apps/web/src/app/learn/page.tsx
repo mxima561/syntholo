@@ -24,7 +24,7 @@ export default async function LearnDashboardPage() {
     listLiveSessions(account.id),
   ]);
   const latestThread = threads[0];
-  const messages = latestThread ? await getThreadMessages(latestThread.id) : [];
+  const messages = latestThread ? await getThreadMessages(latestThread.id, account.id) : [];
   const lastCoachMessage = messages.filter((message) => message.authorRole === "coach").at(-1);
   const coachThread = {
     subject: latestThread?.subject ?? "Your coach is ready",

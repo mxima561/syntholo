@@ -55,6 +55,49 @@ export async function fulfillCheckout(input: {
       ON CONFLICT (user_id, course_id) DO NOTHING
     `;
   }
+  if (userId) {
+    const { supportWindowEnd, upsertEntitlementGrant } = await import("@syntholo/db");
+    const purchaseId = String(inserted[0].id);
+    const supportEnds = supportWindowEnd();
+    if (offer.id === "self-paced" || offer.id === "operator-club") {
+      await upsertEntitlementGrant({
+        userId,
+        capability: "academy_course",
+        source: "purchase",
+        sourceId: purchaseId,
+      });
+      await upsertEntitlementGrant({
+        userId,
+        capability: "support",
+        source: "purchase",
+        sourceId: purchaseId,
+        endsAt: supportEnds,
+      });
+      await upsertEntitlementGrant({
+        userId,
+        capability: "circle_write",
+        source: "purchase",
+        sourceId: purchaseId,
+        endsAt: supportEnds,
+      });
+    }
+    if (offer.id === "operator-club") {
+      await upsertEntitlementGrant({
+        userId,
+        capability: "operator_club",
+        source: "purchase",
+        sourceId: purchaseId,
+      });
+    }
+    if (offer.id === "business-os") {
+      await upsertEntitlementGrant({
+        userId,
+        capability: "business_os",
+        source: "purchase",
+        sourceId: purchaseId,
+      });
+    }
+  }
   const { writeActivityEvent } = await import("@syntholo/db");
   await writeActivityEvent({
     actorKind: userId ? "student" : "system",
@@ -78,6 +121,8 @@ export async function revokeSubscription(input: { subscriptionId: string }) {
   `;
   if (!purchase) return false;
   await database`DELETE FROM enrollments WHERE source_purchase_id = ${purchase.id}`;
+  const { refundGrantsForPurchase } = await import("@syntholo/db");
+  await refundGrantsForPurchase(String(purchase.id));
   return true;
 }
 

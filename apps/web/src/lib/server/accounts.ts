@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { ensureStudentWorkspace, publicIdFromUuid } from "@syntholo/db";
+import { ensureDemoAcademyGrants, ensureStudentWorkspace, hasActiveCapability, publicIdFromUuid } from "@syntholo/db";
 import { getReadyDb } from "@/lib/db/client";
 
 export type AccountRole = "student";
@@ -35,6 +35,7 @@ export function isClerkConfigured(): boolean {
 }
 
 export function canUseDemoStudent(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
   const mode = process.env.APP_MODE?.trim() || "demo";
   return !isClerkConfigured() && mode === "demo";
 }
@@ -91,7 +92,9 @@ async function upsertAccount(input: {
 }
 
 async function ensureDemoStudent(): Promise<Account> {
-  return upsertAccount(DEMO_STUDENT);
+  const account = await upsertAccount(DEMO_STUDENT);
+  await ensureDemoAcademyGrants(account.id);
+  return account;
 }
 
 /**
@@ -131,6 +134,17 @@ export async function requireStudentAccount(): Promise<Account> {
     }
   }
   redirect("/signin");
+}
+
+/** Signed-in student with an active academy grant. Unpaid members go to pricing. */
+export async function requireAcademyAccount(): Promise<Account> {
+  const account = await requireStudentAccount();
+  if (canUseDemoStudent()) {
+    await ensureDemoAcademyGrants(account.id);
+    return account;
+  }
+  if (await hasActiveCapability(account.id, "academy_course")) return account;
+  redirect("/pricing");
 }
 
 /** Stable color seed for avatars so each account keeps a consistent look. */

@@ -15,7 +15,7 @@ export default async function SupportPage() {
       status: summary.status,
       coachName: summary.coachName,
       updatedAt: summary.updatedAt.toISOString(),
-      messages: (await getThreadMessages(summary.id)).map((message) => ({
+      messages: (await getThreadMessages(summary.id, account.id)).map((message) => ({
         id: message.id,
         authorName: message.authorName,
         authorRole: message.authorRole,

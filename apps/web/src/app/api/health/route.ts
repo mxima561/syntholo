@@ -8,8 +8,13 @@ export function GET() {
       ok: true,
       mode: env.mode,
       integrations: {
-        mongodb: Boolean(env.mongodb), clerk: Boolean(env.clerk), stripe: Boolean(env.stripe), mux: Boolean(env.mux),
-        resend: Boolean(env.resend), posthog: Boolean(env.posthog), blob: Boolean(env.blobToken), highlevel: Boolean(env.highlevel),
+        database: Boolean(env.databaseUrl),
+        clerk: Boolean(env.clerk),
+        stripe: Boolean(env.stripe),
+        mux: Boolean(env.mux),
+        resend: Boolean(env.resend),
+        posthog: Boolean(env.posthog),
+        blob: Boolean(env.blobToken),
       },
       checkedAt: new Date().toISOString(),
     });

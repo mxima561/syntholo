@@ -21,6 +21,16 @@ export {
   refundStateTransition,
   revokeCourseEntitlement,
 } from "./refunds";
+export {
+  ensureDemoAcademyGrants,
+  hasActiveCapability,
+  listGrantsForUser,
+  refundGrantsForPurchase,
+  revokeEntitlementGrants,
+  supportWindowEnd,
+  upsertEntitlementGrant,
+} from "./entitlements";
+export type { EntitlementGrantRecord } from "./entitlements";
 export type { EnrollmentSnapshot, PurchaseSnapshot, RefundResult } from "./refunds";
 export { writeActivityEvent, listActivityEvents, listDistinctActivityActions } from "./activity";
 export type { ActivityEvent, ActivityEventInput, ActivityActorKind } from "./activity";

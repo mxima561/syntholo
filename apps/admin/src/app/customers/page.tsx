@@ -1,7 +1,7 @@
 import { Search } from "lucide-react";
 import Link from "next/link";
 import { grantEntitlementAction, refundPurchaseAction, revokeEntitlementAction } from "@/app/actions";
-import { requireStaff } from "@/lib/auth/staff";
+import { requireStaff, staffHasCapability } from "@/lib/auth/staff";
 import { getPrimaryCourse, listStudents } from "@/lib/server/courses";
 import { listPaidPurchases } from "@syntholo/db";
 import { CopyId } from "@/components/copy-id";
@@ -9,9 +9,11 @@ import { CopyId } from "@/components/copy-id";
 export const dynamic = "force-dynamic";
 
 export default async function AdminStudentsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  await requireStaff();
+  const staff = await requireStaff();
+  const canBill = staffHasCapability(staff.role, "billing");
   const { q } = await searchParams;
-  const [students, course, purchases] = await Promise.all([listStudents(), getPrimaryCourse(true), listPaidPurchases(100)]);
+  const [students, course] = await Promise.all([listStudents(), getPrimaryCourse(true)]);
+  const purchases = canBill ? await listPaidPurchases(100) : [];
   const totalLessons = course?.stages.reduce((sum, stage) => sum + stage.lessons.length, 0) ?? 0;
   const courseId = course?.id ?? "";
 
@@ -54,7 +56,7 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
               <span>{totalLessons > 0 ? `${Math.round((student.completedLessons / totalLessons) * 100)}%` : "—"}<small> ({student.completedLessons}/{totalLessons})</small></span>
               <span>{new Date(student.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
               <div>
-                {courseId ? (
+                {canBill && courseId ? (
                   <>
                     <form action={grantEntitlementAction}>
                       <input name="userId" type="hidden" value={student.id} />
@@ -74,25 +76,27 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
         )}
       </section>
 
-      <section className="admin-table">
-        <header><span>Purchase ID</span><span>Email</span><span>Offer</span><span>Status</span><span /></header>
-        {purchases.length === 0 ? (
-          <p className="empty-note">No purchases yet.</p>
-        ) : purchases.map((purchase) => (
-          <div className="student-row" key={purchase.id}>
-            <CopyId value={purchase.id} label={purchase.id.slice(0, 8)} />
-            <span>{purchase.email}</span>
-            <span>{purchase.offer}</span>
-            <i className={`status-pill ${purchase.status === "paid" ? "live" : ""}`}>{purchase.status}</i>
-            {purchase.status === "paid" ? (
-              <form action={refundPurchaseAction}>
-                <input name="purchaseId" type="hidden" value={purchase.id} />
-                <button className="button button-secondary button-small" type="submit">Refund</button>
-              </form>
-            ) : <span />}
-          </div>
-        ))}
-      </section>
+      {canBill ? (
+        <section className="admin-table">
+          <header><span>Purchase ID</span><span>Email</span><span>Offer</span><span>Status</span><span /></header>
+          {purchases.length === 0 ? (
+            <p className="empty-note">No purchases yet.</p>
+          ) : purchases.map((purchase) => (
+            <div className="student-row" key={purchase.id}>
+              <CopyId value={purchase.id} label={purchase.id.slice(0, 8)} />
+              <span>{purchase.email}</span>
+              <span>{purchase.offer}</span>
+              <i className={`status-pill ${purchase.status === "paid" ? "live" : ""}`}>{purchase.status}</i>
+              {purchase.status === "paid" ? (
+                <form action={refundPurchaseAction}>
+                  <input name="purchaseId" type="hidden" value={purchase.id} />
+                  <button className="button button-secondary button-small" type="submit">Refund</button>
+                </form>
+              ) : <span />}
+            </div>
+          ))}
+        </section>
+      ) : null}
     </div>
   );
 }

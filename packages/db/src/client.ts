@@ -185,6 +185,18 @@ const schemaStatements = [
     event_type TEXT NOT NULL,
     received_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
+  `CREATE TABLE IF NOT EXISTS entitlement_grants (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    capability TEXT NOT NULL CHECK (capability IN ('academy_course', 'support', 'circle_write', 'operator_club', 'business_os')),
+    status TEXT NOT NULL CHECK (status IN ('active', 'grace', 'expired', 'refunded', 'revoked')),
+    source TEXT NOT NULL CHECK (source IN ('purchase', 'admin', 'demo')),
+    source_id TEXT,
+    starts_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ends_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS entitlement_grants_user_idx ON entitlement_grants (user_id, capability, status)`,
   `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS public_id TEXT`,
   `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS business_name TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS job_title TEXT NOT NULL DEFAULT ''`,

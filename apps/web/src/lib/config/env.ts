@@ -6,8 +6,6 @@ const rawSchema = z.object({
   DATABASE_URL: z.string().min(1).optional(),
   CLERK_SECRET_KEY: z.string().startsWith("sk_").optional(),
   NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().startsWith("pk_").optional(),
-  MONGODB_URI: z.string().min(1).optional(),
-  MONGODB_DATABASE: z.string().min(1).optional(),
   STRIPE_SECRET_KEY: z.string().startsWith("sk_").optional(),
   STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_").optional(),
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().startsWith("pk_").optional(),
@@ -18,8 +16,6 @@ const rawSchema = z.object({
   NEXT_PUBLIC_POSTHOG_KEY: z.string().min(1).optional(),
   NEXT_PUBLIC_POSTHOG_HOST: z.url().optional(),
   BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
-  HIGHLEVEL_API_KEY: z.string().min(1).optional(),
-  HIGHLEVEL_LOCATION_ID: z.string().min(1).optional(),
 });
 
 const groups = [
@@ -27,13 +23,15 @@ const groups = [
   ["Clerk", ["CLERK_SECRET_KEY", "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"]],
   ["Mux", ["MUX_TOKEN_ID", "MUX_TOKEN_SECRET"]],
   ["Resend", ["RESEND_API_KEY", "RESEND_FROM_EMAIL"]],
-  ["HighLevel", ["HIGHLEVEL_API_KEY", "HIGHLEVEL_LOCATION_ID"]],
+  ["PostHog", ["NEXT_PUBLIC_POSTHOG_KEY", "NEXT_PUBLIC_POSTHOG_HOST"]],
 ] as const;
 
 const productionRequired = [
-  "MONGODB_URI", "MONGODB_DATABASE", "CLERK_SECRET_KEY", "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
-  "STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET", "MUX_TOKEN_ID", "MUX_TOKEN_SECRET", "RESEND_API_KEY",
-  "RESEND_FROM_EMAIL", "NEXT_PUBLIC_POSTHOG_KEY", "NEXT_PUBLIC_POSTHOG_HOST", "BLOB_READ_WRITE_TOKEN",
+  "DATABASE_URL",
+  "CLERK_SECRET_KEY",
+  "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
 ] as const;
 
 export function parseRuntimeEnv(input: Record<string, string | undefined>) {
@@ -61,13 +59,11 @@ export function parseRuntimeEnv(input: Record<string, string | undefined>) {
     clerk: parsed.CLERK_SECRET_KEY && parsed.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
       ? { secretKey: parsed.CLERK_SECRET_KEY, publishableKey: parsed.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }
       : undefined,
-    mongodb: parsed.MONGODB_URI && parsed.MONGODB_DATABASE ? { uri: parsed.MONGODB_URI, database: parsed.MONGODB_DATABASE } : undefined,
     stripe: parsed.STRIPE_SECRET_KEY && parsed.STRIPE_WEBHOOK_SECRET ? { secretKey: parsed.STRIPE_SECRET_KEY, webhookSecret: parsed.STRIPE_WEBHOOK_SECRET, publishableKey: parsed.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY } : undefined,
     mux: parsed.MUX_TOKEN_ID && parsed.MUX_TOKEN_SECRET ? { tokenId: parsed.MUX_TOKEN_ID, tokenSecret: parsed.MUX_TOKEN_SECRET } : undefined,
     resend: parsed.RESEND_API_KEY && parsed.RESEND_FROM_EMAIL ? { apiKey: parsed.RESEND_API_KEY, fromEmail: parsed.RESEND_FROM_EMAIL } : undefined,
     posthog: parsed.NEXT_PUBLIC_POSTHOG_KEY && parsed.NEXT_PUBLIC_POSTHOG_HOST ? { key: parsed.NEXT_PUBLIC_POSTHOG_KEY, host: parsed.NEXT_PUBLIC_POSTHOG_HOST } : undefined,
     blobToken: parsed.BLOB_READ_WRITE_TOKEN,
-    highlevel: parsed.HIGHLEVEL_API_KEY && parsed.HIGHLEVEL_LOCATION_ID ? { apiKey: parsed.HIGHLEVEL_API_KEY, locationId: parsed.HIGHLEVEL_LOCATION_ID } : undefined,
   };
 }
 

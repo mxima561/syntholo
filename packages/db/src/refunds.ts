@@ -1,4 +1,5 @@
 import { getReadyDb } from "./client";
+import { refundGrantsForPurchase, revokeEntitlementGrants, upsertEntitlementGrant } from "./entitlements";
 
 export type PurchaseSnapshot = {
   id: string;
@@ -87,6 +88,7 @@ export async function applyPurchaseRefund(purchaseId: string): Promise<RefundRes
   const db = await getReadyDb();
   await db`UPDATE purchases SET status = 'refunded' WHERE id = ${purchaseId}`;
   await db`DELETE FROM enrollments WHERE source_purchase_id = ${purchaseId}`;
+  await refundGrantsForPurchase(purchaseId);
   return transition;
 }
 
@@ -105,11 +107,13 @@ export async function grantCourseEntitlement(userId: string, courseId: string): 
     VALUES (${userId}, ${courseId})
     ON CONFLICT (user_id, course_id) DO NOTHING
   `;
+  await upsertEntitlementGrant({ userId, capability: "academy_course", source: "admin" });
 }
 
 export async function revokeCourseEntitlement(userId: string, courseId: string): Promise<void> {
   const db = await getReadyDb();
   await db`DELETE FROM enrollments WHERE user_id = ${userId} AND course_id = ${courseId}`;
+  await revokeEntitlementGrants(userId, "academy_course");
 }
 
 export async function listEnrollmentsForUser(userId: string): Promise<EnrollmentSnapshot[]> {

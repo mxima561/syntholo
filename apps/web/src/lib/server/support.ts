@@ -82,8 +82,20 @@ export async function listAllThreads(): Promise<SupportThreadSummary[]> {
   return rows.map(mapSummary);
 }
 
-export async function getThreadMessages(threadId: string): Promise<SupportMessageRecord[]> {
+export function assertOwnedThread(thread: { userId: string } | null | undefined, userId: string) {
+  if (!thread || thread.userId !== userId) {
+    const error = new Error("Support thread not found");
+    error.name = "SupportThreadNotFound";
+    throw error;
+  }
+}
+
+export async function getThreadMessages(threadId: string, ownerUserId?: string): Promise<SupportMessageRecord[]> {
   const database = await db();
+  if (ownerUserId) {
+    const [thread] = await database`SELECT user_id FROM support_threads WHERE id = ${threadId}`;
+    assertOwnedThread(thread ? { userId: String(thread.user_id) } : null, ownerUserId);
+  }
   const rows = await database`
     SELECT id, author_id AS "authorId", author_name AS "authorName", author_role AS "authorRole", body, created_at AS "createdAt"
     FROM support_messages WHERE thread_id = ${threadId} ORDER BY created_at
@@ -137,6 +149,9 @@ async function insertAndTouch(input: {
 }
 
 export async function addCustomerReply(input: { threadId: string; userId: string; authorName: string; body: string }) {
+  const database = await db();
+  const [thread] = await database`SELECT user_id FROM support_threads WHERE id = ${input.threadId}`;
+  assertOwnedThread(thread ? { userId: String(thread.user_id) } : null, input.userId);
   await insertAndTouch({
     threadId: input.threadId,
     authorId: input.userId,

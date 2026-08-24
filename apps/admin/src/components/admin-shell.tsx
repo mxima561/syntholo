@@ -5,33 +5,49 @@ import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { BookOpen, Boxes, ChartNoAxesCombined, CircleDollarSign, Headphones, LayoutDashboard, MessagesSquare, ScrollText, Settings, Shield, UsersRound, Workflow } from "lucide-react";
 
+type AdminCapabilities = {
+  billing: boolean;
+  content: boolean;
+  support: boolean;
+  staffAdmin: boolean;
+};
+
+const DEFAULT_CAPABILITIES: AdminCapabilities = {
+  billing: true,
+  content: true,
+  support: true,
+  staffAdmin: true,
+};
+
 const adminNav = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/customers", label: "Students", icon: UsersRound },
   { href: "/logs", label: "Logs", icon: ScrollText },
-  { href: "/content", label: "Course content", icon: BookOpen },
-  { href: "/support", label: "Support", icon: Headphones },
-  { href: "/staff", label: "Staff", icon: Shield },
+  { href: "/content", label: "Course content", icon: BookOpen, capability: "content" },
+  { href: "/support", label: "Support", icon: Headphones, capability: "support" },
+  { href: "/staff", label: "Staff", icon: Shield, capability: "staffAdmin" },
   { href: "/community", label: "Community", icon: MessagesSquare },
   { href: "/provisioning", label: "Provisioning", icon: Workflow },
-  { href: "/commerce", label: "Commerce", icon: CircleDollarSign },
+  { href: "/commerce", label: "Commerce", icon: CircleDollarSign, capability: "billing" },
   { href: "/analytics", label: "Analytics", icon: ChartNoAxesCombined },
 ] as const;
 
 type AdminShellProps = {
   children: ReactNode;
   identity: { initials: string; name: string };
+  capabilities?: AdminCapabilities;
 };
 
-export function AdminShell({ children, identity }: AdminShellProps) {
+export function AdminShell({ children, identity, capabilities = DEFAULT_CAPABILITIES }: AdminShellProps) {
   const pathname = usePathname();
+  const visibleNav = adminNav.filter((item) => !("capability" in item) || capabilities[item.capability]);
 
   return (
     <div className="admin-shell">
       <aside className="admin-sidebar">
         <Link className="brand" href="/"><span className="brand-mark">S</span> Syntholo <i>ADMIN</i></Link>
         <nav>
-          {adminNav.map((item) => (
+          {visibleNav.map((item) => (
             <Link className={pathname === item.href ? "active" : undefined} href={item.href} key={item.href}>
               <item.icon size={17} /> {item.label}
             </Link>

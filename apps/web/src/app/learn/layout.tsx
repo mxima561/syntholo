@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
 import { MemberShell } from "@/components/member-shell";
-import { isClerkConfigured, requireStudentAccount } from "@/lib/server/accounts";
+import { isClerkConfigured, requireAcademyAccount } from "@/lib/server/accounts";
 import { getPrimaryCourse, ensureEnrollment } from "@/lib/server/courses";
 import { ensureWelcomeThread } from "@/lib/server/support";
 
 export const dynamic = "force-dynamic";
 
 export default async function LearnLayout({ children }: { children: ReactNode }) {
-  const account = await requireStudentAccount();
+  const account = await requireAcademyAccount();
   const course = await getPrimaryCourse();
   if (course) {
     await ensureEnrollment(account.id, course.id);

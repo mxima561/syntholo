@@ -3,7 +3,6 @@ import type Stripe from "stripe";
 import { getRuntimeEnv } from "@/lib/config/env";
 import type { WebhookReceiptStore } from "@/lib/integrations/contracts";
 import { PgWebhookReceiptStore } from "@/lib/db/webhook-receipts";
-import { MongoWebhookReceiptStore } from "@/lib/integrations/mongodb";
 import { getStripeClient } from "@/lib/integrations/stripe";
 import { fulfillCheckout, revokeSubscription } from "@/lib/server/purchases";
 import { isOfferId } from "@/lib/domain/offers";
@@ -31,13 +30,12 @@ export class MemoryWebhookReceiptStore implements WebhookReceiptStore {
 }
 
 const runtimeReceipts = new MemoryWebhookReceiptStore();
-const productionReceipts = new MongoWebhookReceiptStore();
 const postgresReceipts = new PgWebhookReceiptStore();
 
 function pickReceiptStore(): WebhookReceiptStore {
   const config = getRuntimeEnv();
   if (config.databaseUrl) return postgresReceipts;
-  return config.mode === "production" ? productionReceipts : runtimeReceipts;
+  return runtimeReceipts;
 }
 
 export async function handleCheckoutCompleted(object: Record<string, unknown>) {

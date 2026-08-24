@@ -25,4 +25,12 @@ describe("student identity gates", () => {
     vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "pk_test_clerk");
     expect(canUseDemoStudent()).toBe(false);
   });
+
+  it("does not use the demo student in NODE_ENV production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("APP_MODE", "demo");
+    vi.stubEnv("CLERK_SECRET_KEY", "");
+    vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "");
+    expect(canUseDemoStudent()).toBe(false);
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canAccess } from "./entitlements";
+import { canAccess, grantCapabilityToKind, hasCapability } from "./entitlements";
 import type { Entitlement } from "./types";
 
 const now = new Date("2026-08-11T12:00:00.000Z");
@@ -50,6 +50,45 @@ describe("canAccess", () => {
   it("does not allow refunded or revoked access", () => {
     expect(canAccess("course", [entitlement({ status: "refunded" })], now)).toBe(false);
     expect(canAccess("course", [entitlement({ status: "revoked" })], now)).toBe(false);
+  });
+});
+
+describe("hasCapability", () => {
+  it("maps academy_course onto the course entitlement kind", () => {
+    expect(grantCapabilityToKind("academy_course")).toBe("course");
+    expect(
+      hasCapability(
+        "academy_course",
+        [
+          {
+            id: "g1",
+            capability: "academy_course",
+            status: "active",
+            startsAt: "2026-01-01T00:00:00.000Z",
+            endsAt: null,
+          },
+        ],
+        now,
+      ),
+    ).toBe(true);
+  });
+
+  it("does not treat a Business OS grant as academy access", () => {
+    expect(
+      hasCapability(
+        "academy_course",
+        [
+          {
+            id: "g2",
+            capability: "business_os",
+            status: "active",
+            startsAt: "2026-01-01T00:00:00.000Z",
+            endsAt: null,
+          },
+        ],
+        now,
+      ),
+    ).toBe(false);
   });
 });
 

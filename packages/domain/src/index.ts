@@ -1,5 +1,6 @@
 export { academyCourse, allLessons } from "./course";
-export { canAccess } from "./entitlements";
+export { canAccess, grantCapabilityToKind, grantsToEntitlements, hasCapability } from "./entitlements";
+export type { GrantCapability, GrantSource } from "./entitlements";
 export type { MemberIdentity } from "./identity";
 export { getNextAction } from "./next-action";
 export type { NextActionInput } from "./next-action";

@@ -45,14 +45,16 @@ async function verifiedEmail(): Promise<string> {
   return verified.email;
 }
 
+export function staffHasCapability(role: StaffRole, capability: StaffCapability): boolean {
+  const allowed = CAPABILITIES[capability] as readonly StaffRole[];
+  return allowed.includes(role);
+}
+
 export async function requireStaff(capability?: StaffCapability): Promise<Staff> {
   const email = await verifiedEmail();
   const staff = await findStaffByEmail(email);
   if (!authorizeStaffRow(staff)) throw new AdminForbiddenError();
-  if (capability) {
-    const allowed = CAPABILITIES[capability] as readonly StaffRole[];
-    if (!allowed.includes(staff.role)) throw new AdminForbiddenError();
-  }
+  if (capability && !staffHasCapability(staff.role, capability)) throw new AdminForbiddenError();
   await touchStaffLastSeen(staff.id);
   return staff;
 }
