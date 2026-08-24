@@ -8,9 +8,11 @@ export default defineConfig({
     include: ["src/**/*.test.{ts,tsx}"],
   },
   resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
-    },
+    alias: [
+      { find: "@", replacement: fileURLToPath(new URL("./src", import.meta.url)) },
+      { find: "@syntholo/db", replacement: fileURLToPath(new URL("../../packages/db/src", import.meta.url)) },
+      { find: "@syntholo/domain", replacement: fileURLToPath(new URL("../../packages/domain/src", import.meta.url)) },
+    ],
   },
 });
 

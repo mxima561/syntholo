@@ -1,0 +1,52 @@
+{
+  "name": "@syntholo/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^7.8.0",
+    "@mux/mux-player-react": "^3.10.2",
+    "@stripe/stripe-js": "^7.9.0",
+    "@syntholo/db": "*",
+    "@syntholo/domain": "*",
+    "@vercel/blob": "^2.3.0",
+    "lucide-react": "^0.544.0",
+    "mongodb": "^6.20.0",
+    "next": "16.3.0",
+    "postgres": "^3.4.9",
+    "posthog-js": "^1.268.7",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "resend": "^6.1.0",
+    "stripe": "^18.5.0",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
+    "@eslint/eslintrc": "^3.3.1",
+    "@playwright/test": "^1.55.1",
+    "@tailwindcss/postcss": "^4.1.14",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/node": "^24.7.2",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "eslint": "^9.37.0",
+    "eslint-config-next": "16.3.0",
+    "jsdom": "^27.0.0",
+    "tailwindcss": "4.3.3",
+    "typescript": "^5.9.3",
+    "vitest": "4.1.10"
+  }
+}

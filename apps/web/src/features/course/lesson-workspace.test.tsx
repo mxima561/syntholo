@@ -4,6 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 import { allLessons } from "@/lib/domain/course";
 import { LessonWorkspace } from "./lesson-workspace";
 
+vi.mock("@/app/learn/actions", () => ({
+  setLessonCompleteAction: vi.fn(async () => ({ ok: true })),
+}));
+
 describe("LessonWorkspace", () => {
   it("lets a member mark a practical lesson complete", async () => {
     const user = userEvent.setup();

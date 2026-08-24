@@ -2,17 +2,25 @@ import { ArrowLeft, ArrowRight, Check, LockKeyhole } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { getCurrentAccount } from "@/lib/server/accounts";
+import { getRuntimeEnv } from "@/lib/config/env";
+import { isOfferId, offers } from "@/lib/domain/offers";
+import { startCheckoutAction } from "./actions";
 
-const offers = {
-  "self-paced": { name: "AI Operating System Academy", amount: "$399.00", recurring: false, support: "Human support through August 2027", note: "Unconditional seven-day refund period" },
-  "operator-club": { name: "Operator Club", amount: "$59.00 / month", recurring: true, support: "Active while subscribed", note: "Cancel at the end of any billing period" },
-  "business-os": { name: "Syntholo Business OS", amount: "$999.00 today", recurring: true, support: "$199.00 / month after setup", note: "Usage-based messaging, phone, and AI charges are separate" },
-} as const;
+export const dynamic = "force-dynamic";
 
-export default async function CheckoutPage({ params }: { params: Promise<{ offer: string }> }) {
-  const { offer } = await params;
-  const selected = offers[offer as keyof typeof offers];
-  if (!selected) notFound();
+export default async function CheckoutPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ offer: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const [{ offer }, { error }] = await Promise.all([params, searchParams]);
+  if (!isOfferId(offer)) notFound();
+  const selected = offers[offer];
+  const account = await getCurrentAccount();
+  const stripeReady = Boolean(getRuntimeEnv().stripe);
 
   return (
     <main className="checkout-page">
@@ -21,20 +29,38 @@ export default async function CheckoutPage({ params }: { params: Promise<{ offer
         <div className="checkout-layout">
           <section className="checkout-copy">
             <Link className="brand" href="/"><span className="brand-mark">S</span><span>Syntholo</span></Link>
-            <span className="micro-label">SECURE CHECKOUT PREVIEW</span>
+            <span className="micro-label">{stripeReady ? "SECURE CHECKOUT" : "SECURE CHECKOUT PREVIEW"}</span>
             <h1>{selected.name}</h1>
             <p>One business workspace for an owner and two teammates.</p>
-            <ul><li><Check aria-hidden size={15} />{selected.support}</li><li><Check aria-hidden size={15} />{selected.note}</li><li><Check aria-hidden size={15} />Course purchase remains useful without optional software</li></ul>
+            <ul>
+              <li><Check aria-hidden size={15} />{selected.support}</li>
+              <li><Check aria-hidden size={15} />{selected.note}</li>
+              <li><Check aria-hidden size={15} />Course purchase remains useful without optional software</li>
+            </ul>
           </section>
-          <form action="/claim" className="checkout-card" method="get">
+          <form action={startCheckoutAction} className="checkout-card">
             <input name="offer" type="hidden" value={offer} />
-            <div className="order-line"><span>{selected.name}</span><strong>{selected.amount}</strong></div>
-            {selected.recurring ? <div className="checkout-disclosure">This offer includes recurring billing. The renewal amount and date are confirmed before the live payment is submitted.</div> : null}
-            <label>Work email<input defaultValue="maria@northstar.example" type="email" /></label>
-            <label>Card information<div className="fake-card-field"><span>4242 4242 4242 4242</span><span>12/30 &nbsp; 123</span></div></label>
+            <div className="order-line"><span>{selected.name}</span><strong>{selected.displayAmount}</strong></div>
+            {selected.kind === "subscription" ? (
+              <div className="checkout-disclosure">This offer includes recurring billing. The renewal amount and date are confirmed before the live payment is submitted.</div>
+            ) : null}
+            {error === "email" ? <p className="checkout-error">Enter a valid email so we can deliver your access.</p> : null}
+            {error === "stripe" ? <p className="checkout-error">Stripe could not start this checkout. Please try again.</p> : null}
+            {account ? (
+              <label>Paying as<input disabled value={account.email} /></label>
+            ) : (
+              <label>Work email<input name="email" placeholder="you@company.com" required type="email" /></label>
+            )}
             <label className="consent-row"><input required type="checkbox" /> I agree to Syntholo’s terms and refund policy.</label>
-            <Button size="large" type="submit">Complete demo purchase <ArrowRight aria-hidden size={16} /></Button>
-            <p className="privacy-note"><LockKeyhole aria-hidden size={13} /> Demo mode: no charge is made. Stripe activates when production credentials are configured.</p>
+            <Button formAction={startCheckoutAction} size="large" type="submit">
+              Continue to secure payment <ArrowRight aria-hidden size={16} />
+            </Button>
+            <p className="privacy-note">
+              <LockKeyhole aria-hidden size={13} />
+              {stripeReady
+                ? "Payments are processed by Stripe. Card details never touch our servers."
+                : "Preview mode: Stripe test keys are not configured yet, so no payment page opens."}
+            </p>
           </form>
         </div>
       </div>

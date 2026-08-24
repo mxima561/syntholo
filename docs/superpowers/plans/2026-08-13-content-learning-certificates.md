@@ -710,7 +710,7 @@ git commit -m "feat: issue Academy completion certificates"
 
 **Interfaces:**
 - Produces `ContentLaunchReadiness` consumed by commerce exactly as declared in its plan.
-- Automated pass requires exactly 18 required lessons and every named publication field; human pass requires WorkOS admin recent auth, approver identity, reason, and immutable report hash.
+- Automated pass requires exactly 18 required lessons and every named publication field; human pass requires Cloudflare Access admin recent auth, approver identity, reason, and immutable report hash.
 - Any content change after approval invalidates the report hash and blocks new Academy Checkout until reapproved.
 
 - [ ] **Step 1: Write gate RED cases**

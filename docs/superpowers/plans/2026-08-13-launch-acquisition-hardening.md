@@ -6,12 +6,12 @@
 
 **Architecture:** Vercel deploys the web app; Railway deploys API, worker, and cron; Neon provides separate staging/production PostgreSQL projects. GitHub Actions runs the full quality matrix, backward-compatible migrations precede services, server-side capability flags control offers, and a machine-readable gate command prevents release when any technical, curriculum, legal, staffing, vendor, or controlled-validation dependency is blocked.
 
-**Tech Stack:** GitHub Actions, Vercel, Railway, Neon, Clerk, WorkOS, Stripe, Mux, Resend, Vercel Blob, Circle, PostHog, Sentry, Next.js, Fastify, PostgreSQL, Vitest, Playwright, axe-core, Autocannon, and provider CLIs/APIs.
+**Tech Stack:** GitHub Actions, Vercel, Railway, Neon, Clerk, Cloudflare Access, Stripe, Mux, Resend, Vercel Blob, Circle, PostHog, Sentry, Next.js, Fastify, PostgreSQL, Vitest, Playwright, axe-core, Autocannon, and provider CLIs/APIs.
 
 ## Global Constraints
 
 - This plan starts after all other focused plan test suites pass on the integration branch.
-- Do not enable paid Academy Checkout until Gate 3 has a current automated report hash and WorkOS-admin human approval.
+- Do not enable paid Academy Checkout until Gate 3 has a current automated report hash and admin human approval.
 - Do not enable Business OS Checkout until its separate operational readiness and seven-check runbook dependencies pass.
 - Customer-facing seven-day Academy refund language must match the implemented policy in sales pages, Pilot email, Checkout, and terms; legal approval is a hard launch dependency.
 - Preview deployments receive synthetic data only and no production credentials or copied production PII.
@@ -246,7 +246,7 @@ Expected: gaps expose missing route guards/security plugins.
 
 - [ ] **Step 3: Implement plugins and route metadata**
 
-Register explicit route security descriptors; fail application startup if a non-health route lacks one. Use Clerk authorized parties and WorkOS issuer/audience checks from foundation.
+Register explicit route security descriptors; fail application startup if a non-health route lacks one. Use Clerk authorized parties and Cloudflare Access issuer/audience checks from foundation.
 
 ```ts
 export type RouteSecurity =
@@ -470,7 +470,7 @@ export const DeploymentEnvironmentSchema = z.object({
   DATABASE_POOLED_URL: z.string().url(),
   DATABASE_DIRECT_URL: z.string().url(),
   CLERK_INSTANCE_ID: z.string().min(1),
-  WORKOS_CLIENT_ID: z.string().min(1),
+  REMOVED_CLIENT_ID: z.string().min(1),
   STRIPE_ACCOUNT_ID: z.string().startsWith("acct_"),
   BLOB_PREFIX: z.string().min(1),
   CIRCLE_WRITE_GROUP_ID: z.string().min(1),
@@ -500,7 +500,7 @@ git commit -m "ops: configure production deployment topology"
 **Interfaces:**
 - Restore drill provisions an isolated Neon branch/project from the approved restore point, verifies critical counts/constraints and signed sample hashes, then destroys only the explicit drill target.
 - Rollback disables affected server capability first, deploys last compatible versions, leaves forward-compatible schema, and replays only safe jobs by idempotency key.
-- Degradation scenarios cover PostgreSQL, Clerk, WorkOS, Stripe, Mux, Resend, Circle, HighLevel, Blob/ClamAV, PostHog, and Sentry.
+- Degradation scenarios cover PostgreSQL, Clerk, Cloudflare Access, Stripe, Mux, Resend, Circle, HighLevel, Blob/ClamAV, PostHog, and Sentry.
 
 - [ ] **Step 1: Write recovery/degradation RED tests**
 

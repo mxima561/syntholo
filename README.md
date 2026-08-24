@@ -4,33 +4,37 @@ Syntholo is a polished end-to-end platform for the **AI Operating System Academy
 
 ## What is included
 
-- Public homepage, pricing, 20-question readiness scorecard, report, checkout preview, and account claim
-- Member command center, six-stage/18-lesson course, lesson player, transcripts, and templates
+- Public homepage, pricing, 20-question readiness scorecard, report, and account claim
+- Real student authentication via Clerk (`/signin`, `/signout`) mapped to internal `app_users.id`
+- Separate admin app on `:3001` behind Cloudflare Access; authorization is the `staff` table (no auto-provisioning)
+- **Stripe test-mode checkout** for all three offers, webhook-driven fulfillment (idempotent), subscription cancellation revoking access, and enrollment granting
+- Member command center, six-stage/18-lesson course (served from the database), lesson video playback (YouTube/Vimeo/MP4), and persistent lesson progress
+- **Persistent community**: DB-backed posts, spaces, and per-member likes
+- **Persistent human support**: student inbox with coach threads, admin Support queue with coach replies, auto-created welcome thread per student
 - 30-day implementation plan, five required business outputs, and three-workflow registry
-- Shared human coach inbox, business-day SLA states, live office hours, recordings, and owner community
-- Disclosed optional Business OS offer, onboarding questionnaire, five-business-day provisioning, and seven activation checks
-- Administrator overview, course editor, support/community/customer/commerce/analytics surfaces, and provisioning board
-- Demo-safe adapters for MongoDB Atlas, WorkOS, Stripe, Mux, Resend, PostHog, Vercel Blob, and HighLevel
+- Working admin panel: live overview metrics, full course/lesson CRUD with draft/publish workflow, Students tab with progress + role management
+- **Neon Postgres** as the system of record (auto-migrating schema + curriculum seed on startup)
 
 ## Run locally
 
 Requirements: Node.js 20.9 or newer.
 
-```bash
-npm install
-cp .env.example .env.local
-npm run dev
-```
+1. `npm install` from the repo root (npm workspaces: `apps/web`, `apps/admin`, `packages/db`, `packages/domain`)
+2. Set `DATABASE_URL` in the root `.env` (a Neon connection string, or any Postgres URL)
+3. For student sign-in: create a US [Clerk](https://dashboard.clerk.com) application, then set `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`. Do not store student PII in Clerk metadata.
+4. For payments: set `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` (test mode keys) and add a webhook endpoint at `{APP_URL}/api/webhooks/stripe` for `checkout.session.completed`, `customer.subscription.updated`, and `customer.subscription.deleted`
+5. Seed staff with `STAFF_BOOTSTRAP_EMAILS` and `npm run db:seed-staff`. Local admin: `ADMIN_DEV_BYPASS_EMAIL` (never in production, and only when `CF_ACCESS_AUD` is unset).
+6. `npm run dev` (student app in `apps/web`). `npm run dev:admin` starts the admin app on port 3001.
 
-Open [http://localhost:3000](http://localhost:3000). Demo mode uses the deterministic Northstar Advisory workspace and never contacts vendors.
+The database schema is created and the curriculum seeded automatically at server startup.
 
 Useful entry points:
 
 - `/` — acquisition site
 - `/scorecard` — readiness assessment
 - `/pricing` — offers and disclosures
-- `/learn` — Maria Chen’s member workspace
-- `/admin` — operations console
+- `/learn` — member workspace
+- `http://localhost:3001` — admin console (Cloudflare Access in production)
 - `/api/health` — runtime configuration state
 
 ## Quality checks

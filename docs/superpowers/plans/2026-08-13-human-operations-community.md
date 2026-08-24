@@ -6,7 +6,7 @@
 
 **Architecture:** Support threads and review queues belong to accounts, while messages retain their individual actor. PostgreSQL state machines own assignment, SLA, review locks, sessions, and Circle sync intent. The worker handles scans, reminders, email/calendar delivery, and Circle Admin API retries; Circle remains the community content system of record and Zoom links remain manually entered in v1.
 
-**Tech Stack:** Fastify, Zod, Drizzle/PostgreSQL, `@js-temporal/polyfill`, WorkOS staff auth, Clerk member auth, Vercel Blob, ClamAV, Resend, Circle OAuth/Admin API, Next.js App Router, Vitest, PostgreSQL integration tests, and Playwright.
+**Tech Stack:** Fastify, Zod, Drizzle/PostgreSQL, `@js-temporal/polyfill`, Cloudflare Access staff auth, Clerk member auth, Vercel Blob, ClamAV, Resend, Circle OAuth/Admin API, Next.js App Router, Vitest, PostgreSQL integration tests, and Playwright.
 
 ## Global Constraints
 
@@ -298,7 +298,7 @@ git commit -m "feat: add coach queue and SLA tracking"
 - Create: `apps/web/tests/e2e/support.spec.ts`
 
 **Interfaces:**
-- Member UI consumes only member support routes; coach UI consumes only WorkOS staff routes.
+- Member UI consumes only member support routes; coach UI consumes only Cloudflare Access staff routes.
 - Coach queue exposes due time, warning/breach, waiting state, account members, exact artifact version, and relevant session context; it omits commerce/card/refund/revenue fields.
 
 - [ ] **Step 1: Write component/browser RED tests**
@@ -395,7 +395,7 @@ Expected: FAIL because the database-backed review lock does not exist.
 
 - [ ] **Step 3: Implement state machine, constraint, and audited routes**
 
-Member can submit with support access; coach/admin transitions are WorkOS-protected. Audit records IDs/state only, not artifact or feedback content.
+Member can submit with support access; coach/admin transitions are Access-protected. Audit records IDs/state only, not artifact or feedback content.
 
 ```ts
 export function transitionReview(review: Review, action: ReviewAction): Review {

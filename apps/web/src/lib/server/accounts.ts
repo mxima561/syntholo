@@ -1,8 +1,16 @@
 import { createHash } from "node:crypto";
+import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { cache } from "react";
+import { getReadyDb } from "@/lib/db/client";
+import {
+  ensureEnrollment,
+  getCompletedLessonIds,
+  getPrimaryCourse,
+  setLessonProgress,
+} from "@/lib/server/courses";
 
-export type AccountRole = "admin" | "student";
+export type AccountRole = "student";
 
 export type Account = {
   id: string;
@@ -13,21 +21,33 @@ export type Account = {
   initials: string;
 };
 
-export function isWorkosConfigured(): boolean {
+const DEMO_STUDENT = {
+  clerkId: "demo:maria",
+  email: "maria@northstar.example",
+  firstName: "Maria",
+  lastName: "Chen",
+} as const;
+
+const DEMO_COMPLETED_LESSON_IDS = [
+  "diagnose-1",
+  "diagnose-2",
+  "diagnose-3",
+  "rules-1",
+  "rules-2",
+  "rules-3",
+  "growth-1",
+] as const;
+
+export function isClerkConfigured(): boolean {
   return Boolean(
-    process.env.WORKOS_API_KEY?.trim() &&
-      process.env.WORKOS_CLIENT_ID?.trim() &&
-      process.env.WORKOS_COOKIE_PASSWORD?.trim(),
+    process.env.CLERK_SECRET_KEY?.trim() &&
+      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim(),
   );
 }
 
-function adminEmails(): Set<string> {
-  return new Set(
-    (process.env.ADMIN_EMAILS ?? "")
-      .split(",")
-      .map((email) => email.trim().toLowerCase())
-      .filter(Boolean),
-  );
+export function canUseDemoStudent(): boolean {
+  const mode = process.env.APP_MODE?.trim() || "demo";
+  return !isClerkConfigured() && mode === "demo";
 }
 
 export function initialsFor(firstName: string, lastName: string): string {
@@ -37,71 +57,77 @@ export function initialsFor(firstName: string, lastName: string): string {
   return fallback || "S";
 }
 
+function toAccount(row: Record<string, unknown>): Account {
+  return {
+    id: String(row.id),
+    email: String(row.email),
+    firstName: String(row.first_name),
+    lastName: String(row.last_name),
+    role: "student",
+    initials: initialsFor(String(row.first_name), String(row.last_name)),
+  };
+}
+
 async function upsertAccount(input: {
-  workosId: string;
+  clerkId: string;
   email: string;
   firstName: string;
   lastName: string;
 }): Promise<Account> {
-  const { getReadyDb } = await import("@/lib/db/client");
   const db = await getReadyDb();
   const email = input.email.toLowerCase();
-  const shouldBeAdmin = adminEmails().has(email);
 
   const [row] = await db`
-    INSERT INTO app_users (workos_id, email, first_name, last_name, role)
-    VALUES (${input.workosId}, ${email}, ${input.firstName}, ${input.lastName}, ${shouldBeAdmin ? "admin" : "student"})
+    INSERT INTO app_users (clerk_id, email, first_name, last_name, role)
+    VALUES (${input.clerkId}, ${email}, ${input.firstName}, ${input.lastName}, 'student')
     ON CONFLICT (email) DO UPDATE SET
-      workos_id = EXCLUDED.workos_id,
+      clerk_id = EXCLUDED.clerk_id,
       first_name = EXCLUDED.first_name,
       last_name = EXCLUDED.last_name,
-      role = CASE WHEN ${shouldBeAdmin} THEN 'admin' ELSE app_users.role END,
       last_seen_at = now()
     RETURNING id, email, first_name, last_name, role
   `;
 
-  return {
-    id: row.id,
-    email: row.email,
-    firstName: row.first_name,
-    lastName: row.last_name,
-    role: row.role as AccountRole,
-    initials: initialsFor(row.first_name, row.last_name),
-  };
+  return toAccount(row);
+}
+
+async function seedDemoProgress(userId: string) {
+  const course = await getPrimaryCourse();
+  if (!course) return;
+  await ensureEnrollment(userId, course.id);
+  const completed = await getCompletedLessonIds(userId);
+  if (completed.length > 0) return;
+  for (const lessonId of DEMO_COMPLETED_LESSON_IDS) {
+    await setLessonProgress(userId, lessonId, true);
+  }
+}
+
+async function ensureDemoStudent(): Promise<Account> {
+  const account = await upsertAccount(DEMO_STUDENT);
+  await seedDemoProgress(account.id);
+  return account;
 }
 
 /**
- * Resolves the signed-in visitor against the local database.
- * Returns null when nobody is signed in or WorkOS is not configured yet.
+ * Resolves the signed-in Clerk visitor against the local database.
+ * Returns null when nobody is signed in or Clerk is not configured yet.
+ * Never writes staff rows and never persists student PII to Clerk metadata.
  */
 export const getCurrentAccount = cache(async (): Promise<Account | null> => {
-  if (!isWorkosConfigured()) return null;
-
-  let workosUser: {
-    id: string;
-    email: string | null | undefined;
-    firstName: string | null | undefined;
-    lastName: string | null | undefined;
-  };
+  if (!isClerkConfigured()) return null;
 
   try {
-    const { auth } = await import("@workos-inc/authkit-nextjs");
-    const authResult = await auth();
-    if (!authResult?.user) return null;
-    workosUser = authResult.user;
-  } catch {
-    return null;
-  }
+    const user = await currentUser();
+    if (!user) return null;
 
-  const email = workosUser.email?.trim();
-  if (!email) return null;
+    const email = user.primaryEmailAddress?.emailAddress?.trim();
+    if (!email) return null;
 
-  try {
     return await upsertAccount({
-      workosId: workosUser.id,
+      clerkId: user.id,
       email,
-      firstName: workosUser.firstName?.trim() || "",
-      lastName: workosUser.lastName?.trim() || "",
+      firstName: user.firstName?.trim() || "",
+      lastName: user.lastName?.trim() || "",
     });
   } catch {
     return null;
@@ -110,15 +136,15 @@ export const getCurrentAccount = cache(async (): Promise<Account | null> => {
 
 export async function requireStudentAccount(): Promise<Account> {
   const account = await getCurrentAccount();
-  if (!account) redirect("/signin");
-  return account;
-}
-
-export async function requireAdminAccount(): Promise<Account> {
-  const account = await getCurrentAccount();
-  if (!account) redirect("/signin");
-  if (account.role !== "admin") redirect("/learn");
-  return account;
+  if (account) return account;
+  if (canUseDemoStudent()) {
+    try {
+      return await ensureDemoStudent();
+    } catch {
+      redirect("/signin");
+    }
+  }
+  redirect("/signin");
 }
 
 /** Stable color seed for avatars so each account keeps a consistent look. */

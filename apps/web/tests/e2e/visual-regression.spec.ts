@@ -5,7 +5,6 @@ const pages = [
   ["member-dashboard", "/learn"],
   ["course-workspace", "/learn/course/growth-2"],
   ["support-inbox", "/learn/support"],
-  ["admin-overview", "/admin"],
 ] as const;
 
 for (const [name, path] of pages) {

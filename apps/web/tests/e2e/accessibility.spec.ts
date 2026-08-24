@@ -12,8 +12,6 @@ const pages = [
   "/learn/support",
   "/learn/community",
   "/learn/business-os",
-  "/admin",
-  "/admin/provisioning",
 ];
 
 const responsivePages = [
@@ -27,9 +25,6 @@ const responsivePages = [
   "/learn/support",
   "/learn/community",
   "/learn/business-os",
-  "/admin",
-  "/admin/customers",
-  "/admin/provisioning",
 ];
 
 for (const path of pages) {

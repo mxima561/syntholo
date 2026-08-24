@@ -97,18 +97,6 @@ test("human and community surfaces use readable conversation text", async ({ pag
   expect(disabledReply.opacity).toBeLessThan(1);
   expect(disabledReply.transform).toBe("none");
 
-  await page.goto("/admin/provisioning");
-  const activateBusinessOs = page.getByRole("button", { name: /activate business os/i });
-  await expect(activateBusinessOs).toBeDisabled();
-  await activateBusinessOs.hover({ force: true });
-  const disabledAdminAction = await activateBusinessOs.evaluate((element) => {
-    const style = getComputedStyle(element);
-    return { cursor: style.cursor, opacity: Number.parseFloat(style.opacity), transform: style.transform };
-  });
-  expect(disabledAdminAction.cursor).toBe("not-allowed");
-  expect(disabledAdminAction.opacity).toBeLessThan(1);
-  expect(disabledAdminAction.transform).toBe("none");
-
   await page.goto("/learn/community");
   expect(await fontSize(page.locator(".community-post > p").first())).toBeGreaterThanOrEqual(15);
 });
@@ -157,25 +145,6 @@ test("mobile coach profile keeps its identity and support details in separate ro
   expect(details.y + details.height).toBeLessThanOrEqual(standard.y);
 });
 
-test("admin remains dense but readable", async ({ page }) => {
-  await page.goto("/admin");
-  expect(await fontSize(page.locator(".admin-page-head p"))).toBeGreaterThanOrEqual(15);
-  expect(await fontSize(page.locator(".admin-metric-grid small").first())).toBeGreaterThanOrEqual(12);
-  const adminBadgeSize = await fontSize(page.locator(".admin-sidebar .brand i"));
-  expect(adminBadgeSize).toBeGreaterThanOrEqual(12);
-  expect(adminBadgeSize).toBeLessThanOrEqual(14);
-
-  await page.goto("/admin/customers");
-  expect(await fontSize(page.locator(".admin-table strong").first())).toBeGreaterThanOrEqual(13);
-});
-
-test("admin provisioning statuses use the readable label floor", async ({ page }) => {
-  await page.goto("/admin/provisioning");
-  const provisioningStatusSize = await fontSize(page.locator(".provisioning-queue > aside:first-child .status-pill").first());
-  expect(provisioningStatusSize).toBeGreaterThanOrEqual(12);
-  expect(provisioningStatusSize).toBeLessThanOrEqual(14);
-});
-
 test("reading descriptions use the approved body-copy floor", async ({ page }) => {
   const descriptions = [
     ["/", ".hero-lede"],
@@ -185,7 +154,6 @@ test("reading descriptions use the approved body-copy floor", async ({ page }) =
     ["/learn/support", ".page-intro p"],
     ["/learn/community", ".page-intro p"],
     ["/learn/business-os", ".page-intro p"],
-    ["/admin", ".admin-page-head p"],
   ] as const;
 
   for (const [path, selector] of descriptions) {
@@ -231,12 +199,6 @@ test("dashboard and application shells follow the approved responsive breakpoint
   await expect(page.locator(".member-sidebar")).toHaveCSS("position", "fixed");
   expect(Math.round((await page.locator(".member-sidebar").boundingBox())?.height ?? 0)).toBe(58);
   expect(Math.round((await page.locator(".member-page").boundingBox())?.width ?? 0)).toBe(735);
-
-  await page.goto("/admin");
-  expect(await gridColumnCount(page.locator(".admin-shell"))).toBe(1);
-  await expect(page.locator(".admin-sidebar")).toHaveCSS("position", "static");
-  await expect(page.locator(".admin-sidebar nav")).toHaveCSS("display", "flex");
-  expect(Math.round((await page.locator(".admin-page").boundingBox())?.width ?? 0)).toBe(735);
 });
 
 test("reduced motion removes transforms and animation", async ({ page }) => {

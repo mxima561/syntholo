@@ -133,7 +133,7 @@ Send scorecard reports, receipts, account claims, invites, security alerts, sess
 - API, worker, and cron services on Railway.
 - Neon PostgreSQL in a U.S. primary region with pooled connections and tested point-in-time recovery.
 - Clerk for customer owners and teammates, including magic links, social sign-in, and Circle OAuth SSO.
-- WorkOS for coach/admin identity and RBAC, with mandatory MFA for administrators.
+- Cloudflare Access in front of a separate admin origin for coach/admin identity. The admin origin is not publicly routable; identity is asserted by Cloudflare Access and authorized against the `staff` table. Mandatory MFA is an Access policy, not application code.
 - A central entitlement authority for all access decisions.
 - Mux signed video.
 - Stripe Checkout/Billing.
@@ -156,3 +156,8 @@ Every customer-owned PostgreSQL row carries an immutable `accountId`. Member-fac
 - Soft-delete customer data for 30 days and hard-delete active copies by day 45, except legally retained records.
 
 Internal alpha must pass cross-account authorization, dual-identity separation, payment/refund/dispute/entitlement replay, content publication, learning, certificate, support, session, Circle, and provisioning journeys. Paid launch requires all 18 accessible lessons to be complete and published, four scheduled Pilot calls, two trained coaches, approved legal copy, and incident/support runbooks. Business OS checkout additionally requires the approved HighLevel snapshot and seven-check operating process.
+
+## 11. Minors (16–17)
+
+TBD: parental consent, marketing restrictions, and data deletion for learners aged 16–17.
+

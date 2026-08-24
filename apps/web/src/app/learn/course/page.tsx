@@ -1,14 +1,38 @@
 import Link from "next/link";
 import { ArrowRight, Check, Clock3, LockKeyhole, Play } from "lucide-react";
-import { getMemberCourse } from "@/lib/demo/repository";
+import { requireStudentAccount } from "@/lib/server/accounts";
+import { getCompletedLessonIds, getInProgressLessonId, getPrimaryCourse } from "@/lib/server/courses";
 
-export default function CourseMapPage() {
-  const { course, progress, completedLessonIds } = getMemberCourse("member-maria");
-  const activeLessonId = progress.find((item) => item.status === "in_progress")?.lessonId;
+export const dynamic = "force-dynamic";
+
+export default async function CourseMapPage() {
+  const account = await requireStudentAccount();
+  const course = await getPrimaryCourse();
+
+  if (!course) {
+    return (
+      <div className="member-page course-page">
+        <section className="page-intro"><div><h1>No published course yet</h1><p>Your instructors are preparing the curriculum. Check back shortly.</p></div></section>
+      </div>
+    );
+  }
+
+  const [completedLessonIds, activeLessonId] = await Promise.all([
+    getCompletedLessonIds(account.id),
+    getInProgressLessonId(account.id),
+  ]);
+  const totalLessons = course.stages.reduce((sum, stage) => sum + stage.lessons.length, 0);
 
   return (
     <div className="member-page course-page">
-      <section className="page-intro"><div><span className="eyebrow"><span className="eyebrow-dot" /> Practical curriculum</span><h1>{course.title}</h1><p>{course.description}</p></div><div className="course-summary"><strong>{completedLessonIds.length}</strong><span>of 18 lessons complete</span></div></section>
+      <section className="page-intro">
+        <div>
+          <span className="eyebrow"><span className="eyebrow-dot" /> Practical curriculum</span>
+          <h1>{course.title}</h1>
+          <p>{course.description}</p>
+        </div>
+        <div className="course-summary"><strong>{completedLessonIds.length}</strong><span>of {totalLessons} lessons complete</span></div>
+      </section>
       <div className="course-stage-list">
         {course.stages.map((stage) => (
           <section className="course-stage" key={stage.id}>

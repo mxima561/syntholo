@@ -329,3 +329,5 @@
   .checkout-card { padding: 20px; }
   .claim-card { padding: 28px 20px; }
 }
+
+.checkout-error { margin: 0; color: #c0392b; font-size: 13px; font-weight: 600; }

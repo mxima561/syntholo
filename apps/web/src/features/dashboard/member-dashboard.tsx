@@ -5,7 +5,12 @@ import { DashboardContinueCard } from "./dashboard-continue-card";
 import { DashboardRecommendationCard } from "./dashboard-recommendation-card";
 import { DashboardRightRail } from "./dashboard-right-rail";
 
-export function MemberDashboard({ dashboard }: { dashboard: DashboardView }) {
+type MemberDashboardProps = {
+  dashboard: DashboardView;
+  coachThread: { subject: string; coachFirstName: string; lastMessage: string };
+};
+
+export function MemberDashboard({ dashboard, coachThread }: MemberDashboardProps) {
   const policy = dashboard.artifacts.find((artifact) => artifact.kind === "ai_policy")!;
   const workflowPortfolio = dashboard.artifacts.find(
     (artifact) => artifact.kind === "workflow_portfolio",
@@ -35,7 +40,7 @@ export function MemberDashboard({ dashboard }: { dashboard: DashboardView }) {
     <div className="member-page member-dashboard">
       <section className="dashboard-heading">
         <div>
-          <span className="meta-label">Northstar Advisory · Academy</span>
+          <span className="meta-label">{dashboard.organization.name} · Academy</span>
           <h1>Keep building your business OS.</h1>
           <p>One focused action, a practical recommendation, and a real person in your corner.</p>
         </div>
@@ -65,7 +70,7 @@ export function MemberDashboard({ dashboard }: { dashboard: DashboardView }) {
           actionLabel={dashboard.nextLesson.actionLabel}
           policyTitle={policy.title}
           workflowName={nextWorkflow.name}
-          thread={dashboard.supportThreads[0]}
+          coachThread={coachThread}
           session={dashboard.upcomingSession!}
         />
       </div>

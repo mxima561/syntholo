@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 import {
   BookOpen, CalendarDays, ClipboardCheck, Gauge, Headphones, LayoutGrid,
-  MessageCircle, PanelsTopLeft, Settings, ShieldCheck, Sparkles, Workflow,
+  MessageCircle, PanelsTopLeft, Settings, Sparkles, Workflow,
 } from "lucide-react";
 
 const navGroups = [
@@ -38,11 +38,10 @@ const navGroups = [
 
 type MemberShellProps = {
   children: ReactNode;
-  identity: { initials: string; name: string; subtitle: string };
-  isAdmin: boolean;
+  identity: { initials: string; name: string; subtitle: string; authLabel?: string };
 };
 
-export function MemberShell({ children, identity, isAdmin }: MemberShellProps) {
+export function MemberShell({ children, identity }: MemberShellProps) {
   const pathname = usePathname();
 
   return (
@@ -63,14 +62,6 @@ export function MemberShell({ children, identity, isAdmin }: MemberShellProps) {
               })}
             </div>
           ))}
-          {isAdmin ? (
-            <div className="nav-group">
-              <span>Admin</span>
-              <Link className={pathname.startsWith("/admin") ? "active" : ""} href="/admin">
-                <ShieldCheck size={16} /> Admin panel
-              </Link>
-            </div>
-          ) : null}
         </nav>
         <div className="sidebar-program">
           <Sparkles size={15} />
@@ -78,7 +69,7 @@ export function MemberShell({ children, identity, isAdmin }: MemberShellProps) {
         </div>
         <div className="member-identity">
           <span>{identity.initials}</span>
-          <div><strong>{identity.name}</strong><small>Signed in with WorkOS</small></div>
+          <div><strong>{identity.name}</strong><small>{identity.authLabel ?? "Signed in with Clerk"}</small></div>
           <form action="/signout" method="get">
             <button className="signout-link" type="submit">Sign out</button>
           </form>

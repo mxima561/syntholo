@@ -1,0 +1,211 @@
+/* WCAG AA contrast refinements: preserve bright accents as decoration and use ink variants for text. */
+.marketing-page,
+.pricing-page,
+.scorecard-page,
+.member-shell,
+.admin-shell { --muted: #62645f; }
+
+.scorecard-footer,
+.blueprint-topline,
+.outcome-index,
+.muted-status,
+.nav-group > span,
+.engine-card-grid article > div small,
+.stage-intro small,
+.stage-lessons small,
+.reply-composer > div > div span,
+.message-stream time,
+.onboarding-note { color: var(--muted); }
+.blueprint-heading .micro-label { color: #91cac6; }
+.avatar-stack span:first-child,
+.coach-avatar { background: var(--coral-ink); }
+.week-list > li > span,
+.session-date strong,
+.capability-list article > span,
+.attention-panel small { color: var(--coral-ink); }
+.status-pill.testing,
+.status-pill.draft { color: #76520a; }
+.conversation-sla { color: #3f5d57; }
+.conversation-sla.paused { color: #5f4812; }
+.admin-metric-grid i { color: #356d59; }
+
+@media (max-width: 1179px) {
+  .dashboard-layout { grid-template-columns: 1fr; }
+  .dashboard-right-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .business-os-layout { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 960px) {
+  .desktop-nav { display: none; }
+  .hero { grid-template-columns: 1fr; gap: 58px; padding-block: 64px 80px; }
+  .hero-copy { max-width: 720px; }
+  .blueprint { max-width: 680px; }
+  .program-section { gap: 55px; }
+  .member-shell { grid-template-columns: 76px minmax(0, 1fr); }
+  .member-brand { justify-content: center; padding-inline: 0; font-size: 0; }
+  .member-brand .brand-mark { font-size: 13px; }
+  .nav-group > span, .nav-group a { font-size: 0; }
+  .nav-group a { justify-content: center; padding: 0; }
+  .nav-group a svg { width: 18px; height: 18px; }
+  .sidebar-program, .member-identity > div { display: none; }
+  .member-identity { justify-content: center; padding-inline: 0; }
+  .dashboard-grid { grid-template-columns: 1fr; }
+  .dashboard-rail { grid-template-columns: repeat(3, 1fr); }
+  .dashboard-layout { grid-template-columns: 1fr; }
+  .dashboard-right-rail { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .implementation-workspace { grid-template-columns: 230px minmax(0, 1fr); }
+  .review-rail { grid-column: 2; }
+  .workflow-grid { grid-template-columns: 1fr 1fr; }
+  .support-inbox { grid-template-columns: 230px minmax(0, 1fr); }
+  .coach-profile { display: grid; }
+  .community-layout { grid-template-columns: 190px minmax(0, 1fr); }
+  .community-rail { grid-column: 1 / -1; grid-template-columns: repeat(3, 1fr); }
+  .business-os-layout { grid-template-columns: 1fr; }
+  .admin-metric-grid { grid-template-columns: 1fr 1fr; }
+  .provisioning-queue { grid-template-columns: 200px minmax(0, 1fr); }
+  .provisioning-notes { grid-column: 1 / -1; border-left: 0; border-top: 1px solid var(--border); }
+}
+
+@media (max-width: 899px) {
+  .dashboard-right-rail,
+  .dashboard-recommendations,
+  .workflow-grid,
+  .template-grid,
+  .settings-grid { grid-template-columns: 1fr; }
+  .implementation-workspace { grid-template-columns: 1fr; }
+  .review-rail { grid-column: 1; }
+}
+
+@media (max-width: 767px) {
+  .shell { width: min(100% - 30px, 1180px); }
+  .site-header { height: 70px; }
+  .header-actions .button-quiet { display: none; }
+  .hero { padding-block: 48px 64px; }
+  .hero-copy h1 { font-size: 46px; }
+  .hero-lede { font-size: 16px; }
+  .hero-actions { align-items: flex-start; flex-direction: column; }
+  .blueprint { padding: 13px; }
+  .blueprint-heading h2 { font-size: 19px; }
+  .split-heading, .program-section { grid-template-columns: 1fr; gap: 38px; }
+  .outcome-grid { grid-template-columns: 1fr; }
+  .outcome-card { min-height: 235px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .outcome-card:last-child { border-bottom: 0; }
+  .final-cta { align-items: flex-start; flex-direction: column; padding: 30px; }
+  .site-footer { align-items: flex-start; flex-direction: column; gap: 20px; padding-block: 28px; }
+  .question-card { padding: 28px 20px; }
+  .question-card h1 { font-size: 27px; }
+  .field-grid, .report-summary, .report-action-grid, .pricing-grid, .business-os-offer, .checkout-layout { grid-template-columns: 1fr; }
+  .report-summary { text-align: center; }
+  .report-summary .score-orbit { margin-inline: auto; }
+  .report-action-grid article { border-right: 0; border-bottom: 1px solid var(--border); }
+  .report-action-grid article:last-child { border-bottom: 0; }
+  .dimension-row { grid-template-columns: 125px 1fr 25px; }
+  .report-cta { align-items: flex-start; flex-direction: column; }
+  .business-os-offer { gap: 24px; }
+  .checkout-layout { gap: 35px; }
+  .checkout-copy .brand { margin-bottom: 30px; }
+  .claim-card { padding: 31px 23px; }
+  .member-shell { display: block; }
+  .member-sidebar { position: fixed; z-index: 20; inset: auto 0 0; width: 100%; height: 58px; padding: 7px 10px; display: block; border: 1px solid var(--border); border-radius: 13px 13px 0 0; box-shadow: 0 -8px 28px rgba(16,42,53,.08); }
+  .member-sidebar .member-brand, .member-sidebar .nav-group > span, .member-sidebar .nav-group:nth-of-type(2), .member-sidebar .nav-group:nth-of-type(3), .sidebar-program, .member-identity { display: none; }
+  .member-sidebar nav, .member-sidebar .nav-group:first-child { height: 100%; display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; }
+  .member-sidebar .nav-group a { min-height: 44px; }
+  .member-topbar { height: 57px; padding-inline: 16px; }
+  .member-topbar > div:first-child strong, .member-topbar > div:first-child small { display: none; }
+  .mobile-brand { display: block; font: 750 14px var(--font-heading); }
+  .topbar-actions { gap: 6px; }
+  .status-chip { display: none; }
+  .member-page { width: min(100% - 28px, 1190px); padding-block: 28px 86px; }
+  .page-intro { align-items: flex-start; flex-direction: column; }
+  .next-action-card, .course-stage, .lesson-workspace { grid-template-columns: 1fr; }
+  .action-map { min-height: 250px; }
+  .dashboard-rail { grid-template-columns: 1fr; }
+  .dashboard-heading { align-items: flex-start; flex-direction: column; }
+  .dashboard-continue-card { grid-template-columns: 1fr; gap: 0; }
+  .dashboard-illustration { min-height: 180px; }
+  .dashboard-continue-copy { padding: 24px; }
+  .dashboard-recommendations, .dashboard-right-rail { grid-template-columns: 1fr; }
+  .engine-card-grid { grid-template-columns: 1fr; }
+  .engine-card-grid article { border-right: 0; border-bottom: 1px solid var(--border); }
+  .engine-card-grid article:last-child { border-bottom: 0; }
+  .course-stage { overflow: visible; }
+  .stage-intro { border-right: 0; border-bottom: 1px solid var(--border); }
+  .stage-lessons > a { grid-template-columns: 32px 1fr 16px; }
+  .stage-lessons .lesson-duration { display: none; }
+  .lesson-player { aspect-ratio: 16/10; }
+  .lesson-heading { padding: 25px 21px 20px; }
+  .lesson-action-card, .lesson-resource-row, .transcript-toggle { margin-inline: 21px; }
+  .transcript-toggle { width: calc(100% - 42px); }
+  .transcript-copy { padding-inline: 21px; }
+  .settings-grid, .template-grid { grid-template-columns: 1fr; }
+  .program-meter { grid-template-columns: 1fr; }
+  .week-grid { grid-template-columns: 1fr 1fr; }
+  .week-grid article { border-bottom: 1px solid var(--border); }
+  .artifact-nav { display: flex; overflow-x: auto; gap: 5px; }
+  .artifact-nav > .micro-label { display: none; }
+  .artifact-nav > button { min-width: 170px; }
+  .artifact-actions { align-items: flex-start; flex-direction: column; }
+  .workflow-grid { grid-template-columns: 1fr; }
+  .support-inbox { display: block; min-height: 0; overflow: visible; }
+  .thread-list { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+  .thread-list-head { min-width: 155px; }
+  .thread-list > button { min-width: 220px; border-right: 1px solid var(--border); }
+  .conversation-panel { min-height: 570px; }
+  .conversation-panel > header { align-items: flex-start; flex-direction: column; }
+  .reply-composer > div > div span { display: none; }
+  .coach-profile { grid-template-columns: auto minmax(0, 1fr); grid-template-rows: auto auto auto auto; }
+  .coach-profile > .coach-avatar { grid-column: 1; grid-row: 1 / span 2; }
+  .coach-profile h2 { grid-column: 2; grid-row: 1; }
+  .coach-profile > p { grid-column: 2; grid-row: 2; }
+  .coach-profile dl { grid-column: 1 / -1; grid-row: 3; padding: 14px 0 0; border-top: 1px solid var(--border); border-left: 0; }
+  .support-standard { grid-column: 1 / -1; grid-row: 4; min-width: 0; }
+  .session-card { grid-template-columns: 70px 1fr; }
+  .session-actions { grid-column: 1 / -1; }
+  .recording-grid { grid-template-columns: 1fr; }
+  .recording-grid > article { grid-template-columns: 120px 1fr; }
+  .community-layout { grid-template-columns: 1fr; }
+  .space-list { display: flex; overflow-x: auto; }
+  .space-list > .micro-label { display: none; }
+  .space-list button { min-width: max-content; }
+  .community-rail { grid-template-columns: 1fr; }
+  .capability-list { grid-template-columns: 1fr; }
+  .os-blueprint { min-width: 0; }
+  .os-pipeline { flex-wrap: wrap; }
+  .capability-list article { border-right: 0; border-bottom: 1px solid var(--border); }
+  .capability-list article:last-child { border-bottom: 0; }
+  .provisioning-success { grid-template-columns: 45px 1fr; }
+  .provisioning-success > .button { grid-column: 1 / -1; }
+  .admin-shell { display: block; }
+  .admin-sidebar { position: static; width: 100%; height: auto; padding: 12px; }
+  .admin-sidebar nav { display: flex; overflow-x: auto; }
+  .admin-sidebar nav a { min-width: max-content; min-height: 44px; }
+  .admin-workspace, .admin-settings { display: none; }
+  .admin-sidebar .brand { padding: 0 8px 12px; }
+  .admin-content > header { padding-inline: 15px; }
+  .admin-page { width: min(100% - 26px, 1170px); }
+  .admin-page-head { align-items: flex-start; flex-direction: column; }
+  .admin-search { width: 100%; }
+  .admin-search input { width: 100%; }
+  .admin-metric-grid, .admin-dashboard-grid { grid-template-columns: 1fr; }
+  .wide-panel { grid-column: auto; }
+  .revenue-strip { grid-template-columns: 1fr 1fr; }
+  .content-editor-panel > header { align-items: flex-start; flex-direction: column; gap: 13px; }
+  .content-stage-list article { padding-left: 13px; grid-template-columns: 20px 26px minmax(150px, 1fr) 76px; }
+  .content-stage-list article > i { display: none; }
+  .provisioning-queue { display: block; min-height: 0; overflow: visible; }
+  .provisioning-queue > aside:first-child { display: flex; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+  .provisioning-queue > aside:first-child > div, .provisioning-queue > aside:first-child > button { min-width: 190px; }
+  .provisioning-detail > footer { align-items: flex-start; flex-direction: column; }
+  .admin-table { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; }
+  .admin-table > header, .admin-table > button { min-width: 650px; }
+}
+
+@media (max-width: 767px) {
+  .member-shell,
+  .admin-shell { grid-template-columns: 1fr; }
+  .dashboard-continue-card { grid-template-columns: 1fr; }
+  .member-page,
+  .admin-page { width: min(100% - 32px, 100%); }
+  .topbar-browse { width: 44px; min-height: 44px; display: grid; place-items: center; border-radius: var(--radius-control); background: var(--teal-tint); }
+  .topbar-browse span { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+}

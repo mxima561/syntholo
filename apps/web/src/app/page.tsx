@@ -42,7 +42,7 @@ export default function HomePage() {
           <Link href="/pricing">Pricing</Link>
         </nav>
         <div className="header-actions">
-          <Button href="/learn" size="small" variant="quiet">
+          <Button href="/signin" size="small" variant="quiet">
             Member sign in
           </Button>
           <Button href="/scorecard" size="small">

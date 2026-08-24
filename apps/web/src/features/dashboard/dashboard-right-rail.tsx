@@ -6,13 +6,11 @@ type DashboardRightRailProps = {
   actionLabel: string;
   policyTitle: string;
   workflowName: string;
-  thread: DashboardView["supportThreads"][number];
+  coachThread: { subject: string; coachFirstName: string; lastMessage: string };
   session: NonNullable<DashboardView["upcomingSession"]>;
 };
 
-export function DashboardRightRail({ actionLabel, policyTitle, workflowName, thread, session }: DashboardRightRailProps) {
-  const reply = thread.messages.at(-1);
-
+export function DashboardRightRail({ actionLabel, policyTitle, workflowName, coachThread, session }: DashboardRightRailProps) {
   return (
     <aside className="dashboard-right-rail" aria-label="Member support and priorities">
       <section className="dashboard-rail-card dashboard-priorities-card">
@@ -25,10 +23,10 @@ export function DashboardRightRail({ actionLabel, policyTitle, workflowName, thr
         </ul>
       </section>
       <section className="dashboard-rail-card dashboard-coach-card">
-        <span className="meta-label">Naomi replied</span>
-        <h2>{thread.subject}</h2>
-        <p>“{reply?.body}”</p>
-        <Button href={`/learn/support?thread=${thread.id}`} size="small" variant="human">
+        <span className="meta-label">{coachThread.coachFirstName} said</span>
+        <h2>{coachThread.subject}</h2>
+        <p>“{coachThread.lastMessage}”</p>
+        <Button href="/learn/support" size="small" variant="human">
           Ask a coach <MessageSquareText size={14} />
         </Button>
       </section>

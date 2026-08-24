@@ -4,9 +4,9 @@
 
 **Goal:** Build a polished, responsive Syntholo platform that demonstrates every approved public, member, coach, administrator, and Business OS workflow end to end, with vendor adapters ready for production credentials.
 
-**Architecture:** Use a Next.js App Router application organized into feature modules. Domain behavior lives in typed, framework-independent services with Vitest coverage; server components render the default experience and client components handle interactive demo flows. Production integrations sit behind adapters so the app runs locally with deterministic demo data and switches to WorkOS, MongoDB, Stripe, Mux, Resend, PostHog, and HighLevel when configured.
+**Architecture:** Use a Next.js App Router application organized into feature modules. Domain behavior lives in typed, framework-independent services with Vitest coverage; server components render the default experience and client components handle interactive demo flows. Production integrations sit behind adapters so the app runs locally with deterministic demo data and switches to Cloudflare Access, MongoDB, Stripe, Mux, Resend, PostHog, and HighLevel when configured.
 
-**Tech Stack:** Next.js 16, React 19, TypeScript, Tailwind CSS 4, Vitest, Testing Library, Playwright, Zod, Lucide React, MongoDB driver, WorkOS AuthKit, Stripe, Mux Player, Resend, PostHog, Vercel Blob.
+**Tech Stack:** Next.js 16, React 19, TypeScript, Tailwind CSS 4, Vitest, Testing Library, Playwright, Zod, Lucide React, MongoDB driver, Clerk / Cloudflare Access, Stripe, Mux Player, Resend, PostHog, Vercel Blob.
 
 ## Global Constraints
 
@@ -168,7 +168,7 @@ expect(canAccess("community_write", [{ kind: "community_write", status: "expired
 
 **Files:**
 - Create: `src/lib/config/env.ts`, `src/lib/integrations/contracts.ts`
-- Create: `src/lib/integrations/mongodb.ts`, `src/lib/integrations/workos.ts`, `src/lib/integrations/stripe.ts`, `src/lib/integrations/mux.ts`, `src/lib/integrations/resend.ts`, `src/lib/integrations/posthog.ts`
+- Create: `src/lib/integrations/mongodb.ts`, `src/lib/integrations/access.ts`, `src/lib/integrations/stripe.ts`, `src/lib/integrations/mux.ts`, `src/lib/integrations/resend.ts`, `src/lib/integrations/posthog.ts`
 - Create: `src/app/api/health/route.ts`, `src/app/api/webhooks/stripe/route.ts`
 - Test: `src/lib/config/env.test.ts`, `src/app/api/webhooks/stripe/route.test.ts`
 

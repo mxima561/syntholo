@@ -1,0 +1,23 @@
+{
+  "name": "@syntholo/domain",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./course": "./src/course.ts",
+    "./entitlements": "./src/entitlements.ts",
+    "./identity": "./src/identity.ts",
+    "./next-action": "./src/next-action.ts",
+    "./offers": "./src/offers.ts",
+    "./types": "./src/types.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "4.1.10"
+  }
+}

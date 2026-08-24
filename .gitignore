@@ -10,3 +10,4 @@ work/
 *.tsbuildinfo
 .superpowers/
 .worktrees/
+graphify-out/

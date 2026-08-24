@@ -6,8 +6,8 @@ describe("parseRuntimeEnv", () => {
     expect(parseRuntimeEnv({ APP_MODE: "demo" })).toMatchObject({ mode: "demo", vendorsConfigured: false });
   });
 
-  it("rejects a partial Stripe configuration", () => {
-    expect(() => parseRuntimeEnv({ APP_MODE: "demo", STRIPE_SECRET_KEY: "sk_test_partial" })).toThrow(/stripe/i);
+  it("rejects a partial Clerk configuration", () => {
+    expect(() => parseRuntimeEnv({ APP_MODE: "demo", CLERK_SECRET_KEY: "sk_test_partial" })).toThrow(/clerk/i);
   });
 
   it("requires every production integration", () => {

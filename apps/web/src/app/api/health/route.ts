@@ -8,7 +8,7 @@ export function GET() {
       ok: true,
       mode: env.mode,
       integrations: {
-        mongodb: Boolean(env.mongodb), workos: Boolean(env.workos), stripe: Boolean(env.stripe), mux: Boolean(env.mux),
+        mongodb: Boolean(env.mongodb), clerk: Boolean(env.clerk), stripe: Boolean(env.stripe), mux: Boolean(env.mux),
         resend: Boolean(env.resend), posthog: Boolean(env.posthog), blob: Boolean(env.blobToken), highlevel: Boolean(env.highlevel),
       },
       checkedAt: new Date().toISOString(),

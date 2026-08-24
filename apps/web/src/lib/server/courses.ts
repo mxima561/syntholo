@@ -1,4 +1,4 @@
-import type { AccountRole } from "@/lib/server/accounts";
+export type AccountRole = "student";
 
 export type DbStage = {
   id: string;
@@ -65,7 +65,16 @@ function toDbLesson(row: LessonRow): DbLesson {
   };
 }
 
-export async function getPrimaryCourse(includeDrafts = false) {
+export type PrimaryCourse = {
+  id: string;
+  title: string;
+  description: string;
+  status: "draft" | "published";
+  updatedAt: Date;
+  stages: Array<DbStage & { lessons: DbLesson[] }>;
+};
+
+export async function getPrimaryCourse(includeDrafts = false): Promise<PrimaryCourse | null> {
   const { getReadyDb } = await import("@/lib/db/client");
   const db = await getReadyDb();
   const [course] = includeDrafts
@@ -77,22 +86,30 @@ export async function getPrimaryCourse(includeDrafts = false) {
     SELECT id, number, title, short_title AS "shortTitle", description, release_week AS "releaseWeek"
     FROM course_stages WHERE course_id = ${course.id} ORDER BY number
   `;
-  const lessonRows = includeDrafts
-    ? await db`SELECT * FROM lessons WHERE course_id = ${course.id} ORDER BY stage_id, number, title`
-    : await db`SELECT * FROM lessons WHERE course_id = ${course.id} AND is_published ORDER BY stage_id, number, title`;
+  const lessonRows =
+    includeDrafts
+      ? await db`SELECT * FROM lessons WHERE course_id = ${course.id} ORDER BY stage_id, number, title`
+      : await db`SELECT * FROM lessons WHERE course_id = ${course.id} AND is_published ORDER BY stage_id, number, title`;
 
   return {
-    ...course,
-    status: course.status as "draft" | "published",
-    updatedAt: course.updated_at as Date,
+    id: String(course.id),
+    title: String(course.title),
+    description: String(course.description),
+    status: course.status === "published" ? "published" : "draft",
+    updatedAt: new Date(course.updated_at as string),
     stages: stages.map((stage) => ({
-      ...stage,
-      lessons: lessonRows.filter((lesson) => lesson.stage_id === stage.id).map(toDbLesson),
+      id: String(stage.id),
+      number: Number(stage.number),
+      title: String(stage.title),
+      shortTitle: String(stage.shortTitle),
+      description: String(stage.description),
+      releaseWeek: Number(stage.releaseWeek),
+      lessons: lessonRows
+        .filter((lesson) => lesson.stage_id === stage.id)
+        .map((row) => toDbLesson(row as LessonRow)),
     })),
   };
 }
-
-export type PrimaryCourse = NonNullable<Awaited<ReturnType<typeof getPrimaryCourse>>>;
 
 export async function getCompletedLessonIds(userId: string): Promise<string[]> {
   const { getReadyDb } = await import("@/lib/db/client");
@@ -147,7 +164,7 @@ export async function getLessonById(lessonId: string, includeDrafts = false) {
   const rows = includeDrafts
     ? await db`SELECT * FROM lessons WHERE id = ${lessonId}`
     : await db`SELECT * FROM lessons WHERE id = ${lessonId} AND is_published`;
-  return rows[0] ? toDbLesson(rows[0]) : null;
+  return rows[0] ? toDbLesson(rows[0] as LessonRow) : null;
 }
 
 export async function getNextPublishedLesson(afterNumber: number) {
@@ -157,14 +174,26 @@ export async function getNextPublishedLesson(afterNumber: number) {
     SELECT * FROM lessons WHERE is_published AND number > ${afterNumber}
     ORDER BY number LIMIT 1
   `;
-  return row ? toDbLesson(row) : null;
+  return row ? toDbLesson(row as LessonRow) : null;
 }
 
 // ---------------------------------------------------------------------------
 // Admin analytics
 // ---------------------------------------------------------------------------
 
-export async function getAdminOverview() {
+export type AdminOverview = {
+  studentCount: number;
+  adminCount: number;
+  completions: number;
+  activeLearners: number;
+  totalLessons: number;
+  publishedLessons: number;
+  recentStudents: Array<{ id: string; email: string; firstName: string; lastName: string; role: AccountRole; createdAt: Date }>;
+  recentCompletions: Array<{ lessonId: string; lessonTitle: string; email: string; firstName: string; lastName: string; completedAt: Date | null }>;
+  stageCompletion: Array<{ stageTitle: string; lessonCount: number; completions: number }>;
+};
+
+export async function getAdminOverview(): Promise<AdminOverview> {
   const { getReadyDb } = await import("@/lib/db/client");
   const db = await getReadyDb();
 
@@ -172,7 +201,7 @@ export async function getAdminOverview() {
     SELECT COUNT(*)::int AS count FROM app_users WHERE role = 'student'
   `;
   const [adminCount] = await db`
-    SELECT COUNT(*)::int AS count FROM app_users WHERE role = 'admin'
+    SELECT COUNT(*)::int AS count FROM staff WHERE status = 'active'
   `;
   const [completion] = await db`
     SELECT COUNT(*)::int AS completions, COUNT(DISTINCT user_id)::int AS learners
@@ -181,11 +210,11 @@ export async function getAdminOverview() {
   const [lessonCounts] = await db`
     SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE is_published)::int AS published FROM lessons
   `;
-  const recentStudents = await db`
+  const recentStudentRows = await db`
     SELECT id, email, first_name AS "firstName", last_name AS "lastName", role, created_at AS "createdAt"
     FROM app_users ORDER BY created_at DESC LIMIT 5
   `;
-  const recentCompletions = await db`
+  const recentCompletionRows = await db`
     SELECT lp.lesson_id AS "lessonId", l.title AS "lessonTitle", u.email, u.first_name AS "firstName", u.last_name AS "lastName", lp.completed_at AS "completedAt"
     FROM lesson_progress lp
     JOIN app_users u ON u.id = lp.user_id
@@ -193,7 +222,7 @@ export async function getAdminOverview() {
     WHERE lp.status = 'completed'
     ORDER BY lp.completed_at DESC LIMIT 6
   `;
-  const stageCompletion = await db`
+  const stageRows = await db`
     SELECT cs.title AS "stageTitle", COUNT(l.id)::int AS "lessonCount",
            COUNT(lp.*)::int AS completions
     FROM course_stages cs
@@ -203,19 +232,48 @@ export async function getAdminOverview() {
   `;
 
   return {
-    studentCount: studentCount.count,
-    adminCount: adminCount.count,
-    completions: completion.completions,
-    activeLearners: completion.learners,
-    totalLessons: lessonCounts.total,
-    publishedLessons: lessonCounts.published,
-    recentStudents,
-    recentCompletions,
-    stageCompletion,
+    studentCount: Number(studentCount.count),
+    adminCount: Number(adminCount.count),
+    completions: Number(completion.completions),
+    activeLearners: Number(completion.learners),
+    totalLessons: Number(lessonCounts.total),
+    publishedLessons: Number(lessonCounts.published),
+    recentStudents: recentStudentRows.map((row) => ({
+      id: String(row.id),
+      email: String(row.email),
+      firstName: String(row.firstName ?? ""),
+      lastName: String(row.lastName ?? ""),
+      role: "student" as const,
+      createdAt: new Date(row.createdAt as string),
+    })),
+    recentCompletions: recentCompletionRows.map((row) => ({
+      lessonId: String(row.lessonId),
+      lessonTitle: String(row.lessonTitle),
+      email: String(row.email),
+      firstName: String(row.firstName ?? ""),
+      lastName: String(row.lastName ?? ""),
+      completedAt: row.completedAt ? new Date(row.completedAt as string) : null,
+    })),
+    stageCompletion: stageRows.map((row) => ({
+      stageTitle: String(row.stageTitle),
+      lessonCount: Number(row.lessonCount),
+      completions: Number(row.completions),
+    })),
   };
 }
 
-export async function listStudents() {
+export type StudentRecord = {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  role: AccountRole;
+  createdAt: Date;
+  lastSeenAt: Date;
+  completedLessons: number;
+};
+
+export async function listStudents(): Promise<StudentRecord[]> {
   const { getReadyDb } = await import("@/lib/db/client");
   const db = await getReadyDb();
   const rows = await db`
@@ -223,13 +281,23 @@ export async function listStudents() {
       (SELECT COUNT(*)::int FROM lesson_progress lp WHERE lp.user_id = u.id AND lp.status = 'completed') AS "completedLessons"
     FROM app_users u ORDER BY u.created_at DESC
   `;
-  return rows.map((row) => ({ ...row, role: row.role as AccountRole }));
+  return rows.map((row) => ({
+    id: String(row.id),
+    email: String(row.email),
+    firstName: String(row.firstName ?? ""),
+    lastName: String(row.lastName ?? ""),
+    role: "student" as const,
+    createdAt: new Date(row.createdAt as string),
+    lastSeenAt: new Date(row.lastSeenAt as string),
+    completedLessons: Number(row.completedLessons),
+  }));
 }
 
 export async function setUserRole(userId: string, role: AccountRole) {
   const { getReadyDb } = await import("@/lib/db/client");
   const db = await getReadyDb();
-  await db`UPDATE app_users SET role = ${role} WHERE id = ${userId}`;
+  await db`UPDATE app_users SET role = 'student' WHERE id = ${userId}`;
+  void role;
 }
 
 // ---------------------------------------------------------------------------

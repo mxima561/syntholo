@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { getSignInUrl } from "@workos-inc/authkit-nextjs";
-import { isWorkosConfigured } from "@/lib/server/accounts";
+import { redirect } from "next/navigation";
+import { getCurrentAccount, isClerkConfigured } from "@/lib/server/accounts";
+import { ClerkSignIn } from "./clerk-sign-in";
 
 export const dynamic = "force-dynamic";
 
@@ -9,37 +10,30 @@ function SetupNotice() {
     <div className="signin-page">
       <div className="signin-card">
         <Link className="brand" href="/"><span className="brand-mark">S</span> Syntholo</Link>
-        <h1>Sign-in needs WorkOS configuration</h1>
+        <h1>Sign-in needs Clerk configuration</h1>
         <p>
-          Authentication runs on WorkOS AuthKit. Add the three values below to your <code>.env</code>,
+          Student authentication runs on Clerk. Add the values below to your <code>.env</code>,
           then restart <code>npm run dev</code>.
         </p>
         <ol>
-          <li>Create a free project at dashboard.workos.com</li>
-          <li>Copy the <strong>API secret key</strong> into <code>WORKOS_API_KEY</code></li>
-          <li>Copy the <strong>Client ID</strong> into <code>WORKOS_CLIENT_ID</code></li>
-          <li>Set <code>WORKOS_COOKIE_PASSWORD</code> to any long random string (32+ chars)</li>
-          <li>In WorkOS → Redirects, add <code>{process.env.APP_URL ?? "http://localhost:3000"}/callback</code></li>
+          <li>Create a US Clerk application at dashboard.clerk.com</li>
+          <li>Copy the <strong>Publishable key</strong> into <code>NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY</code></li>
+          <li>Copy the <strong>Secret key</strong> into <code>CLERK_SECRET_KEY</code></li>
+          <li>Enable magic-link email and any approved social providers. Do not store student PII in Clerk metadata.</li>
         </ol>
-        <p><a href="/">← Back to site</a></p>
+        <p><Link href="/learn">Preview the academy in demo mode</Link></p>
+        <p><Link href="/">← Back to site</Link></p>
       </div>
     </div>
   );
 }
 
 export default async function SignInPage() {
-  if (!isWorkosConfigured()) {
+  const account = await getCurrentAccount();
+  if (account) redirect("/learn");
+
+  if (!isClerkConfigured()) {
     return <SetupNotice />;
   }
-  const signInUrl = await getSignInUrl();
-  return (
-    <div className="signin-page">
-      <div className="signin-card">
-        <Link className="brand" href="/"><span className="brand-mark">S</span> Syntholo</Link>
-        <h1>Welcome back</h1>
-        <p>Sign in with your work email to reach your academy workspace.</p>
-        <a className="button button-primary button-large" href={signInUrl}>Continue to secure sign-in →</a>
-      </div>
-    </div>
-  );
+  return <ClerkSignIn />;
 }

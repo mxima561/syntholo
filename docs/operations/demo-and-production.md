@@ -16,7 +16,7 @@
 
 1. Create separate vendor projects for staging and production.
 2. Store secrets in the deployment platform; never commit `.env.local`.
-3. Configure WorkOS callback/logout URLs and organization membership rules.
+3. Configure Clerk (student app, US instance) and Cloudflare Access (admin origin). Record the Access AUD tag and team domain in 1Password.
 4. Create Stripe products/prices for Self-Paced, Operator Club, and Business OS setup/monthly billing.
 5. Register Stripe’s webhook URL at `https://<domain>/api/webhooks/stripe` and subscribe only to checkout, payment, subscription, invoice, dispute, and refund events the entitlement service uses.
 6. Create MongoDB indexes for organization scoping, unique identity IDs, lesson progress, artifact version, support SLA, and unique webhook provider/event ID.
@@ -33,7 +33,7 @@
 4. Stripe Checkout collects payment and sends a signed webhook.
 5. Webhook signature is verified and event ID is atomically claimed in MongoDB. Replays return success without applying fulfillment twice.
 6. Fulfillment creates the purchase, organization, three-seat entitlement, account-claim token, and receipt email.
-7. WorkOS claims the account and binds the identity to exactly one customer organization.
+7. Clerk claims the student account. Staff never sign in through Clerk.
 8. Refunds/revocations update entitlements through the same idempotent event path.
 
 Operations response: a payment may never create duplicate seats or duplicate renewal records. A vendor outage is retried from the durable receipt/job record and must not block learning or support.
@@ -91,7 +91,8 @@ The offer must always disclose that Syntholo configures and supports a white-lab
 | Incident | Immediate action | Customer impact rule |
 |---|---|---|
 | Stripe webhook backlog | Pause manual fulfillment, inspect receipt IDs, replay signed events | Never fulfill the same event twice |
-| WorkOS unavailable | Keep public/course content cached; show access status | Do not bypass authorization |
+| Clerk unavailable | Keep public/course content cached; show access status | Do not bypass authorization |
+| Cloudflare Access unavailable | Admin origin stays closed | Do not set `ADMIN_DEV_BYPASS_EMAIL` in production; use the break-glass procedure |
 | MongoDB unavailable | Enter read-only/degraded mode and queue safe writes | Do not write to demo data |
 | Mux unavailable | Show transcript/resources and retry playback | Learning remains useful |
 | Email unavailable | Preserve notification jobs and retry | Account/security notices take priority |
@@ -108,3 +109,42 @@ The offer must always disclose that Syntholo configures and supports a white-lab
 - HighLevel snapshot and seven-check activation runbook are approved.
 - Analytics events exclude confidential customer content.
 - Restore, incident, cancellation/export, and customer support drills are complete.
+
+## 11. Admin origin, Cloudflare Access, and staff
+
+The admin origin is not publicly routable. Identity is asserted by Cloudflare Access and authorized against the `staff` table.
+
+### Origin lock (required)
+
+Use a **Cloudflare Tunnel** (`cloudflared`) so the admin process has no public inbound DNS. Do not put a public Railway/Vercel hostname on the admin service. Authenticated Origin Pulls (mTLS) is disaster-recovery only, not the primary design. If the origin is reachable on the public internet, a forged `Cf-Access-Jwt-Assertion` header is a release blocker.
+
+### Access application (do this in the Cloudflare dashboard, not in code)
+
+- Application covering `admin.<domain>`, session duration **8 hours**.
+- Policy: allow specific emails or a Google Workspace group. **Require MFA**. Add a country restriction if it does not break travel.
+- Record the **AUD tag** and team domain (`https://<team>.cloudflareaccess.com`) in this runbook and in 1Password as `CF_ACCESS_AUD` / `CF_ACCESS_TEAM_DOMAIN`.
+
+### Env vars
+
+**Both apps:** `DATABASE_URL`, `APP_MODE`
+
+**`apps/web`:** `CLERK_SECRET_KEY`, `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, Stripe/Mux/Resend/PostHog/Blob as needed. Clerk US data residency is a dashboard setting.
+
+**`apps/admin`:** `CF_ACCESS_AUD`, `CF_ACCESS_TEAM_DOMAIN`, optional `STRIPE_SECRET_KEY` for refunds. `ADMIN_DEV_BYPASS_EMAIL` is honored only when `NODE_ENV !== production` and `CF_ACCESS_AUD` is unset. A production build with that env set fails.
+
+### Staff onboarding
+
+1. Add the person to the Cloudflare Access allow policy (and MFA).
+2. Insert an active `staff` row (`npm run db:seed-staff` or Admin → Staff). Role is `admin`, `instructor`, or `support`.
+3. There is no auto-provisioning. A valid Access JWT with no staff row is 403.
+
+### Staff offboarding
+
+1. Suspend or delete the Access policy membership (this kills the proxy session).
+2. Set `staff.status = 'suspended'` (Admin → Staff). Do not leave an active row.
+
+### Break-glass
+
+1. **Cloudflare is down:** two-person approval. Wait, or temporarily expose the origin with Authenticated Origin Pulls plus an IP allowlist. Never set `ADMIN_DEV_BYPASS_EMAIL` in production.
+2. **Last admin locked out of Access:** Cloudflare account owner (1Password) updates the Access policy. If the `staff` row is wrong, a second person applies reviewed SQL on Neon. Record both names and the ticket in the incident notes (SQL is not written to `admin_audit_log`).
+
