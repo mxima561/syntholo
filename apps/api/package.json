@@ -11,6 +11,8 @@
     "build": "tsc --noEmit"
   },
   "dependencies": {
+    "stripe": "^18.5.0",
+    "@syntholo/db": "*",
     "@syntholo/contracts": "*",
     "fastify": "^5.12.1"
   },

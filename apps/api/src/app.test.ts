@@ -14,4 +14,18 @@ describe("api health", () => {
     expect(response.json()).toEqual({ ok: true, service: "api", releaseSha: "gate1" });
     await app.close();
   });
+
+  it("returns 503 when Stripe is not configured", async () => {
+    vi.stubEnv("STRIPE_SECRET_KEY", "");
+    vi.stubEnv("STRIPE_WEBHOOK_SECRET", "");
+    const app = buildApi();
+    const response = await app.inject({
+      method: "POST",
+      url: "/webhooks/stripe",
+      headers: { "content-type": "application/json" },
+      payload: "{}",
+    });
+    expect(response.statusCode).toBe(503);
+    await app.close();
+  });
 });

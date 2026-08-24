@@ -6,8 +6,11 @@ import {
   addCommunityComment,
   createWorkflow,
   getCertificate,
+  inviteTeammate,
   issueCertificateIfEligible,
   reportCommunityPost,
+  revokeInvitation,
+  revokeMembership,
   rsvpLiveSession,
   saveArtifact,
   setWorkflowStatus,
@@ -19,6 +22,7 @@ import {
   type WorkflowStatus,
 } from "@syntholo/db";
 import { requireAcademyAccount, type Account } from "@/lib/server/accounts";
+import { getRuntimeEnv } from "@/lib/config/env";
 import {
   setLessonProgress,
   ensureEnrollment,
@@ -294,4 +298,45 @@ export async function updateProfileAction(formData: FormData) {
   });
   await logStudent(account, "profile_updated", "user", account.id, `${firstName} ${lastName} updated their profile`);
   revalidatePath("/learn", "layout");
+}
+
+export type InviteState = { error?: string; inviteUrl?: string };
+
+export async function inviteTeammateAction(_prev: InviteState, formData: FormData): Promise<InviteState> {
+  const account = await requireAcademyAccount();
+  if (account.membershipRole !== "owner") {
+    return { error: "Only the account owner can invite teammates." };
+  }
+  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  if (!email) return { error: "Enter an email address." };
+  try {
+    const { token } = await inviteTeammate({
+      accountId: account.accountId,
+      email,
+      invitedBy: account.id,
+    });
+    const origin = getRuntimeEnv().appUrl.replace(/\/$/, "");
+    revalidatePath("/learn/settings");
+    return { inviteUrl: `${origin}/invite/${token}` };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Could not create that invite." };
+  }
+}
+
+export async function revokeInvitationAction(formData: FormData) {
+  const account = await requireAcademyAccount();
+  if (account.membershipRole !== "owner") return;
+  const invitationId = String(formData.get("invitationId") ?? "").trim();
+  if (!invitationId) return;
+  await revokeInvitation(account.accountId, invitationId);
+  revalidatePath("/learn/settings");
+}
+
+export async function revokeMembershipAction(formData: FormData) {
+  const account = await requireAcademyAccount();
+  if (account.membershipRole !== "owner") return;
+  const membershipId = String(formData.get("membershipId") ?? "").trim();
+  if (!membershipId || membershipId === account.membershipId) return;
+  await revokeMembership(account.accountId, membershipId);
+  revalidatePath("/learn/settings");
 }

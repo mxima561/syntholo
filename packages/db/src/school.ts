@@ -5,6 +5,7 @@ import {
   DEFAULT_SOFTWARE_CHECKLIST,
   DEFAULT_SOFTWARE_CHECKS,
 } from "./catalog";
+import { withStaffScope, withSystemScope, withUserAccountScope } from "./scope";
 
 export type ArtifactKind =
   | "readiness_map"
@@ -178,51 +179,54 @@ export async function ensureStudentWorkspace(input: {
   userId: string;
   displayName: string;
 }): Promise<void> {
-  const db = await getReadyDb();
-  const [existing] = await db`SELECT COUNT(*)::int AS count FROM artifacts WHERE user_id = ${input.userId}`;
-  if (existing.count === 0) {
-    for (const starter of ARTIFACT_STARTERS) {
-      await db`
-        INSERT INTO artifacts (user_id, kind, title, status, body, updated_by)
-        VALUES (${input.userId}, ${starter.kind}, ${starter.title}, 'not_started', ${starter.body}, ${input.displayName})
-      `;
+  await withUserAccountScope(input.userId, async (db, membership) => {
+    const [existing] = await db`SELECT COUNT(*)::int AS count FROM artifacts WHERE account_id = ${membership.accountId}`;
+    if (existing.count === 0) {
+      for (const starter of ARTIFACT_STARTERS) {
+        await db`
+          INSERT INTO artifacts (account_id, user_id, kind, title, status, body, updated_by)
+          VALUES (${membership.accountId}, ${input.userId}, ${starter.kind}, ${starter.title}, 'not_started', ${starter.body}, ${input.displayName})
+        `;
+      }
     }
-  }
-  const [workflows] = await db`SELECT COUNT(*)::int AS count FROM workflows WHERE user_id = ${input.userId}`;
-  if (workflows.count === 0) {
-    const starters: Array<{ name: string; engine: WorkflowEngine }> = [
-      { name: "Growth workflow", engine: "growth" },
-      { name: "Client workflow", engine: "client" },
-      { name: "Management workflow", engine: "management" },
-    ];
-    for (const starter of starters) {
+    const [workflows] = await db`SELECT COUNT(*)::int AS count FROM workflows WHERE account_id = ${membership.accountId}`;
+    if (workflows.count === 0) {
+      const starters: Array<{ name: string; engine: WorkflowEngine }> = [
+        { name: "Growth workflow", engine: "growth" },
+        { name: "Client workflow", engine: "client" },
+        { name: "Management workflow", engine: "management" },
+      ];
+      for (const starter of starters) {
+        await db`
+          INSERT INTO workflows (account_id, user_id, name, engine, owner, human_review_point)
+          VALUES (
+            ${membership.accountId}, ${input.userId}, ${starter.name}, ${starter.engine}, ${input.displayName},
+            ${"Named owner reviews the output before it goes to a client or the team."}
+          )
+        `;
+      }
+    }
+    const [software] = await db`SELECT id FROM software_accounts WHERE account_id = ${membership.accountId}`;
+    if (!software) {
       await db`
-        INSERT INTO workflows (user_id, name, engine, owner, human_review_point)
+        INSERT INTO software_accounts (account_id, user_id, status, checklist_json, checks_json)
         VALUES (
-          ${input.userId}, ${starter.name}, ${starter.engine}, ${input.displayName},
-          ${"Named owner reviews the output before it goes to a client or the team."}
+          ${membership.accountId},
+          ${input.userId},
+          'pending_onboarding',
+          ${JSON.stringify(DEFAULT_SOFTWARE_CHECKLIST)}::jsonb,
+          ${JSON.stringify([])}::jsonb
         )
       `;
     }
-  }
-  const [software] = await db`SELECT id FROM software_accounts WHERE user_id = ${input.userId}`;
-  if (!software) {
-    await db`
-      INSERT INTO software_accounts (user_id, status, checklist_json, checks_json)
-      VALUES (
-        ${input.userId},
-        'pending_onboarding',
-        ${JSON.stringify(DEFAULT_SOFTWARE_CHECKLIST)}::jsonb,
-        ${JSON.stringify([])}::jsonb
-      )
-    `;
-  }
+  });
 }
 
 export async function listArtifacts(userId: string): Promise<ArtifactRecord[]> {
-  const db = await getReadyDb();
-  const rows = await db`SELECT * FROM artifacts WHERE user_id = ${userId} ORDER BY created_at`;
-  return rows.map(mapArtifact);
+  return withUserAccountScope(userId, async (db, membership) => {
+    const rows = await db`SELECT * FROM artifacts WHERE account_id = ${membership.accountId} ORDER BY created_at`;
+    return rows.map(mapArtifact);
+  });
 }
 
 export async function saveArtifact(input: {
@@ -233,31 +237,33 @@ export async function saveArtifact(input: {
   finalize?: boolean;
   requestReview?: boolean;
 }): Promise<ArtifactRecord | null> {
-  const db = await getReadyDb();
-  const status = input.finalize ? "final" : "draft";
-  const reviewStatus = input.requestReview ? "requested" : undefined;
-  const [row] = reviewStatus
-    ? await db`
-        UPDATE artifacts
-        SET body = ${input.body}, status = ${status}, version = version + 1,
-            review_status = ${reviewStatus}, updated_by = ${input.updatedBy}, updated_at = now()
-        WHERE id = ${input.artifactId} AND user_id = ${input.userId}
-        RETURNING *
-      `
-    : await db`
-        UPDATE artifacts
-        SET body = ${input.body}, status = ${status}, version = version + 1,
-            updated_by = ${input.updatedBy}, updated_at = now()
-        WHERE id = ${input.artifactId} AND user_id = ${input.userId}
-        RETURNING *
-      `;
-  return row ? mapArtifact(row) : null;
+  return withUserAccountScope(input.userId, async (db, membership) => {
+    const status = input.finalize ? "final" : "draft";
+    const reviewStatus = input.requestReview ? "requested" : undefined;
+    const [row] = reviewStatus
+      ? await db`
+          UPDATE artifacts
+          SET body = ${input.body}, status = ${status}, version = version + 1,
+              review_status = ${reviewStatus}, updated_by = ${input.updatedBy}, updated_at = now()
+          WHERE id = ${input.artifactId} AND account_id = ${membership.accountId}
+          RETURNING *
+        `
+      : await db`
+          UPDATE artifacts
+          SET body = ${input.body}, status = ${status}, version = version + 1,
+              updated_by = ${input.updatedBy}, updated_at = now()
+          WHERE id = ${input.artifactId} AND account_id = ${membership.accountId}
+          RETURNING *
+        `;
+    return row ? mapArtifact(row) : null;
+  });
 }
 
 export async function listWorkflows(userId: string): Promise<WorkflowRecord[]> {
-  const db = await getReadyDb();
-  const rows = await db`SELECT * FROM workflows WHERE user_id = ${userId} ORDER BY created_at`;
-  return rows.map(mapWorkflow);
+  return withUserAccountScope(userId, async (db, membership) => {
+    const rows = await db`SELECT * FROM workflows WHERE account_id = ${membership.accountId} ORDER BY created_at`;
+    return rows.map(mapWorkflow);
+  });
 }
 
 export async function createWorkflow(input: {
@@ -266,13 +272,14 @@ export async function createWorkflow(input: {
   engine: WorkflowEngine;
   owner: string;
 }): Promise<WorkflowRecord> {
-  const db = await getReadyDb();
-  const [row] = await db`
-    INSERT INTO workflows (user_id, name, engine, owner)
-    VALUES (${input.userId}, ${input.name}, ${input.engine}, ${input.owner})
-    RETURNING *
-  `;
-  return mapWorkflow(row);
+  return withUserAccountScope(input.userId, async (db, membership) => {
+    const [row] = await db`
+      INSERT INTO workflows (account_id, user_id, name, engine, owner)
+      VALUES (${membership.accountId}, ${input.userId}, ${input.name}, ${input.engine}, ${input.owner})
+      RETURNING *
+    `;
+    return mapWorkflow(row);
+  });
 }
 
 export async function updateWorkflow(input: {
@@ -286,22 +293,23 @@ export async function updateWorkflow(input: {
   target: string;
   approvedTools: string;
 }): Promise<WorkflowRecord | null> {
-  const db = await getReadyDb();
-  const tools = input.approvedTools.split(",").map((item) => item.trim()).filter(Boolean);
-  const [row] = await db`
-    UPDATE workflows SET
-      name = ${input.name},
-      problem = ${input.problem},
-      owner = ${input.owner},
-      human_review_point = ${input.humanReviewPoint},
-      baseline = ${input.baseline},
-      target = ${input.target},
-      approved_tools = ${tools},
-      updated_at = now()
-    WHERE id = ${input.workflowId} AND user_id = ${input.userId}
-    RETURNING *
-  `;
-  return row ? mapWorkflow(row) : null;
+  return withUserAccountScope(input.userId, async (db, membership) => {
+    const tools = input.approvedTools.split(",").map((item) => item.trim()).filter(Boolean);
+    const [row] = await db`
+      UPDATE workflows SET
+        name = ${input.name},
+        problem = ${input.problem},
+        owner = ${input.owner},
+        human_review_point = ${input.humanReviewPoint},
+        baseline = ${input.baseline},
+        target = ${input.target},
+        approved_tools = ${tools},
+        updated_at = now()
+      WHERE id = ${input.workflowId} AND account_id = ${membership.accountId}
+      RETURNING *
+    `;
+    return row ? mapWorkflow(row) : null;
+  });
 }
 
 export async function setWorkflowStatus(input: {
@@ -309,19 +317,20 @@ export async function setWorkflowStatus(input: {
   userId: string;
   status: WorkflowStatus;
 }): Promise<WorkflowRecord | null> {
-  const db = await getReadyDb();
-  const launchDate = input.status === "live" ? new Date() : null;
-  const [row] = await db`
-    UPDATE workflows
-    SET status = ${input.status}, launch_date = COALESCE(${launchDate}, launch_date), updated_at = now()
-    WHERE id = ${input.workflowId} AND user_id = ${input.userId}
-    RETURNING *
-  `;
-  return row ? mapWorkflow(row) : null;
+  return withUserAccountScope(input.userId, async (db, membership) => {
+    const launchDate = input.status === "live" ? new Date() : null;
+    const [row] = await db`
+      UPDATE workflows
+      SET status = ${input.status}, launch_date = COALESCE(${launchDate}, launch_date), updated_at = now()
+      WHERE id = ${input.workflowId} AND account_id = ${membership.accountId}
+      RETURNING *
+    `;
+    return row ? mapWorkflow(row) : null;
+  });
 }
 
 export async function listLiveSessions(viewerId?: string | null): Promise<LiveSessionRecord[]> {
-  const db = await getReadyDb();
+  return withSystemScope(async (db) => {
   const rows = viewerId
     ? await db`
         SELECT s.*,
@@ -352,17 +361,19 @@ export async function listLiveSessions(viewerId?: string | null): Promise<LiveSe
     rsvpCount: Number(row.rsvp_count),
     reservedByViewer: Boolean(row.reserved),
   }));
+  });
 }
 
 export async function rsvpLiveSession(sessionId: string, userId: string): Promise<boolean> {
-  const db = await getReadyDb();
-  const inserted = await db`
-    INSERT INTO session_rsvps (session_id, user_id)
-    VALUES (${sessionId}, ${userId})
-    ON CONFLICT DO NOTHING
-    RETURNING session_id
-  `;
-  return inserted.length > 0;
+  return withUserAccountScope(userId, async (db, membership) => {
+    const inserted = await db`
+      INSERT INTO session_rsvps (account_id, session_id, user_id)
+      VALUES (${membership.accountId}, ${sessionId}, ${userId})
+      ON CONFLICT DO NOTHING
+      RETURNING session_id
+    `;
+    return inserted.length > 0;
+  });
 }
 
 export async function createLiveSession(input: {
@@ -412,9 +423,10 @@ export async function getCourseTemplate(id: string): Promise<CourseTemplate | nu
 }
 
 export async function getSoftwareAccount(userId: string): Promise<SoftwareAccountRecord | null> {
-  const db = await getReadyDb();
-  const [row] = await db`SELECT * FROM software_accounts WHERE user_id = ${userId}`;
-  return row ? mapSoftware(row) : null;
+  return withUserAccountScope(userId, async (db, membership) => {
+    const [row] = await db`SELECT * FROM software_accounts WHERE account_id = ${membership.accountId}`;
+    return row ? mapSoftware(row) : null;
+  });
 }
 
 function mapSoftware(row: Record<string, unknown>): SoftwareAccountRecord {
@@ -436,77 +448,84 @@ function mapSoftware(row: Record<string, unknown>): SoftwareAccountRecord {
 }
 
 export async function listSoftwareAccounts(): Promise<SoftwareAccountRecord[]> {
-  const db = await getReadyDb();
-  const rows = await db`
-    SELECT s.*,
-      trim(u.first_name || ' ' || u.last_name) AS student_name,
-      u.email AS student_email,
-      u.public_id AS student_public_id
-    FROM software_accounts s
-    JOIN app_users u ON u.id = s.user_id
-    ORDER BY s.updated_at DESC
-  `;
-  return rows.map(mapSoftware);
+  return withStaffScope(async (db) => {
+    const rows = await db`
+      SELECT s.*,
+        trim(u.first_name || ' ' || u.last_name) AS student_name,
+        u.email AS student_email,
+        u.public_id AS student_public_id
+      FROM software_accounts s
+      JOIN app_users u ON u.id = s.user_id
+      ORDER BY s.updated_at DESC
+    `;
+    return rows.map(mapSoftware);
+  });
 }
 
 export async function toggleSoftwareChecklist(userId: string, itemId: string): Promise<SoftwareAccountRecord | null> {
-  const account = await getSoftwareAccount(userId);
-  if (!account) return null;
-  const checklist = account.checklist.map((item) =>
-    item.id === itemId ? { ...item, complete: !item.complete } : item,
-  );
-  const db = await getReadyDb();
-  const [row] = await db`
-    UPDATE software_accounts
-    SET checklist_json = ${JSON.stringify(checklist)}::jsonb, updated_at = now()
-    WHERE user_id = ${userId}
-    RETURNING *
-  `;
-  return row ? mapSoftware(row) : null;
+  return withUserAccountScope(userId, async (db, membership) => {
+    const [current] = await db`SELECT * FROM software_accounts WHERE account_id = ${membership.accountId}`;
+    if (!current) return null;
+    const account = mapSoftware(current);
+    const checklist = account.checklist.map((item) =>
+      item.id === itemId ? { ...item, complete: !item.complete } : item,
+    );
+    const [row] = await db`
+      UPDATE software_accounts
+      SET checklist_json = ${JSON.stringify(checklist)}::jsonb, updated_at = now()
+      WHERE account_id = ${membership.accountId}
+      RETURNING *
+    `;
+    return row ? mapSoftware(row) : null;
+  });
 }
 
 export async function submitSoftwareProvisioning(userId: string): Promise<SoftwareAccountRecord | null> {
-  const account = await getSoftwareAccount(userId);
-  if (!account) return null;
-  const complete = account.checklist.every((item) => item.complete);
-  if (!complete) return account;
-  const started = new Date();
-  const due = new Date(started.getTime() + 5 * 24 * 60 * 60 * 1000);
-  const db = await getReadyDb();
-  const [row] = await db`
-    UPDATE software_accounts
-    SET status = 'provisioning', provisioning_started_at = ${started}, provisioning_due_at = ${due}, updated_at = now()
-    WHERE user_id = ${userId}
-    RETURNING *
-  `;
-  return row ? mapSoftware(row) : null;
+  return withUserAccountScope(userId, async (db, membership) => {
+    const [current] = await db`SELECT * FROM software_accounts WHERE account_id = ${membership.accountId}`;
+    if (!current) return null;
+    const account = mapSoftware(current);
+    const complete = account.checklist.every((item) => item.complete);
+    if (!complete) return account;
+    const started = new Date();
+    const due = new Date(started.getTime() + 5 * 24 * 60 * 60 * 1000);
+    const [row] = await db`
+      UPDATE software_accounts
+      SET status = 'provisioning', provisioning_started_at = ${started}, provisioning_due_at = ${due}, updated_at = now()
+      WHERE account_id = ${membership.accountId}
+      RETURNING *
+    `;
+    return row ? mapSoftware(row) : null;
+  });
 }
 
 export async function saveSoftwareNote(accountId: string, note: string): Promise<void> {
-  const db = await getReadyDb();
-  await db`
-    UPDATE software_accounts
-    SET notes = CASE WHEN notes = '' THEN ${note} ELSE notes || E'\n\n' || ${note} END, updated_at = now()
-    WHERE id = ${accountId}
-  `;
+  await withStaffScope(async (db) => {
+    await db`
+      UPDATE software_accounts
+      SET notes = CASE WHEN notes = '' THEN ${note} ELSE notes || E'\n\n' || ${note} END, updated_at = now()
+      WHERE id = ${accountId}
+    `;
+  });
 }
 
 export async function toggleSoftwareLaunchCheck(accountId: string, check: string): Promise<SoftwareAccountRecord | null> {
-  const db = await getReadyDb();
-  const [current] = await db`SELECT * FROM software_accounts WHERE id = ${accountId}`;
-  if (!current) return null;
-  const existing = asStringArray(current.checks_json);
-  const next = existing.includes(check) ? existing.filter((item) => item !== check) : [...existing, check];
-  const allPassed = DEFAULT_SOFTWARE_CHECKS.every((item) => next.includes(item));
-  const [row] = await db`
-    UPDATE software_accounts
-    SET checks_json = ${JSON.stringify(next)}::jsonb,
-        status = CASE WHEN ${allPassed} THEN 'active' ELSE status END,
-        updated_at = now()
-    WHERE id = ${accountId}
-    RETURNING *
-  `;
-  return row ? mapSoftware(row) : null;
+  return withStaffScope(async (db) => {
+    const [current] = await db`SELECT * FROM software_accounts WHERE id = ${accountId}`;
+    if (!current) return null;
+    const existing = asStringArray(current.checks_json);
+    const next = existing.includes(check) ? existing.filter((item) => item !== check) : [...existing, check];
+    const allPassed = DEFAULT_SOFTWARE_CHECKS.every((item) => next.includes(item));
+    const [row] = await db`
+      UPDATE software_accounts
+      SET checks_json = ${JSON.stringify(next)}::jsonb,
+          status = CASE WHEN ${allPassed} THEN 'active' ELSE status END,
+          updated_at = now()
+      WHERE id = ${accountId}
+      RETURNING *
+    `;
+    return row ? mapSoftware(row) : null;
+  });
 }
 
 export async function listCommentsForPosts(postIds: string[]): Promise<CommunityComment[]> {
@@ -649,43 +668,45 @@ export async function listScorecards(limit = 50): Promise<ScorecardSubmission[]>
 }
 
 export async function issueCertificateIfEligible(userId: string, courseId: string): Promise<CertificateRecord | null> {
-  const db = await getReadyDb();
-  const [progress] = await db`
-    SELECT
-      (SELECT COUNT(*)::int FROM lessons WHERE course_id = ${courseId} AND required AND is_published) AS required_count,
-      (SELECT COUNT(*)::int FROM lesson_progress lp
-        JOIN lessons l ON l.id = lp.lesson_id
-        WHERE lp.user_id = ${userId} AND lp.status = 'completed' AND l.course_id = ${courseId} AND l.required) AS completed_count
-  `;
-  if (!progress || Number(progress.completed_count) < Number(progress.required_count) || Number(progress.required_count) === 0) {
-    return null;
-  }
-  const [row] = await db`
-    INSERT INTO certificates (user_id, course_id)
-    VALUES (${userId}, ${courseId})
-    ON CONFLICT (user_id, course_id) DO UPDATE SET issued_at = certificates.issued_at
-    RETURNING id, user_id, course_id, issued_at
-  `;
-  return {
-    id: String(row.id),
-    userId: String(row.user_id),
-    courseId: String(row.course_id),
-    issuedAt: new Date(row.issued_at as string | Date),
-  };
+  return withUserAccountScope(userId, async (db, membership) => {
+    const [progress] = await db`
+      SELECT
+        (SELECT COUNT(*)::int FROM lessons WHERE course_id = ${courseId} AND required AND is_published) AS required_count,
+        (SELECT COUNT(*)::int FROM lesson_progress lp
+          JOIN lessons l ON l.id = lp.lesson_id
+          WHERE lp.user_id = ${userId} AND lp.status = 'completed' AND l.course_id = ${courseId} AND l.required) AS completed_count
+    `;
+    if (!progress || Number(progress.completed_count) < Number(progress.required_count) || Number(progress.required_count) === 0) {
+      return null;
+    }
+    const [row] = await db`
+      INSERT INTO certificates (account_id, user_id, course_id)
+      VALUES (${membership.accountId}, ${userId}, ${courseId})
+      ON CONFLICT (user_id, course_id) DO UPDATE SET issued_at = certificates.issued_at
+      RETURNING id, user_id, course_id, issued_at
+    `;
+    return {
+      id: String(row.id),
+      userId: String(row.user_id),
+      courseId: String(row.course_id),
+      issuedAt: new Date(row.issued_at as string | Date),
+    };
+  });
 }
 
 export async function getCertificate(userId: string, courseId: string): Promise<CertificateRecord | null> {
-  const db = await getReadyDb();
-  const [row] = await db`
-    SELECT id, user_id, course_id, issued_at FROM certificates WHERE user_id = ${userId} AND course_id = ${courseId}
-  `;
-  if (!row) return null;
-  return {
-    id: String(row.id),
-    userId: String(row.user_id),
-    courseId: String(row.course_id),
-    issuedAt: new Date(row.issued_at as string | Date),
-  };
+  return withUserAccountScope(userId, async (db) => {
+    const [row] = await db`
+      SELECT id, user_id, course_id, issued_at FROM certificates WHERE user_id = ${userId} AND course_id = ${courseId}
+    `;
+    if (!row) return null;
+    return {
+      id: String(row.id),
+      userId: String(row.user_id),
+      courseId: String(row.course_id),
+      issuedAt: new Date(row.issued_at as string | Date),
+    };
+  });
 }
 
 export async function updateStudentProfile(input: {

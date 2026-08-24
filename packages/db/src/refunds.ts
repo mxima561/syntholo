@@ -1,5 +1,6 @@
-import { getReadyDb } from "./client";
+import { ensureAccountForUser } from "./accounts";
 import { refundGrantsForPurchase, revokeEntitlementGrants, upsertEntitlementGrant } from "./entitlements";
+import { withStaffScope } from "./scope";
 
 export type PurchaseSnapshot = {
   id: string;
@@ -61,22 +62,23 @@ export async function loadPurchaseRefundSnapshot(purchaseId: string): Promise<{
   purchase: PurchaseSnapshot;
   enrollments: EnrollmentSnapshot[];
 } | null> {
-  const db = await getReadyDb();
-  const [row] = await db`SELECT * FROM purchases WHERE id = ${purchaseId}`;
-  if (!row) return null;
-  const purchase = mapPurchase(row);
-  const enrollmentRows = await db`
-    SELECT user_id, course_id, source_purchase_id
-    FROM enrollments WHERE source_purchase_id = ${purchaseId}
-  `;
-  return {
-    purchase,
-    enrollments: enrollmentRows.map((enrollment) => ({
-      userId: String(enrollment.user_id),
-      courseId: String(enrollment.course_id),
-      sourcePurchaseId: enrollment.source_purchase_id ? String(enrollment.source_purchase_id) : null,
-    })),
-  };
+  return withStaffScope(async (db) => {
+    const [row] = await db`SELECT * FROM purchases WHERE id = ${purchaseId}`;
+    if (!row) return null;
+    const purchase = mapPurchase(row);
+    const enrollmentRows = await db`
+      SELECT user_id, course_id, source_purchase_id
+      FROM enrollments WHERE source_purchase_id = ${purchaseId}
+    `;
+    return {
+      purchase,
+      enrollments: enrollmentRows.map((enrollment) => ({
+        userId: String(enrollment.user_id),
+        courseId: String(enrollment.course_id),
+        sourcePurchaseId: enrollment.source_purchase_id ? String(enrollment.source_purchase_id) : null,
+      })),
+    };
+  });
 }
 
 export async function applyPurchaseRefund(purchaseId: string): Promise<RefundResult | null> {
@@ -85,45 +87,55 @@ export async function applyPurchaseRefund(purchaseId: string): Promise<RefundRes
   const transition = refundStateTransition(snapshot.purchase, snapshot.enrollments);
   if (!transition.changed) return transition;
 
-  const db = await getReadyDb();
-  await db`UPDATE purchases SET status = 'refunded' WHERE id = ${purchaseId}`;
-  await db`DELETE FROM enrollments WHERE source_purchase_id = ${purchaseId}`;
-  await refundGrantsForPurchase(purchaseId);
+  await withStaffScope(async (db) => {
+    await db`UPDATE purchases SET status = 'refunded' WHERE id = ${purchaseId}`;
+    await db`DELETE FROM enrollments WHERE source_purchase_id = ${purchaseId}`;
+    await refundGrantsForPurchase(purchaseId, db);
+  });
   return transition;
 }
 
 export async function listPaidPurchases(limit = 50): Promise<PurchaseSnapshot[]> {
-  const db = await getReadyDb();
-  const rows = await db`
-    SELECT * FROM purchases ORDER BY created_at DESC LIMIT ${limit}
-  `;
-  return rows.map(mapPurchase);
+  return withStaffScope(async (db) => {
+    const rows = await db`
+      SELECT * FROM purchases ORDER BY created_at DESC LIMIT ${limit}
+    `;
+    return rows.map(mapPurchase);
+  });
 }
 
 export async function grantCourseEntitlement(userId: string, courseId: string): Promise<void> {
-  const db = await getReadyDb();
-  await db`
-    INSERT INTO enrollments (user_id, course_id)
-    VALUES (${userId}, ${courseId})
-    ON CONFLICT (user_id, course_id) DO NOTHING
-  `;
-  await upsertEntitlementGrant({ userId, capability: "academy_course", source: "admin" });
+  await withStaffScope(async (db) => {
+    const membership = await ensureAccountForUser(userId, {}, db);
+    await db`
+      INSERT INTO enrollments (account_id, user_id, course_id)
+      VALUES (${membership.accountId}, ${userId}, ${courseId})
+      ON CONFLICT (user_id, course_id) DO NOTHING
+    `;
+    await upsertEntitlementGrant(
+      { accountId: membership.accountId, userId, capability: "academy_course", source: "admin" },
+      db,
+    );
+  });
 }
 
 export async function revokeCourseEntitlement(userId: string, courseId: string): Promise<void> {
-  const db = await getReadyDb();
-  await db`DELETE FROM enrollments WHERE user_id = ${userId} AND course_id = ${courseId}`;
-  await revokeEntitlementGrants(userId, "academy_course");
+  await withStaffScope(async (db) => {
+    const membership = await ensureAccountForUser(userId, {}, db);
+    await db`DELETE FROM enrollments WHERE user_id = ${userId} AND course_id = ${courseId}`;
+    await revokeEntitlementGrants(membership.accountId, "academy_course", db);
+  });
 }
 
 export async function listEnrollmentsForUser(userId: string): Promise<EnrollmentSnapshot[]> {
-  const db = await getReadyDb();
-  const rows = await db`
-    SELECT user_id, course_id, source_purchase_id FROM enrollments WHERE user_id = ${userId}
-  `;
-  return rows.map((row) => ({
-    userId: String(row.user_id),
-    courseId: String(row.course_id),
-    sourcePurchaseId: row.source_purchase_id ? String(row.source_purchase_id) : null,
-  }));
+  return withStaffScope(async (db) => {
+    const rows = await db`
+      SELECT user_id, course_id, source_purchase_id FROM enrollments WHERE user_id = ${userId}
+    `;
+    return rows.map((row) => ({
+      userId: String(row.user_id),
+      courseId: String(row.course_id),
+      sourcePurchaseId: row.source_purchase_id ? String(row.source_purchase_id) : null,
+    }));
+  });
 }

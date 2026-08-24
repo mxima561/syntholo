@@ -19,6 +19,7 @@
     "@stripe/stripe-js": "^7.9.0",
     "@syntholo/db": "*",
     "@syntholo/domain": "*",
+    "@syntholo/contracts": "*",
     "@vercel/blob": "^2.3.0",
     "lucide-react": "^0.544.0",
     "next": "16.3.0",

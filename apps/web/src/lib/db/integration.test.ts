@@ -172,10 +172,13 @@ describe.skipIf(!canReachScratchDatabase)("database layer (integration)", () => 
     });
     expect(replay.created).toBe(false);
 
-    const [enrollmentCount] = await db`
-      SELECT COUNT(*)::int AS count FROM enrollments
-      WHERE user_id = ${userId} AND course_id = 'ai-operating-system-academy'
-    `;
+    const { withSystemScope } = await import("@syntholo/db");
+    const [enrollmentCount] = await withSystemScope(
+      (sql) => sql`
+        SELECT COUNT(*)::int AS count FROM enrollments
+        WHERE user_id = ${userId} AND course_id = 'ai-operating-system-academy'
+      `,
+    );
     expect(enrollmentCount.count).toBe(1);
 
     const history = await purchases.getPurchasesForUser(userId);
@@ -203,9 +206,12 @@ describe.skipIf(!canReachScratchDatabase)("database layer (integration)", () => 
     const history = await purchases.getPurchasesForUser(userId);
     expect(history[0].status).toBe("canceled");
 
-    const [remaining] = await db`
-      SELECT COUNT(*)::int AS count FROM enrollments WHERE user_id = ${userId} AND source_purchase_id IS NOT NULL
-    `;
+    const { withSystemScope } = await import("@syntholo/db");
+    const [remaining] = await withSystemScope(
+      (sql) => sql`
+        SELECT COUNT(*)::int AS count FROM enrollments WHERE user_id = ${userId} AND source_purchase_id IS NOT NULL
+      `,
+    );
     expect(remaining.count).toBe(0);
   });
 

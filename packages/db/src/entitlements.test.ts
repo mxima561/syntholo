@@ -5,6 +5,7 @@ import { supportWindowEnd, type EntitlementGrantRecord } from "./entitlements";
 function grant(overrides: Partial<EntitlementGrantRecord> = {}): EntitlementGrantRecord {
   return {
     id: "g1",
+    accountId: "a1",
     userId: "u1",
     capability: "academy_course",
     status: "active",

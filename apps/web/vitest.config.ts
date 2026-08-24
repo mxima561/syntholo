@@ -10,8 +10,9 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: "@", replacement: fileURLToPath(new URL("./src", import.meta.url)) },
-      { find: "@syntholo/db", replacement: fileURLToPath(new URL("../../packages/db/src", import.meta.url)) },
-      { find: "@syntholo/domain", replacement: fileURLToPath(new URL("../../packages/domain/src", import.meta.url)) },
+    { find: "@syntholo/db", replacement: fileURLToPath(new URL("../../packages/db/src", import.meta.url)) },
+    { find: "@syntholo/domain", replacement: fileURLToPath(new URL("../../packages/domain/src", import.meta.url)) },
+    { find: "@syntholo/contracts", replacement: fileURLToPath(new URL("../../packages/contracts/src", import.meta.url)) },
     ],
   },
 });

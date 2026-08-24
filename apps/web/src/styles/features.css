@@ -496,6 +496,8 @@
 .profile-form { display: grid; gap: 10px; }
 .profile-form label { display: grid; gap: 6px; color: var(--navy); font-size: var(--text-meta); font-weight: 750; }
 .profile-form input { padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); }
+.seat-list { list-style: none; padding: 0; margin: 0 0 18px; display: grid; gap: 10px; }
+.seat-list li { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
 .settings-span { grid-column: 1 / -1; }
 .artifact-body-label, .workflow-edit label, .workflow-create label { display: grid; gap: 6px; margin: 12px 0; color: var(--navy); font-size: var(--text-meta); font-weight: 750; }
 .artifact-body-label textarea, .workflow-edit textarea, .workflow-edit input, .workflow-create input, .workflow-create select { width: 100%; padding: 9px 11px; border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--surface); font: 400 var(--text-body)/1.55 var(--font-body); }

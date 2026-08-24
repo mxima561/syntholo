@@ -1,8 +1,10 @@
 import { requireStudentAccount } from "@/lib/server/accounts";
 import { getPrimaryCourse } from "@/lib/server/courses";
-import { getCertificate } from "@syntholo/db";
+import { getCertificate, listPendingInvitations, listSeatMembers } from "@syntholo/db";
+import { remainingAcademySeats } from "@syntholo/domain";
 import { getPurchasesForUser } from "@/lib/server/purchases";
-import { updateProfileAction } from "@/app/learn/actions";
+import { revokeInvitationAction, revokeMembershipAction, updateProfileAction } from "@/app/learn/actions";
+import { InviteTeammateForm } from "./invite-form";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import type { Route } from "next";
@@ -12,10 +14,14 @@ export const dynamic = "force-dynamic";
 export default async function SettingsPage() {
   const account = await requireStudentAccount();
   const course = await getPrimaryCourse();
-  const [purchases, certificate] = await Promise.all([
+  const [purchases, certificate, members, invites] = await Promise.all([
     getPurchasesForUser(account.id),
     course ? getCertificate(account.id, course.id) : Promise.resolve(null),
+    listSeatMembers(account.accountId),
+    listPendingInvitations(account.accountId),
   ]);
+  const occupied = members.length + invites.length;
+  const remaining = remainingAcademySeats(occupied);
 
   return (
     <div className="member-page simple-page">
@@ -45,6 +51,43 @@ export default async function SettingsPage() {
             <p>{account.email}</p>
             <Button size="small" type="submit">Save profile</Button>
           </form>
+        </section>
+        <section className="settings-span">
+          <span className="micro-label">Seats</span>
+          <h2>Team ({occupied} of 3)</h2>
+          <p>
+            Academy access is shared by this business account. {remaining === 0
+              ? "All three seats are taken."
+              : `${remaining} seat${remaining === 1 ? "" : "s"} left.`}
+          </p>
+          <ul className="seat-list">
+            {members.map((member) => (
+              <li key={member.id}>
+                <span>
+                  {member.firstName} {member.lastName} · {member.email} · {member.role}
+                  {member.id === account.membershipId ? " (you)" : ""}
+                </span>
+                {account.membershipRole === "owner" && member.id !== account.membershipId ? (
+                  <form action={revokeMembershipAction}>
+                    <input type="hidden" name="membershipId" value={member.id} />
+                    <Button size="small" type="submit" variant="secondary">Remove</Button>
+                  </form>
+                ) : null}
+              </li>
+            ))}
+            {invites.map((invite) => (
+              <li key={invite.id}>
+                <span>{invite.email} · pending invite</span>
+                {account.membershipRole === "owner" ? (
+                  <form action={revokeInvitationAction}>
+                    <input type="hidden" name="invitationId" value={invite.id} />
+                    <Button size="small" type="submit" variant="secondary">Revoke</Button>
+                  </form>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {account.membershipRole === "owner" && remaining > 0 ? <InviteTeammateForm /> : null}
         </section>
         <section>
           <span className="micro-label">Purchases</span>

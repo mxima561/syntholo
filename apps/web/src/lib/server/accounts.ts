@@ -2,13 +2,24 @@ import { createHash } from "node:crypto";
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { cache } from "react";
-import { ensureDemoAcademyGrants, ensureStudentWorkspace, hasActiveCapability, publicIdFromUuid } from "@syntholo/db";
+import {
+  ensureAccountForUser,
+  ensureDemoAcademyGrants,
+  ensureStudentWorkspace,
+  hasActiveCapability,
+  publicIdFromUuid,
+  withSystemScope,
+} from "@syntholo/db";
 import { getReadyDb } from "@/lib/db/client";
 
 export type AccountRole = "student";
+export type MembershipRole = "owner" | "teammate";
 
 export type Account = {
   id: string;
+  accountId: string;
+  membershipId: string;
+  membershipRole: MembershipRole;
   publicId: string;
   email: string;
   firstName: string;
@@ -47,10 +58,14 @@ export function initialsFor(firstName: string, lastName: string): string {
   return fallback || "S";
 }
 
-function toAccount(row: Record<string, unknown>): Account {
+async function toAccount(row: Record<string, unknown>): Promise<Account> {
   const id = String(row.id);
+  const membership = await withSystemScope((db) => ensureAccountForUser(id, {}, db));
   return {
     id,
+    accountId: membership.accountId,
+    membershipId: membership.id,
+    membershipRole: membership.role,
     publicId: row.public_id ? String(row.public_id) : publicIdFromUuid(id, "STU"),
     email: String(row.email),
     firstName: String(row.first_name ?? ""),
@@ -82,7 +97,7 @@ async function upsertAccount(input: {
       last_seen_at = now()
     RETURNING id, public_id, email, first_name, last_name, business_name, job_title, timezone, role
   `;
-  const account = toAccount(row);
+  const account = await toAccount(row);
   if (!row.public_id) {
     await db`UPDATE app_users SET public_id = ${account.publicId} WHERE id = ${account.id} AND public_id IS NULL`;
   }
@@ -93,7 +108,7 @@ async function upsertAccount(input: {
 
 async function ensureDemoStudent(): Promise<Account> {
   const account = await upsertAccount(DEMO_STUDENT);
-  await ensureDemoAcademyGrants(account.id);
+  await ensureDemoAcademyGrants(account.accountId, account.id);
   return account;
 }
 
@@ -140,10 +155,10 @@ export async function requireStudentAccount(): Promise<Account> {
 export async function requireAcademyAccount(): Promise<Account> {
   const account = await requireStudentAccount();
   if (canUseDemoStudent()) {
-    await ensureDemoAcademyGrants(account.id);
+    await ensureDemoAcademyGrants(account.accountId, account.id);
     return account;
   }
-  if (await hasActiveCapability(account.id, "academy_course")) return account;
+  if (await hasActiveCapability(account.accountId, "academy_course")) return account;
   redirect("/pricing");
 }
 

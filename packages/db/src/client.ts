@@ -392,11 +392,14 @@ let readyPromise: Promise<void> | undefined;
 export async function getReadyDb(): Promise<DatabaseClient> {
   const db = getDb();
   readyPromise ??= (async () => {
+    await db`SET client_min_messages TO warning`;
     for (const statement of schemaStatements) {
       await db.unsafe(statement);
     }
     await seedCurriculum(db);
     await seedSchoolCatalog(db);
+    const { bootstrapAccountModel } = await import("./accounts");
+    await bootstrapAccountModel(db);
   })().catch((error) => {
     readyPromise = undefined;
     throw error;

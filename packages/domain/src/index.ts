@@ -6,6 +6,7 @@ export { getNextAction } from "./next-action";
 export type { NextActionInput } from "./next-action";
 export { isOfferId, offers } from "./offers";
 export type { Offer, OfferId } from "./offers";
+export { ACADEMY_SEAT_LIMIT, assertCanInviteAcademySeat, canInviteAcademySeat, remainingAcademySeats } from "./seats";
 export type {
   Artifact,
   ArtifactKind,

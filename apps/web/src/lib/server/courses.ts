@@ -112,50 +112,54 @@ export async function getPrimaryCourse(includeDrafts = false): Promise<PrimaryCo
 }
 
 export async function getCompletedLessonIds(userId: string): Promise<string[]> {
-  const { getReadyDb } = await import("@/lib/db/client");
-  const db = await getReadyDb();
-  const rows = await db`
-    SELECT lesson_id FROM lesson_progress WHERE user_id = ${userId} AND status = 'completed'
-  `;
-  return rows.map((row) => row.lesson_id);
+  const { withUserAccountScope } = await import("@syntholo/db");
+  return withUserAccountScope(userId, async (db) => {
+    const rows = await db`
+      SELECT lesson_id FROM lesson_progress WHERE user_id = ${userId} AND status = 'completed'
+    `;
+    return rows.map((row) => row.lesson_id);
+  });
 }
 
 export async function getInProgressLessonId(userId: string): Promise<string | null> {
-  const { getReadyDb } = await import("@/lib/db/client");
-  const db = await getReadyDb();
-  const [row] = await db`
-    SELECT lesson_id FROM lesson_progress
-    WHERE user_id = ${userId} AND status = 'in_progress'
-    ORDER BY updated_at DESC LIMIT 1
-  `;
-  return row?.lesson_id ?? null;
+  const { withUserAccountScope } = await import("@syntholo/db");
+  return withUserAccountScope(userId, async (db) => {
+    const [row] = await db`
+      SELECT lesson_id FROM lesson_progress
+      WHERE user_id = ${userId} AND status = 'in_progress'
+      ORDER BY updated_at DESC LIMIT 1
+    `;
+    return row?.lesson_id ?? null;
+  });
 }
 
 export async function setLessonProgress(userId: string, lessonId: string, complete: boolean) {
-  const { getReadyDb } = await import("@/lib/db/client");
-  const db = await getReadyDb();
-  if (complete) {
-    await db`
-      INSERT INTO lesson_progress (user_id, lesson_id, status, completed_at)
-      VALUES (${userId}, ${lessonId}, 'completed', now())
-      ON CONFLICT (user_id, lesson_id) DO UPDATE SET status = 'completed', completed_at = now(), updated_at = now()
-    `;
-  } else {
-    await db`
-      INSERT INTO lesson_progress (user_id, lesson_id, status)
-      VALUES (${userId}, ${lessonId}, 'not_started')
-      ON CONFLICT (user_id, lesson_id) DO UPDATE SET status = 'not_started', completed_at = NULL, updated_at = now()
-    `;
-  }
+  const { withUserAccountScope } = await import("@syntholo/db");
+  await withUserAccountScope(userId, async (db, membership) => {
+    if (complete) {
+      await db`
+        INSERT INTO lesson_progress (account_id, user_id, lesson_id, status, completed_at)
+        VALUES (${membership.accountId}, ${userId}, ${lessonId}, 'completed', now())
+        ON CONFLICT (user_id, lesson_id) DO UPDATE SET status = 'completed', completed_at = now(), updated_at = now()
+      `;
+    } else {
+      await db`
+        INSERT INTO lesson_progress (account_id, user_id, lesson_id, status)
+        VALUES (${membership.accountId}, ${userId}, ${lessonId}, 'not_started')
+        ON CONFLICT (user_id, lesson_id) DO UPDATE SET status = 'not_started', completed_at = NULL, updated_at = now()
+      `;
+    }
+  });
 }
 
 export async function ensureEnrollment(userId: string, courseId: string) {
-  const { getReadyDb } = await import("@/lib/db/client");
-  const db = await getReadyDb();
-  await db`
-    INSERT INTO enrollments (user_id, course_id) VALUES (${userId}, ${courseId})
-    ON CONFLICT (user_id, course_id) DO NOTHING
-  `;
+  const { withUserAccountScope } = await import("@syntholo/db");
+  await withUserAccountScope(userId, async (db, membership) => {
+    await db`
+      INSERT INTO enrollments (account_id, user_id, course_id) VALUES (${membership.accountId}, ${userId}, ${courseId})
+      ON CONFLICT (user_id, course_id) DO NOTHING
+    `;
+  });
 }
 
 export async function getLessonById(lessonId: string, includeDrafts = false) {
@@ -194,8 +198,8 @@ export type AdminOverview = {
 };
 
 export async function getAdminOverview(): Promise<AdminOverview> {
-  const { getReadyDb } = await import("@/lib/db/client");
-  const db = await getReadyDb();
+  const { withStaffScope } = await import("@syntholo/db");
+  return withStaffScope(async (db) => {
 
   const [studentCount] = await db`
     SELECT COUNT(*)::int AS count FROM app_users WHERE role = 'student'
@@ -260,6 +264,7 @@ export async function getAdminOverview(): Promise<AdminOverview> {
       completions: Number(row.completions),
     })),
   };
+  });
 }
 
 export type StudentRecord = {
@@ -274,23 +279,24 @@ export type StudentRecord = {
 };
 
 export async function listStudents(): Promise<StudentRecord[]> {
-  const { getReadyDb } = await import("@/lib/db/client");
-  const db = await getReadyDb();
-  const rows = await db`
-    SELECT u.id, u.email, u.first_name AS "firstName", u.last_name AS "lastName", u.role, u.created_at AS "createdAt", u.last_seen_at AS "lastSeenAt",
-      (SELECT COUNT(*)::int FROM lesson_progress lp WHERE lp.user_id = u.id AND lp.status = 'completed') AS "completedLessons"
-    FROM app_users u ORDER BY u.created_at DESC
-  `;
-  return rows.map((row) => ({
-    id: String(row.id),
-    email: String(row.email),
-    firstName: String(row.firstName ?? ""),
-    lastName: String(row.lastName ?? ""),
-    role: "student" as const,
-    createdAt: new Date(row.createdAt as string),
-    lastSeenAt: new Date(row.lastSeenAt as string),
-    completedLessons: Number(row.completedLessons),
-  }));
+  const { withStaffScope } = await import("@syntholo/db");
+  return withStaffScope(async (db) => {
+    const rows = await db`
+      SELECT u.id, u.email, u.first_name AS "firstName", u.last_name AS "lastName", u.role, u.created_at AS "createdAt", u.last_seen_at AS "lastSeenAt",
+        (SELECT COUNT(*)::int FROM lesson_progress lp WHERE lp.user_id = u.id AND lp.status = 'completed') AS "completedLessons"
+      FROM app_users u ORDER BY u.created_at DESC
+    `;
+    return rows.map((row) => ({
+      id: String(row.id),
+      email: String(row.email),
+      firstName: String(row.firstName ?? ""),
+      lastName: String(row.lastName ?? ""),
+      role: "student" as const,
+      createdAt: new Date(row.createdAt as string),
+      lastSeenAt: new Date(row.lastSeenAt as string),
+      completedLessons: Number(row.completedLessons),
+    }));
+  });
 }
 
 export async function setUserRole(userId: string, role: AccountRole) {
