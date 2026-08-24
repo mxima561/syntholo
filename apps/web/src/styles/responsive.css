@@ -11,8 +11,7 @@
 .muted-status,
 .nav-group > span,
 .engine-card-grid article > div small,
-.stage-intro small,
-.stage-lessons small,
+.course-node-meta,
 .reply-composer > div > div span,
 .message-stream time,
 .onboarding-note { color: var(--muted); }
@@ -117,7 +116,7 @@
   .status-chip { display: none; }
   .member-page { width: min(100% - 28px, 1190px); padding-block: 28px 86px; }
   .page-intro { align-items: flex-start; flex-direction: column; }
-  .next-action-card, .course-stage, .lesson-workspace { grid-template-columns: 1fr; }
+  .next-action-card, .lesson-workspace { grid-template-columns: 1fr; }
   .action-map { min-height: 250px; }
   .dashboard-rail { grid-template-columns: 1fr; }
   .dashboard-heading { align-items: flex-start; flex-direction: column; }
@@ -128,10 +127,11 @@
   .engine-card-grid { grid-template-columns: 1fr; }
   .engine-card-grid article { border-right: 0; border-bottom: 1px solid var(--border); }
   .engine-card-grid article:last-child { border-bottom: 0; }
-  .course-stage { overflow: visible; }
-  .stage-intro { border-right: 0; border-bottom: 1px solid var(--border); }
-  .stage-lessons > a { grid-template-columns: 32px 1fr 16px; }
-  .stage-lessons .lesson-duration { display: none; }
+  .course-hero.page-intro { align-items: stretch; }
+  .course-hero-aside { width: 100%; justify-content: space-between; }
+  .course-hero-aside .button { min-width: 0; flex: 1; }
+  .course-node { left: calc(var(--node-shift, 0px) * 0.42); }
+  .course-unit-banner { width: calc(100% - 8px); }
   .lesson-player { aspect-ratio: 16/10; }
   .lesson-heading { padding: 25px 21px 20px; }
   .lesson-action-card, .lesson-resource-row, .transcript-toggle { margin-inline: 21px; }

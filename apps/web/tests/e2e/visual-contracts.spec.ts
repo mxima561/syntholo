@@ -35,15 +35,15 @@ test("public pages use readable type and semantic color", async ({ page }) => {
 
 test("core member workspaces keep body and controls readable", async ({ page }) => {
   await page.goto("/learn/course");
-  expect(await fontSize(page.locator(".stage-intro p").first())).toBeGreaterThanOrEqual(15);
-  expect(await fontSize(page.locator(".stage-lessons strong").first())).toBeGreaterThanOrEqual(13);
+  expect(await fontSize(page.locator(".course-hero p").first())).toBeGreaterThanOrEqual(15);
+  expect(await fontSize(page.locator(".course-node-label").first())).toBeGreaterThanOrEqual(13);
 
   await page.goto("/learn/plan");
   await page.getByRole("button", { name: /team enablement checklist/i }).click();
-  expect(await fontSize(page.locator(".document-preview p").first())).toBeGreaterThanOrEqual(15);
+  expect(await fontSize(page.locator(".artifact-body-label textarea").first())).toBeGreaterThanOrEqual(15);
 
   await page.goto("/learn/workflows");
-  expect(await fontSize(page.locator(".workflow-card > p").first())).toBeGreaterThanOrEqual(15);
+  expect(await fontSize(page.locator(".workflow-edit textarea").first())).toBeGreaterThanOrEqual(15);
 });
 
 test("core member metadata and card titles meet the refreshed type scale", async ({ page }) => {

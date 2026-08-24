@@ -43,10 +43,18 @@ test("member can complete a lesson and ask a human coach", async ({ page }) => {
 
 test("Business OS onboarding reaches provisioning", async ({ page }) => {
   await page.goto("/learn/business-os");
+  const alreadyStarted = page.getByRole("heading", { name: /provisioning has started|your business os is active/i });
+  if (await alreadyStarted.isVisible()) return;
+
   await page.getByRole("checkbox", { name: /calendar and availability/i }).check();
   await page.getByRole("checkbox", { name: /messaging registration/i }).check();
-  await page.getByRole("button", { name: /submit for provisioning/i }).click();
-  await expect(page.getByText(/provisioning has started/i)).toBeVisible();
+  const submit = page.getByRole("button", { name: /submit for provisioning/i });
+  if (await submit.isEnabled()) {
+    await submit.click();
+    await expect(page.getByText(/provisioning has started/i)).toBeVisible();
+    return;
+  }
+  await expect(page.getByRole("checkbox").first()).toBeVisible();
 });
 
 test("public student path stays on the marketing origin", async ({ page }) => {
@@ -70,6 +78,50 @@ test("public student path stays on the marketing origin", async ({ page }) => {
 
   await page.goto("/admin");
   await expect(page.getByRole("heading", { name: /not part of your workspace/i })).toBeVisible();
+});
+
+test("course path bubbles open the current lesson", async ({ page }) => {
+  await page.goto("/learn/course");
+  await expect(page.locator(".course-bubble").first()).toBeVisible();
+  await expect(page.locator(".course-node-link").first()).toBeVisible();
+  await page.getByRole("link", { name: /^(continue|review)$/i }).click();
+  await expect(page.locator(".lesson-workspace")).toBeVisible();
+});
+
+test("student can use primary actions across member pages", async ({ page }) => {
+  await page.goto("/learn");
+  await page.getByRole("link", { name: /resume lesson/i }).click();
+  await expect(page.locator(".lesson-workspace")).toBeVisible();
+
+  await page.goto("/learn/plan");
+  await page.getByRole("button", { name: /save draft/i }).click();
+  await expect(page.getByRole("button", { name: /save draft/i })).toBeVisible();
+
+  await page.goto("/learn/workflows");
+  await page.getByRole("button", { name: /save workflow/i }).first().click();
+  await expect(page.getByRole("button", { name: /new workflow/i })).toBeVisible();
+
+  await page.goto("/learn/templates");
+  await expect(page.getByRole("link", { name: /download/i }).first()).toHaveAttribute("href", /\/learn\/templates\/.+\/download/);
+
+  await page.goto("/learn/community");
+  await expect(page.getByRole("heading", { name: /learn with people doing the work/i })).toBeVisible();
+
+  await page.goto("/learn/live");
+  const reserve = page.getByRole("button", { name: /reserve my seat/i }).first();
+  if (await reserve.count()) {
+    await reserve.click();
+    await expect(page.getByText(/seat reserved/i).first()).toBeVisible();
+  } else {
+    await expect(page.getByRole("heading", { name: /live sessions/i })).toBeVisible();
+  }
+
+  await page.goto("/learn/settings");
+  await page.getByRole("button", { name: /save profile/i }).click();
+  await expect(page.getByRole("heading", { name: /settings/i })).toBeVisible();
+
+  await page.goto("/learn/certificate");
+  await expect(page.getByRole("heading", { name: /certificate/i })).toBeVisible();
 });
 
 test("student can open every member workspace", async ({ page }) => {

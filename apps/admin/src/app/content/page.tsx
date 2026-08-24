@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Eye, EyeOff, Plus, Trash2 } from "lucide-react";
-import { createLessonAction, deleteLessonAction, setCourseStatusAction, toggleLessonPublishAction, updateStageAction } from "@/app/actions";
+import { createLessonAction, createSessionAction, deleteLessonAction, setCourseStatusAction, toggleLessonPublishAction, updateStageAction } from "@/app/actions";
 import { requireStaff } from "@/lib/auth/staff";
 import { getPrimaryCourse } from "@/lib/server/courses";
 
@@ -95,6 +95,30 @@ export default async function AdminContentPage() {
           ))}
         </div>
         <footer><Eye size={14} /> Draft lessons are hidden from students until you publish them.</footer>
+      </section>
+
+      <section className="content-editor-panel">
+        <header>
+          <div>
+            <span className="micro-label">Live sessions</span>
+            <h2>Publish an office hour</h2>
+            <p>Students can RSVP from Live sessions. Reservations are stored per student ID.</p>
+          </div>
+        </header>
+        <form action={createSessionAction} className="stage-editor-form">
+          <label>Title<input defaultValue="Workflow office hours" name="title" required /></label>
+          <label>Description<input name="description" placeholder="Bring one workflow map." /></label>
+          <label>Region
+            <select defaultValue="Americas" name="region">
+              <option>Americas</option>
+              <option>Europe / Asia</option>
+              <option>Pilot cohort</option>
+            </select>
+          </label>
+          <label>Starts at<input name="startsAt" required type="datetime-local" /></label>
+          <label>Host name<input name="hostName" placeholder="Naomi Reed" /></label>
+          <button className="button button-primary button-small" type="submit">Publish session</button>
+        </form>
       </section>
     </div>
   );

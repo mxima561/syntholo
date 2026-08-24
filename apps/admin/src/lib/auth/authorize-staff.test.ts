@@ -5,6 +5,7 @@ import type { Staff } from "@syntholo/db";
 function staff(overrides: Partial<Staff> = {}): Staff {
   return {
     id: "s1",
+    publicId: "STF-S1",
     email: "ops@syntholo.com",
     role: "admin",
     status: "active",

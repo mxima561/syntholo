@@ -1,8 +1,112 @@
-import { AlertCircle, Check, Clock3, ExternalLink, ShieldCheck } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Check, Clock3, ShieldCheck } from "lucide-react";
+import { saveProvisioningNoteAction, toggleLaunchCheckAction } from "@/app/actions";
+import { requireStaff } from "@/lib/auth/staff";
+import { DEFAULT_SOFTWARE_CHECKS, listSoftwareAccounts } from "@syntholo/db";
+import { CopyId } from "@/components/copy-id";
 
-const launchChecks = ["Test lead capture", "Qualification routing", "Booking path", "Email + SMS messages", "Client onboarding", "AI escalation", "Dashboard activity"];
+export const dynamic = "force-dynamic";
 
-export default function AdminProvisioningPage() {
-  return <div className="admin-page"><section className="admin-page-head"><div><span className="micro-label">Business OS operations</span><h1>Provisioning queue</h1><p>Configure, verify, and activate customer systems against the seven-check launch standard.</p></div><Button size="small" variant="secondary">Open HighLevel <ExternalLink size={14} /></Button></section><section className="provisioning-queue"><aside><div><span className="micro-label">In progress</span><strong>4 accounts</strong></div>{[["Northstar Advisory","Due Aug 18","blocked"],["Ortega Studio","Due Aug 19","healthy"],["Clearpath Legal Ops","Due Aug 20","healthy"],["Brooks & Field","Paused","paused"]].map(([name,due,status], index) => <button className={index === 0 ? "active" : ""} key={name} type="button"><span className={`queue-state ${status}`} /> <div><strong>{name}</strong><small>{due}</small></div><i className={`status-pill ${status}`}>{status}</i></button>)}</aside><section className="provisioning-detail"><header><div><span className="micro-label">Customer setup</span><h2>Northstar Advisory</h2><p>Started Aug 11 · Target Aug 18 · Owner: Talia Moore</p></div><span className="status-pill blocked">Blocked</span></header><div className="provisioning-alert"><AlertCircle size={16} /><div><strong>Waiting on messaging registration</strong><p>Customer identity verification is in progress. The SLA clock is paused while third-party review is pending.</p></div></div><div className="activation-list"><div><span className="micro-label">Activation standard</span><strong>4 of 7 checks passed</strong></div>{launchChecks.map((check, index) => <label key={check}><span className={index < 4 ? "done" : ""}>{index < 4 ? <Check size={13} /> : index + 1}</span><div><strong>{check}</strong><small>{index < 4 ? "Verified Aug 11 by Talia Moore" : "Required before activation"}</small></div>{index < 4 ? <ShieldCheck size={14} /> : <Clock3 size={14} />}</label>)}</div><footer><span>Activation is disabled until every check passes.</span><Button disabled size="small">Activate Business OS</Button></footer></section><aside className="provisioning-notes"><span className="micro-label">Internal notes</span><article><strong>Talia Moore</strong><time>Today, 2:10 PM</time><p>Lead routing and booking passed. Waiting on the A2P registration before testing outbound SMS.</p></article><label>Add an internal note<textarea placeholder="Visible only to admins and operators" /></label><Button size="small" variant="secondary">Save note</Button></aside></section></div>;
+export default async function AdminProvisioningPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ id?: string }>;
+}) {
+  await requireStaff();
+  const { id } = await searchParams;
+  const accounts = await listSoftwareAccounts();
+  const selected = accounts.find((account) => account.id === id) ?? accounts[0] ?? null;
+
+  return (
+    <div className="admin-page">
+      <section className="admin-page-head">
+        <div>
+          <span className="micro-label">Business OS operations</span>
+          <h1>Provisioning queue</h1>
+          <p>Real student questionnaires. Tick launch checks to activate. Notes are stored on the software account.</p>
+        </div>
+      </section>
+      {accounts.length === 0 ? (
+        <p className="empty-note">No Business OS accounts yet. They appear when a student opens Business OS.</p>
+      ) : (
+        <section className="provisioning-queue">
+          <aside>
+            <div><span className="micro-label">Accounts</span><strong>{accounts.length}</strong></div>
+            {accounts.map((account) => (
+              <a className={selected?.id === account.id ? "active" : undefined} href={`/provisioning?id=${account.id}`} key={account.id}>
+                <span className={`queue-state ${account.status === "provisioning" ? "healthy" : account.status}`} />
+                <div>
+                  <strong>{account.studentName || account.studentEmail}</strong>
+                  <small>{account.studentPublicId} · {account.status.replaceAll("_", " ")}</small>
+                </div>
+              </a>
+            ))}
+          </aside>
+          {selected ? (
+            <section className="provisioning-detail">
+              <header>
+                <div>
+                  <span className="micro-label">Customer setup</span>
+                  <h2>{selected.studentName || selected.studentEmail}</h2>
+                  <p>
+                    <CopyId value={selected.studentPublicId ?? selected.userId} />
+                    {selected.provisioningDueAt ? ` · due ${selected.provisioningDueAt.toLocaleDateString("en-US")}` : ""}
+                  </p>
+                </div>
+                <span className={`status-pill ${selected.status}`}>{selected.status.replaceAll("_", " ")}</span>
+              </header>
+              <div className="activation-list">
+                <div>
+                  <span className="micro-label">Student questionnaire</span>
+                  <strong>{selected.checklist.filter((item) => item.complete).length} of {selected.checklist.length} complete</strong>
+                </div>
+                {selected.checklist.map((item, index) => (
+                  <div className="activation-row" key={item.id}>
+                    <span className={`activation-chip ${item.complete ? "done" : ""}`}>{item.complete ? <Check size={13} /> : String(index + 1).padStart(2, "0")}</span>
+                    <div>
+                      <strong>{item.label}</strong>
+                      <small>{item.complete ? "Student marked complete" : "Waiting on student"}</small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="activation-list">
+                <div>
+                  <span className="micro-label">Activation standard</span>
+                  <strong>{selected.checks.length} of {DEFAULT_SOFTWARE_CHECKS.length} checks passed</strong>
+                </div>
+                {DEFAULT_SOFTWARE_CHECKS.map((check, index) => {
+                  const done = selected.checks.includes(check);
+                  return (
+                    <form action={toggleLaunchCheckAction} key={check}>
+                      <input name="accountId" type="hidden" value={selected.id} />
+                      <input name="check" type="hidden" value={check} />
+                      <button className="launch-check" type="submit">
+                        <span className={`activation-chip ${done ? "done" : ""}`}>{done ? <Check size={13} /> : String(index + 1).padStart(2, "0")}</span>
+                        <div>
+                          <strong>{check}</strong>
+                          <small>{done ? "Verified" : "Required before activation"}</small>
+                        </div>
+                        {done ? <ShieldCheck size={14} /> : <Clock3 size={14} />}
+                      </button>
+                    </form>
+                  );
+                })}
+              </div>
+            </section>
+          ) : null}
+          {selected ? (
+            <aside className="provisioning-notes">
+              <span className="micro-label">Internal notes</span>
+              {selected.notes ? <article><p>{selected.notes}</p></article> : <p className="empty-note">No notes yet.</p>}
+              <form action={saveProvisioningNoteAction}>
+                <input name="accountId" type="hidden" value={selected.id} />
+                <label>Add an internal note<textarea name="note" placeholder="Visible only to admins and operators" required /></label>
+                <button className="button button-secondary button-small" type="submit">Save note</button>
+              </form>
+            </aside>
+          ) : null}
+        </section>
+      )}
+    </div>
+  );
 }

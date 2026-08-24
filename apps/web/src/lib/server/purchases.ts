@@ -55,6 +55,17 @@ export async function fulfillCheckout(input: {
       ON CONFLICT (user_id, course_id) DO NOTHING
     `;
   }
+  const { writeActivityEvent } = await import("@syntholo/db");
+  await writeActivityEvent({
+    actorKind: userId ? "student" : "system",
+    actorId: userId,
+    actorLabel: input.email.toLowerCase(),
+    action: "purchase_paid",
+    targetType: "purchase",
+    targetId: String(inserted[0].id),
+    summary: `Paid ${offer.id} for ${input.email.toLowerCase()}`,
+    metadata: { offer: offer.id, sessionId: input.sessionId },
+  });
   return { created: true };
 }
 

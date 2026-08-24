@@ -7,7 +7,9 @@
     ".": "./src/index.ts",
     "./staff": "./src/staff.ts",
     "./audit": "./src/audit.ts",
-    "./refunds": "./src/refunds.ts"
+    "./refunds": "./src/refunds.ts",
+    "./school": "./src/school.ts",
+    "./activity": "./src/activity.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

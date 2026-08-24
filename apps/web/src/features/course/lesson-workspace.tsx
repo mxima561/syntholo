@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ChevronDown, Download, FileText, Play, RotateCcw } from "lucide-react";
+import { Check, ChevronDown, Download, FileText, RotateCcw } from "lucide-react";
 import type { Lesson } from "@/lib/domain/types";
 import { Button } from "@/components/ui/button";
 import { LessonVideo } from "./lesson-video";
@@ -36,15 +36,12 @@ export function LessonWorkspace({ lesson, initiallyComplete = false, videoUrl, o
         {videoUrl ? (
           <LessonVideo src={videoUrl} title={lesson.title} durationMinutes={lesson.durationMinutes} />
         ) : (
-          <div className="lesson-player is-playing">
-            <button aria-label="Play lesson" type="button">
-              <Play fill="currentColor" size={22} />
-            </button>
+          <div className="lesson-player">
             <div>
-              <span>Video coming soon</span>
+              <span>Transcript-first lesson</span>
               <strong>{lesson.durationMinutes} minutes</strong>
             </div>
-            <div className="player-timeline"><i /></div>
+            <p>Video is optional. Use the transcript and working template below — both count toward completion.</p>
           </div>
         )}
 
@@ -66,7 +63,7 @@ export function LessonWorkspace({ lesson, initiallyComplete = false, videoUrl, o
         <div className="lesson-resource-row">
           <FileText size={18} />
           <div><strong>Working template</strong><span>Editable worksheet · included</span></div>
-          <Button size="small" variant="secondary"><Download size={14} /> Download</Button>
+          <Button href="/learn/templates" size="small" variant="secondary"><Download size={14} /> Open templates</Button>
         </div>
 
         <button aria-expanded={showTranscript} className="transcript-toggle" onClick={() => setShowTranscript((value) => !value)} type="button">

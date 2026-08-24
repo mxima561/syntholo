@@ -1,10 +1,11 @@
 "use client";
 
 import { ArrowLeft, ArrowRight, Check, LockKeyhole } from "lucide-react";
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { calculateScore, dimensionLabels } from "./scoring";
 import { scoreOptions, scorecardQuestions } from "./questions";
+import { submitScorecardAction } from "@/app/scorecard/actions";
 
 type AssessmentStage = "questions" | "preview" | "report";
 
@@ -12,6 +13,8 @@ export function ScorecardClient() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [stage, setStage] = useState<AssessmentStage>("questions");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
   const question = scorecardQuestions[currentIndex];
   const result = calculateScore(answers);
 
@@ -72,7 +75,25 @@ export function ScorecardClient() {
           className="report-gate"
           onSubmit={(event) => {
             event.preventDefault();
-            setStage("report");
+            const form = event.currentTarget;
+            const formData = new FormData(form);
+            startTransition(async () => {
+              const saved = await submitScorecardAction({
+                firstName: String(formData.get("firstName") ?? ""),
+                email: String(formData.get("email") ?? ""),
+                businessName: String(formData.get("business") ?? ""),
+                country: String(formData.get("country") ?? ""),
+                overallScore: result.overall,
+                band: result.band,
+                answers,
+                marketingConsent: formData.get("marketing") === "on",
+              });
+              if (!saved.ok) {
+                setError("Enter your name, work email, business, and country to save the report.");
+                return;
+              }
+              setStage("report");
+            });
           }}
         >
           <div className="field-grid">
@@ -84,7 +105,8 @@ export function ScorecardClient() {
             <label>Country<select defaultValue="" name="country" required><option disabled value="">Select country</option><option>United States</option><option>Canada</option><option>United Kingdom</option><option>Australia</option><option>Other</option></select></label>
           </div>
           <label className="consent-row"><input name="marketing" type="checkbox" /> Send me practical AI implementation notes. Optional, unsubscribe anytime.</label>
-          <Button size="large" type="submit">Unlock my full report <ArrowRight aria-hidden size={17} /></Button>
+          {error ? <p className="privacy-note">{error}</p> : null}
+          <Button disabled={pending} size="large" type="submit">Unlock my full report <ArrowRight aria-hidden size={17} /></Button>
           <p className="privacy-note"><LockKeyhole aria-hidden size={13} /> Your report is private. Marketing consent is optional.</p>
         </form>
       </section>

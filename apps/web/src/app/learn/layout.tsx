@@ -19,8 +19,8 @@ export default async function LearnLayout({ children }: { children: ReactNode })
       identity={{
         initials: account.initials,
         name: `${account.firstName} ${account.lastName}`.trim() || account.email,
-        subtitle: course?.title ?? "Academy",
-        authLabel: isClerkConfigured() ? "Signed in with Clerk" : "Demo session",
+        subtitle: `${course?.title ?? "Academy"} · ${account.publicId}`,
+        authLabel: isClerkConfigured() ? "Signed in with Clerk" : "Local student session",
       }}
     >
       {children}

@@ -2,21 +2,20 @@ import { createHash } from "node:crypto";
 import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { cache } from "react";
+import { ensureStudentWorkspace, publicIdFromUuid } from "@syntholo/db";
 import { getReadyDb } from "@/lib/db/client";
-import {
-  ensureEnrollment,
-  getCompletedLessonIds,
-  getPrimaryCourse,
-  setLessonProgress,
-} from "@/lib/server/courses";
 
 export type AccountRole = "student";
 
 export type Account = {
   id: string;
+  publicId: string;
   email: string;
   firstName: string;
   lastName: string;
+  businessName: string;
+  jobTitle: string;
+  timezone: string;
   role: AccountRole;
   initials: string;
 };
@@ -27,16 +26,6 @@ const DEMO_STUDENT = {
   firstName: "Maria",
   lastName: "Chen",
 } as const;
-
-const DEMO_COMPLETED_LESSON_IDS = [
-  "diagnose-1",
-  "diagnose-2",
-  "diagnose-3",
-  "rules-1",
-  "rules-2",
-  "rules-3",
-  "growth-1",
-] as const;
 
 export function isClerkConfigured(): boolean {
   return Boolean(
@@ -58,13 +47,18 @@ export function initialsFor(firstName: string, lastName: string): string {
 }
 
 function toAccount(row: Record<string, unknown>): Account {
+  const id = String(row.id);
   return {
-    id: String(row.id),
+    id,
+    publicId: row.public_id ? String(row.public_id) : publicIdFromUuid(id, "STU"),
     email: String(row.email),
-    firstName: String(row.first_name),
-    lastName: String(row.last_name),
+    firstName: String(row.first_name ?? ""),
+    lastName: String(row.last_name ?? ""),
+    businessName: String(row.business_name ?? ""),
+    jobTitle: String(row.job_title ?? ""),
+    timezone: String(row.timezone || "America/New_York"),
     role: "student",
-    initials: initialsFor(String(row.first_name), String(row.last_name)),
+    initials: initialsFor(String(row.first_name ?? ""), String(row.last_name ?? "")),
   };
 }
 
@@ -82,30 +76,22 @@ async function upsertAccount(input: {
     VALUES (${input.clerkId}, ${email}, ${input.firstName}, ${input.lastName}, 'student')
     ON CONFLICT (email) DO UPDATE SET
       clerk_id = EXCLUDED.clerk_id,
-      first_name = EXCLUDED.first_name,
-      last_name = EXCLUDED.last_name,
+      first_name = CASE WHEN app_users.first_name = '' THEN EXCLUDED.first_name ELSE app_users.first_name END,
+      last_name = CASE WHEN app_users.last_name = '' THEN EXCLUDED.last_name ELSE app_users.last_name END,
       last_seen_at = now()
-    RETURNING id, email, first_name, last_name, role
+    RETURNING id, public_id, email, first_name, last_name, business_name, job_title, timezone, role
   `;
-
-  return toAccount(row);
-}
-
-async function seedDemoProgress(userId: string) {
-  const course = await getPrimaryCourse();
-  if (!course) return;
-  await ensureEnrollment(userId, course.id);
-  const completed = await getCompletedLessonIds(userId);
-  if (completed.length > 0) return;
-  for (const lessonId of DEMO_COMPLETED_LESSON_IDS) {
-    await setLessonProgress(userId, lessonId, true);
+  const account = toAccount(row);
+  if (!row.public_id) {
+    await db`UPDATE app_users SET public_id = ${account.publicId} WHERE id = ${account.id} AND public_id IS NULL`;
   }
+  const displayName = `${account.firstName} ${account.lastName}`.trim() || account.email;
+  await ensureStudentWorkspace({ userId: account.id, displayName });
+  return account;
 }
 
 async function ensureDemoStudent(): Promise<Account> {
-  const account = await upsertAccount(DEMO_STUDENT);
-  await seedDemoProgress(account.id);
-  return account;
+  return upsertAccount(DEMO_STUDENT);
 }
 
 /**

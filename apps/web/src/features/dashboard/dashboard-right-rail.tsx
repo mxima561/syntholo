@@ -1,25 +1,20 @@
 import { CalendarDays, MessageSquareText } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { DashboardView } from "@/lib/demo/repository";
 
 type DashboardRightRailProps = {
-  actionLabel: string;
-  policyTitle: string;
-  workflowName: string;
+  priorities: string[];
   coachThread: { subject: string; coachFirstName: string; lastMessage: string };
-  session: NonNullable<DashboardView["upcomingSession"]>;
+  session: { title: string; hostName: string; region: string } | null;
 };
 
-export function DashboardRightRail({ actionLabel, policyTitle, workflowName, coachThread, session }: DashboardRightRailProps) {
+export function DashboardRightRail({ priorities, coachThread, session }: DashboardRightRailProps) {
   return (
     <aside className="dashboard-right-rail" aria-label="Member support and priorities">
       <section className="dashboard-rail-card dashboard-priorities-card">
         <span className="meta-label">This week</span>
         <h2>Weekly priorities</h2>
         <ul>
-          <li>{actionLabel}</li>
-          <li>{policyTitle}</li>
-          <li>{workflowName}</li>
+          {priorities.map((item) => <li key={item}>{item}</li>)}
         </ul>
       </section>
       <section className="dashboard-rail-card dashboard-coach-card">
@@ -32,8 +27,17 @@ export function DashboardRightRail({ actionLabel, policyTitle, workflowName, coa
       </section>
       <section className="dashboard-rail-card dashboard-session-card">
         <span className="meta-label">Upcoming live session</span>
-        <h2>{session.title}</h2>
-        <p>Hosted by {session.hostName} · {session.region}</p>
+        {session ? (
+          <>
+            <h2>{session.title}</h2>
+            <p>Hosted by {session.hostName} · {session.region}</p>
+          </>
+        ) : (
+          <>
+            <h2>Office hours</h2>
+            <p>Reserve a seat when the next session is published.</p>
+          </>
+        )}
         <Button href="/learn/live" size="small" variant="milestone">
           View session <CalendarDays size={14} />
         </Button>

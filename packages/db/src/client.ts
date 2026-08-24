@@ -1,5 +1,6 @@
 import postgres from "postgres";
 import { academyCourse } from "@syntholo/domain/course";
+import { COURSE_TEMPLATES, upcomingOfficeHours } from "./catalog";
 import { loadRootEnv } from "./load-root-env";
 
 loadRootEnv();
@@ -184,6 +185,141 @@ const schemaStatements = [
     event_type TEXT NOT NULL,
     received_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
+  `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS public_id TEXT`,
+  `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS business_name TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS job_title TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS timezone TEXT NOT NULL DEFAULT 'America/New_York'`,
+  `UPDATE app_users SET public_id = 'STU-' || upper(substr(replace(id::text, '-', ''), 1, 8)) WHERE public_id IS NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS app_users_public_id_uidx ON app_users (public_id)`,
+  `ALTER TABLE staff ADD COLUMN IF NOT EXISTS public_id TEXT`,
+  `UPDATE staff SET public_id = 'STF-' || upper(substr(replace(id::text, '-', ''), 1, 8)) WHERE public_id IS NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS staff_public_id_uidx ON staff (public_id)`,
+  `CREATE TABLE IF NOT EXISTS activity_events (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    actor_kind TEXT NOT NULL CHECK (actor_kind IN ('student', 'staff', 'system')),
+    actor_id TEXT,
+    actor_label TEXT NOT NULL DEFAULT '',
+    actor_public_id TEXT,
+    action TEXT NOT NULL,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE INDEX IF NOT EXISTS activity_events_created_idx ON activity_events (created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS activity_events_actor_idx ON activity_events (actor_id)`,
+  `CREATE INDEX IF NOT EXISTS activity_events_action_idx ON activity_events (action)`,
+  `CREATE TABLE IF NOT EXISTS artifacts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started', 'draft', 'final')),
+    version INTEGER NOT NULL DEFAULT 1,
+    body TEXT NOT NULL DEFAULT '',
+    review_status TEXT NOT NULL DEFAULT 'none' CHECK (review_status IN ('none', 'requested', 'feedback_ready')),
+    updated_by TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, kind)
+  )`,
+  `CREATE TABLE IF NOT EXISTS workflows (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    engine TEXT NOT NULL CHECK (engine IN ('growth', 'client', 'management')),
+    problem TEXT NOT NULL DEFAULT '',
+    trigger TEXT NOT NULL DEFAULT '',
+    owner TEXT NOT NULL DEFAULT '',
+    approved_tools TEXT[] NOT NULL DEFAULT '{}',
+    steps TEXT[] NOT NULL DEFAULT '{}',
+    human_review_point TEXT NOT NULL DEFAULT '',
+    safety_notes TEXT NOT NULL DEFAULT '',
+    baseline TEXT NOT NULL DEFAULT '',
+    target TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'testing', 'live', 'paused')),
+    launch_date TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS live_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    region TEXT NOT NULL DEFAULT 'Americas',
+    host_name TEXT NOT NULL DEFAULT 'Naomi Reed',
+    starts_at TIMESTAMPTZ NOT NULL,
+    ends_at TIMESTAMPTZ,
+    status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'live', 'completed', 'canceled')),
+    capacity INTEGER NOT NULL DEFAULT 40,
+    join_url TEXT,
+    recording_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS session_rsvps (
+    session_id UUID NOT NULL REFERENCES live_sessions(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (session_id, user_id)
+  )`,
+  `CREATE TABLE IF NOT EXISTS course_templates (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    filename TEXT NOT NULL,
+    mime_type TEXT NOT NULL DEFAULT 'text/markdown',
+    body TEXT NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS community_comments (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    post_id UUID NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
+    author_id UUID REFERENCES app_users(id) ON DELETE SET NULL,
+    author_name TEXT NOT NULL,
+    initials TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS community_reports (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    post_id UUID NOT NULL REFERENCES community_posts(id) ON DELETE CASCADE,
+    reporter_id UUID REFERENCES app_users(id) ON DELETE SET NULL,
+    reason TEXT NOT NULL DEFAULT 'inappropriate',
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'reviewed', 'dismissed')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS scorecard_submissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES app_users(id) ON DELETE SET NULL,
+    email CITEXT,
+    first_name TEXT NOT NULL DEFAULT '',
+    business_name TEXT NOT NULL DEFAULT '',
+    country TEXT NOT NULL DEFAULT '',
+    overall_score INTEGER NOT NULL,
+    band TEXT NOT NULL,
+    answers_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    marketing_consent BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS software_accounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL UNIQUE REFERENCES app_users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending_onboarding' CHECK (status IN ('pending_onboarding', 'provisioning', 'active', 'paused', 'canceled')),
+    checklist_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    notes TEXT NOT NULL DEFAULT '',
+    checks_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    provisioning_started_at TIMESTAMPTZ,
+    provisioning_due_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `CREATE TABLE IF NOT EXISTS certificates (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
+    course_id TEXT NOT NULL REFERENCES courses(id),
+    issued_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (user_id, course_id)
+  )`,
   `CREATE INDEX IF NOT EXISTS lessons_course_idx ON lessons (course_id)`,
   `CREATE INDEX IF NOT EXISTS lesson_progress_user_idx ON lesson_progress (user_id)`,
 ];
@@ -217,6 +353,28 @@ async function seedCurriculum(db: DatabaseClient) {
   }
 }
 
+async function seedSchoolCatalog(db: DatabaseClient) {
+  const [sessions] = await db`SELECT COUNT(*)::int AS count FROM live_sessions`;
+  if (sessions.count === 0) {
+    for (const session of upcomingOfficeHours()) {
+      await db`
+        INSERT INTO live_sessions (title, description, region, host_name, starts_at, ends_at, status, capacity)
+        VALUES (
+          ${session.title}, ${session.description}, ${session.region}, ${session.hostName},
+          ${session.startsAt}, ${session.endsAt}, 'scheduled', 100
+        )
+      `;
+    }
+  }
+  for (const template of COURSE_TEMPLATES) {
+    await db`
+      INSERT INTO course_templates (id, title, description, filename, body)
+      VALUES (${template.id}, ${template.title}, ${template.description}, ${template.filename}, ${template.body})
+      ON CONFLICT (id) DO NOTHING
+    `;
+  }
+}
+
 let readyPromise: Promise<void> | undefined;
 
 export async function getReadyDb(): Promise<DatabaseClient> {
@@ -226,6 +384,7 @@ export async function getReadyDb(): Promise<DatabaseClient> {
       await db.unsafe(statement);
     }
     await seedCurriculum(db);
+    await seedSchoolCatalog(db);
   })().catch((error) => {
     readyPromise = undefined;
     throw error;

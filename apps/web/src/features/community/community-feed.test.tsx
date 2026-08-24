@@ -10,6 +10,8 @@ const toggleLikeAction = vi.fn<(postId: string) => Promise<{ liked: boolean; rea
 vi.mock("@/app/learn/actions", () => ({
   createPostAction: (formData: FormData) => createPostAction(formData),
   toggleLikeAction: (postId: string) => toggleLikeAction(postId),
+  commentOnPostAction: vi.fn(async () => undefined),
+  reportPostAction: vi.fn(async () => ({ ok: true })),
 }));
 
 const seedPosts: FeedPost[] = [
@@ -25,6 +27,7 @@ const seedPosts: FeedPost[] = [
     commentCount: 0,
     createdAt: new Date("2026-08-20T10:00:00Z").toISOString(),
     likedByViewer: false,
+    comments: [],
   },
 ];
 

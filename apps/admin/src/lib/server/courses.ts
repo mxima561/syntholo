@@ -264,9 +264,11 @@ export async function getAdminOverview(): Promise<AdminOverview> {
 
 export type StudentRecord = {
   id: string;
+  publicId: string;
   email: string;
   firstName: string;
   lastName: string;
+  businessName: string;
   role: AccountRole;
   createdAt: Date;
   lastSeenAt: Date;
@@ -274,23 +276,35 @@ export type StudentRecord = {
 };
 
 export async function listStudents(): Promise<StudentRecord[]> {
-  const { getReadyDb } = await import("@syntholo/db");
+  const { getReadyDb, publicIdFromUuid } = await import("@syntholo/db");
   const db = await getReadyDb();
   const rows = await db`
-    SELECT u.id, u.email, u.first_name AS "firstName", u.last_name AS "lastName", u.role, u.created_at AS "createdAt", u.last_seen_at AS "lastSeenAt",
+    SELECT u.id, u.public_id AS "publicId", u.email, u.first_name AS "firstName", u.last_name AS "lastName",
+      u.business_name AS "businessName", u.role, u.created_at AS "createdAt", u.last_seen_at AS "lastSeenAt",
       (SELECT COUNT(*)::int FROM lesson_progress lp WHERE lp.user_id = u.id AND lp.status = 'completed') AS "completedLessons"
     FROM app_users u ORDER BY u.created_at DESC
   `;
-  return rows.map((row) => ({
-    id: String(row.id),
-    email: String(row.email),
-    firstName: String(row.firstName ?? ""),
-    lastName: String(row.lastName ?? ""),
-    role: "student" as const,
-    createdAt: new Date(row.createdAt as string),
-    lastSeenAt: new Date(row.lastSeenAt as string),
-    completedLessons: Number(row.completedLessons),
-  }));
+  return rows.map((row) => {
+    const id = String(row.id);
+    return {
+      id,
+      publicId: row.publicId ? String(row.publicId) : publicIdFromUuid(id, "STU"),
+      email: String(row.email),
+      firstName: String(row.firstName ?? ""),
+      lastName: String(row.lastName ?? ""),
+      businessName: String(row.businessName ?? ""),
+      role: "student" as const,
+      createdAt: new Date(row.createdAt as string),
+      lastSeenAt: new Date(row.lastSeenAt as string),
+      completedLessons: Number(row.completedLessons),
+    };
+  });
+}
+
+export async function getStudentById(idOrPublicId: string): Promise<StudentRecord | null> {
+  const students = await listStudents();
+  const needle = idOrPublicId.trim().toLowerCase();
+  return students.find((student) => student.id.toLowerCase() === needle || student.publicId.toLowerCase() === needle) ?? null;
 }
 
 export async function setUserRole(userId: string, role: AccountRole) {

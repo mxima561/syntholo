@@ -1,11 +1,15 @@
 import { getReadyDb } from "./client";
 import type { Staff, StaffRole, StaffStatus } from "./types";
 
+import { publicIdFromUuid } from "./ids";
+
 function mapStaff(row: Record<string, unknown>): Staff {
   const role = row.role === "instructor" || row.role === "support" || row.role === "admin" ? row.role : "support";
   const status: StaffStatus = row.status === "suspended" ? "suspended" : "active";
+  const id = String(row.id);
   return {
-    id: String(row.id),
+    id,
+    publicId: row.public_id ? String(row.public_id) : publicIdFromUuid(id, "STF"),
     email: String(row.email),
     role,
     status,
@@ -17,7 +21,7 @@ function mapStaff(row: Record<string, unknown>): Staff {
 export async function findStaffByEmail(email: string): Promise<Staff | null> {
   const db = await getReadyDb();
   const [row] = await db`
-    SELECT id, email, role, status, created_at, last_seen_at
+    SELECT id, public_id, email, role, status, created_at, last_seen_at
     FROM staff WHERE email = ${email}
   `;
   return row ? mapStaff(row) : null;
@@ -31,7 +35,7 @@ export async function touchStaffLastSeen(id: string): Promise<void> {
 export async function listStaff(): Promise<Staff[]> {
   const db = await getReadyDb();
   const rows = await db`
-    SELECT id, email, role, status, created_at, last_seen_at
+    SELECT id, public_id, email, role, status, created_at, last_seen_at
     FROM staff ORDER BY created_at
   `;
   return rows.map(mapStaff);
@@ -42,16 +46,20 @@ export async function insertStaff(input: { email: string; role: StaffRole }): Pr
   const [row] = await db`
     INSERT INTO staff (email, role, status)
     VALUES (${input.email}, ${input.role}, 'active')
-    RETURNING id, email, role, status, created_at, last_seen_at
+    RETURNING id, public_id, email, role, status, created_at, last_seen_at
   `;
-  return mapStaff(row);
+  const mapped = mapStaff(row);
+  if (!row.public_id) {
+    await db`UPDATE staff SET public_id = ${mapped.publicId} WHERE id = ${mapped.id}`;
+  }
+  return mapped;
 }
 
 export async function updateStaffRole(id: string, role: StaffRole): Promise<Staff | null> {
   const db = await getReadyDb();
   const [row] = await db`
     UPDATE staff SET role = ${role} WHERE id = ${id}
-    RETURNING id, email, role, status, created_at, last_seen_at
+    RETURNING id, public_id, email, role, status, created_at, last_seen_at
   `;
   return row ? mapStaff(row) : null;
 }
@@ -60,7 +68,7 @@ export async function updateStaffStatus(id: string, status: StaffStatus): Promis
   const db = await getReadyDb();
   const [row] = await db`
     UPDATE staff SET status = ${status} WHERE id = ${id}
-    RETURNING id, email, role, status, created_at, last_seen_at
+    RETURNING id, public_id, email, role, status, created_at, last_seen_at
   `;
   return row ? mapStaff(row) : null;
 }

@@ -6,6 +6,7 @@ const pages = [
   "/scorecard",
   "/pricing",
   "/learn",
+  "/learn/course",
   "/learn/course/growth-2",
   "/learn/plan",
   "/learn/workflows",

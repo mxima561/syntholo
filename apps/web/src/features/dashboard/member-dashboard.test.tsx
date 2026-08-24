@@ -1,6 +1,6 @@
+import type { Route } from "next";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { getDashboard } from "@/lib/demo/repository";
 import { MemberDashboard } from "./member-dashboard";
 
 describe("MemberDashboard", () => {
@@ -8,7 +8,17 @@ describe("MemberDashboard", () => {
     render(
       <MemberDashboard
         coachThread={{ subject: "Workflow review", coachFirstName: "Naomi", lastMessage: "Your routing rules look solid." }}
-        dashboard={getDashboard("member-maria")}
+        nextHref={"/learn/course/growth-2" as Route}
+        nextLesson={{ id: "growth-2", title: "Design the growth workflow", summary: "Map trigger, owner, and review.", actionLabel: "Draft the workflow", stageTitle: "Growth engine" }}
+        priorities={["Draft the workflow", "Team AI policy", "Growth workflow"]}
+        progressPercent={39}
+        publicId="STU-TESTID1"
+        recommendations={[
+          { label: "Coach feedback", title: "Team AI policy", description: "Review Naomi's two notes before your next team meeting.", href: "/learn/plan" as Route, actionLabel: "Open workspace", tone: "coral" },
+          { label: "Workflow", title: "Client onboarding launch", description: "Complete the next test before launch.", href: "/learn/workflows" as Route, actionLabel: "Review workflow", tone: "gold" },
+        ]}
+        upcomingSession={{ title: "Workflow office hours", hostName: "Naomi Reed", region: "Americas" }}
+        workspaceName="Northstar Advisory"
       />,
     );
 

@@ -230,3 +230,77 @@ export async function setStaffStatusAction(formData: FormData) {
   await audit("set_staff_status", "staff", staffId, null, after, actor.id);
   revalidatePath("/staff");
 }
+
+export async function hidePostAction(formData: FormData) {
+  const staff = await staffOrForbidden("content");
+  const postId = text(formData, "postId");
+  if (!postId) return;
+  const { setCommunityPostStatus } = await import("@syntholo/db");
+  await setCommunityPostStatus(postId, "hidden");
+  await audit("hide_post", "community_post", postId, { status: "published" }, { status: "hidden" }, staff.id);
+  revalidatePath("/community");
+}
+
+export async function restorePostAction(formData: FormData) {
+  const staff = await staffOrForbidden("content");
+  const postId = text(formData, "postId");
+  if (!postId) return;
+  const { setCommunityPostStatus } = await import("@syntholo/db");
+  await setCommunityPostStatus(postId, "published");
+  await audit("restore_post", "community_post", postId, { status: "hidden" }, { status: "published" }, staff.id);
+  revalidatePath("/community");
+}
+
+export async function resolveReportAction(formData: FormData) {
+  const staff = await staffOrForbidden("content");
+  const reportId = text(formData, "reportId");
+  if (!reportId) return;
+  const { resolveCommunityReport } = await import("@syntholo/db");
+  await resolveCommunityReport(reportId);
+  await audit("resolve_report", "community_report", reportId, { status: "open" }, { status: "reviewed" }, staff.id);
+  revalidatePath("/community");
+}
+
+export async function createSessionAction(formData: FormData) {
+  const staff = await staffOrForbidden("content");
+  const title = text(formData, "title");
+  const startsAt = text(formData, "startsAt");
+  if (!title || !startsAt) return;
+  const start = new Date(startsAt);
+  const end = new Date(start.getTime() + 60 * 60 * 1000);
+  const { createLiveSession } = await import("@syntholo/db");
+  const id = await createLiveSession({
+    title,
+    description: text(formData, "description"),
+    region: text(formData, "region") || "Americas",
+    hostName: text(formData, "hostName") || staffDisplayName(staff),
+    startsAt: start,
+    endsAt: end,
+    joinUrl: text(formData, "joinUrl") || undefined,
+  });
+  await audit("create_live_session", "live_session", id, null, { title, startsAt }, staff.id);
+  revalidatePath("/content");
+  revalidatePath("/logs");
+}
+
+export async function saveProvisioningNoteAction(formData: FormData) {
+  const staff = await staffOrForbidden("support");
+  const accountId = text(formData, "accountId");
+  const note = text(formData, "note");
+  if (!accountId || !note) return;
+  const { saveSoftwareNote } = await import("@syntholo/db");
+  await saveSoftwareNote(accountId, `${staffDisplayName(staff)}: ${note}`);
+  await audit("software_note", "software_account", accountId, null, { note }, staff.id);
+  revalidatePath("/provisioning");
+}
+
+export async function toggleLaunchCheckAction(formData: FormData) {
+  const staff = await staffOrForbidden("support");
+  const accountId = text(formData, "accountId");
+  const check = text(formData, "check");
+  if (!accountId || !check) return;
+  const { toggleSoftwareLaunchCheck } = await import("@syntholo/db");
+  const after = await toggleSoftwareLaunchCheck(accountId, check);
+  await audit("software_launch_check", "software_account", accountId, null, after, staff.id);
+  revalidatePath("/provisioning");
+}

@@ -1,59 +1,80 @@
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import type { DashboardView } from "@/lib/demo/repository";
+import type { Route } from "next";
 import { DashboardContinueCard } from "./dashboard-continue-card";
 import { DashboardRecommendationCard } from "./dashboard-recommendation-card";
 import { DashboardRightRail } from "./dashboard-right-rail";
 
-type MemberDashboardProps = {
-  dashboard: DashboardView;
-  coachThread: { subject: string; coachFirstName: string; lastMessage: string };
+export type DashboardLesson = {
+  id: string;
+  title: string;
+  summary: string;
+  actionLabel: string;
+  stageTitle?: string;
 };
 
-export function MemberDashboard({ dashboard, coachThread }: MemberDashboardProps) {
-  const policy = dashboard.artifacts.find((artifact) => artifact.kind === "ai_policy")!;
-  const workflowPortfolio = dashboard.artifacts.find(
-    (artifact) => artifact.kind === "workflow_portfolio",
-  )!;
-  const nextWorkflow = workflowPortfolio.workflows!.find((workflow) => workflow.status !== "live")!;
+export type DashboardRecommendation = {
+  label: string;
+  title: string;
+  description: string;
+  href: Route;
+  actionLabel: string;
+  tone: "coral" | "gold";
+};
 
-  const recommendations = [
-    {
-      label: "Coach feedback",
-      title: policy.title,
-      description: "Review Naomi's two notes before your next team meeting.",
-      href: `/learn/plan?artifact=${policy.id}` as `/learn/plan?artifact=${string}`,
-      actionLabel: "Open workspace",
-      tone: "coral" as const,
-    },
-    {
-      label: "Workflow",
-      title: nextWorkflow.name,
-      description: `${nextWorkflow.target}. Complete the next test before launch.`,
-      href: "/learn/workflows" as const,
-      actionLabel: "Review workflow",
-      tone: "gold" as const,
-    },
-  ];
+type MemberDashboardProps = {
+  workspaceName: string;
+  progressPercent: number;
+  nextLesson: DashboardLesson | null;
+  nextHref: Route;
+  coachThread: { subject: string; coachFirstName: string; lastMessage: string };
+  upcomingSession: { title: string; hostName: string; region: string } | null;
+  recommendations: DashboardRecommendation[];
+  priorities: string[];
+  publicId: string;
+  certificateHref?: Route | null;
+};
 
+export function MemberDashboard({
+  workspaceName,
+  progressPercent,
+  nextLesson,
+  nextHref,
+  coachThread,
+  upcomingSession,
+  recommendations,
+  priorities,
+  publicId,
+  certificateHref,
+}: MemberDashboardProps) {
   return (
     <div className="member-page member-dashboard">
       <section className="dashboard-heading">
         <div>
-          <span className="meta-label">{dashboard.organization.name} · Academy</span>
+          <span className="meta-label">{workspaceName} · Student ID {publicId}</span>
           <h1>Keep building your business OS.</h1>
           <p>One focused action, a practical recommendation, and a real person in your corner.</p>
         </div>
-        <Link className="text-link" href="/learn/course">Browse lessons and templates <ArrowRight size={14} /></Link>
+        <div className="dashboard-heading-links">
+          <Link className="text-link" href="/learn/course">Browse lessons and templates <ArrowRight size={14} /></Link>
+          {certificateHref ? <Link className="text-link" href={certificateHref}>View certificate <ArrowRight size={14} /></Link> : null}
+        </div>
       </section>
 
       <div className="dashboard-layout">
         <div className="dashboard-main">
-          <DashboardContinueCard
-            href={dashboard.nextAction.href}
-            lesson={dashboard.nextLesson}
-            progressPercent={dashboard.progressPercent}
-          />
+          {nextLesson ? (
+            <DashboardContinueCard href={nextHref} lesson={nextLesson} progressPercent={progressPercent} />
+          ) : (
+            <article className="dashboard-continue-card">
+              <div className="dashboard-continue-copy">
+                <span className="meta-label">Course complete</span>
+                <h2>You finished the required lessons.</h2>
+                <p>Keep the 30-day outputs current and launch the remaining workflows.</p>
+                <Link className="button button-primary button-medium" href="/learn/plan">Open 30-day plan</Link>
+              </div>
+            </article>
+          )}
           <section className="dashboard-recommendation-section" aria-labelledby="recommendations-heading">
             <div className="dashboard-section-heading">
               <span className="meta-label">Keep momentum</span>
@@ -67,11 +88,9 @@ export function MemberDashboard({ dashboard, coachThread }: MemberDashboardProps
           </section>
         </div>
         <DashboardRightRail
-          actionLabel={dashboard.nextLesson.actionLabel}
-          policyTitle={policy.title}
-          workflowName={nextWorkflow.name}
+          priorities={priorities}
           coachThread={coachThread}
-          session={dashboard.upcomingSession!}
+          session={upcomingSession}
         />
       </div>
     </div>

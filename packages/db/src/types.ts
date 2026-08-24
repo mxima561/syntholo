@@ -3,6 +3,7 @@ export type StaffStatus = "active" | "suspended";
 
 export type Staff = {
   id: string;
+  publicId: string;
   email: string;
   role: StaffRole;
   status: StaffStatus;

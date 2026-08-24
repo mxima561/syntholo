@@ -1,6 +1,7 @@
 import { createStaffAction, setStaffRoleAction, setStaffStatusAction } from "@/app/actions";
 import { requireStaff } from "@/lib/auth/staff";
 import { listStaff } from "@syntholo/db";
+import { CopyId } from "@/components/copy-id";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,10 @@ export default async function StaffPage() {
         <header><span>Email</span><span>Role</span><span>Status</span><span>Last seen</span><span /></header>
         {rows.map((member) => (
           <div className="student-row" key={member.id}>
-            <strong>{member.email}</strong>
+            <div>
+              <strong>{member.email}</strong>
+              <CopyId value={member.publicId} />
+            </div>
             <form action={setStaffRoleAction}>
               <input name="staffId" type="hidden" value={member.id} />
               <select defaultValue={member.role} name="role">

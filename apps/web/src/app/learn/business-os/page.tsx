@@ -1,6 +1,35 @@
 import { BusinessOsOnboarding } from "@/features/business-os/business-os-onboarding";
-import { demoSoftwareAccount } from "@/lib/demo/data";
+import { requireStudentAccount } from "@/lib/server/accounts";
+import { getSoftwareAccount } from "@syntholo/db";
 
-export default function BusinessOsPage() {
-  return <div className="member-page business-os-page"><section className="page-intro"><div><span className="eyebrow"><span className="eyebrow-dot" /> Optional implementation service</span><h1>Business OS</h1><p>Your Academy workflows, configured into one managed lead and client operating system.</p></div><div className="os-offer-price"><span>$999 setup</span><strong>$199/month</strong></div></section><BusinessOsOnboarding initialAccount={demoSoftwareAccount} /></div>;
+export const dynamic = "force-dynamic";
+
+export default async function BusinessOsPage() {
+  const account = await requireStudentAccount();
+  const software = await getSoftwareAccount(account.id);
+  return (
+    <div className="member-page business-os-page">
+      <section className="page-intro">
+        <div>
+          <span className="eyebrow"><span className="eyebrow-dot" /> Optional implementation service</span>
+          <h1>Business OS</h1>
+          <p>Your Academy workflows, configured into one managed lead and client operating system.</p>
+        </div>
+        <div className="os-offer-price"><span>$999 setup</span><strong>$199/month</strong></div>
+      </section>
+      {software ? (
+        <BusinessOsOnboarding
+          initialAccount={{
+            id: software.id,
+            firstName: account.firstName,
+            status: software.status,
+            provisioningDueAt: software.provisioningDueAt?.toISOString() ?? null,
+            checklist: software.checklist,
+          }}
+        />
+      ) : (
+        <p className="empty-note">Your Business OS questionnaire will appear here once your student workspace is ready.</p>
+      )}
+    </div>
+  );
 }

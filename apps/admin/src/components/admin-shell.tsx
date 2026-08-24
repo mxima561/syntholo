@@ -3,11 +3,12 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
-import { BookOpen, Boxes, ChartNoAxesCombined, CircleDollarSign, Headphones, LayoutDashboard, MessagesSquare, Settings, Shield, UsersRound, Workflow } from "lucide-react";
+import { BookOpen, Boxes, ChartNoAxesCombined, CircleDollarSign, Headphones, LayoutDashboard, MessagesSquare, ScrollText, Settings, Shield, UsersRound, Workflow } from "lucide-react";
 
 const adminNav = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/customers", label: "Students", icon: UsersRound },
+  { href: "/logs", label: "Logs", icon: ScrollText },
   { href: "/content", label: "Course content", icon: BookOpen },
   { href: "/support", label: "Support", icon: Headphones },
   { href: "/staff", label: "Staff", icon: Shield },
@@ -38,7 +39,7 @@ export function AdminShell({ children, identity }: AdminShellProps) {
         </nav>
         <div className="admin-workspace">
           <Boxes size={16} />
-          <div><strong>Production workspace</strong><span>All systems normal</span></div>
+          <div><strong>Operations workspace</strong><span>Live Postgres · staff-authorized</span></div>
         </div>
         <Link className={pathname === "/settings" ? "admin-settings active" : "admin-settings"} href="/settings">
           <Settings size={16} /> Settings

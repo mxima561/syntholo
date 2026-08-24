@@ -1,11 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import type { DashboardView } from "@/lib/demo/repository";
+import type { Route } from "next";
 import { DashboardIllustration } from "./dashboard-illustration";
+import type { DashboardLesson } from "./member-dashboard";
 
 type DashboardContinueCardProps = {
-  href: DashboardView["nextAction"]["href"];
-  lesson: DashboardView["nextLesson"];
+  href: Route;
+  lesson: DashboardLesson;
   progressPercent: number;
 };
 
@@ -14,7 +15,7 @@ export function DashboardContinueCard({ href, lesson, progressPercent }: Dashboa
     <article className="dashboard-continue-card">
       <DashboardIllustration />
       <div className="dashboard-continue-copy">
-        <span className="meta-label">Stage 3 · Growth engine</span>
+        <span className="meta-label">{lesson.stageTitle ?? "Course"}</span>
         <h2>{lesson.title}</h2>
         <p>{lesson.summary}</p>
         <Progress label="Program completion" showValue value={progressPercent} />

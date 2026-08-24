@@ -1,8 +1,10 @@
 import { Search } from "lucide-react";
+import Link from "next/link";
 import { grantEntitlementAction, refundPurchaseAction, revokeEntitlementAction } from "@/app/actions";
 import { requireStaff } from "@/lib/auth/staff";
 import { getPrimaryCourse, listStudents } from "@/lib/server/courses";
 import { listPaidPurchases } from "@syntholo/db";
+import { CopyId } from "@/components/copy-id";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +18,7 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
   const query = q?.trim().toLowerCase();
   const filtered = query
     ? students.filter((student) =>
-        `${student.firstName} ${student.lastName} ${student.email}`.toLowerCase().includes(query))
+        `${student.publicId} ${student.id} ${student.firstName} ${student.lastName} ${student.email} ${student.businessName}`.toLowerCase().includes(query))
     : students;
 
   return (
@@ -25,23 +27,29 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
         <div>
           <span className="micro-label">Student operations</span>
           <h1>Students</h1>
-          <p>Signed-in academy accounts. Staff access is managed separately under Staff — never by promoting a student row.</p>
+          <p>Every academy member has a stable student ID (STU-…). Search by ID, email, or name. Staff access is managed separately under Staff.</p>
         </div>
         <form className="admin-search" method="get">
           <Search size={14} />
           <span className="sr-only">Search students</span>
-          <input aria-label="Search students by name or email" defaultValue={q} name="q" placeholder="Search students" />
+          <input aria-label="Search students by ID, name, or email" defaultValue={q} name="q" placeholder="Search ID, name, or email" />
         </form>
       </section>
 
-      <section className="admin-table">
-        <header><span>Student</span><span>Email</span><span>Progress</span><span>Joined</span><span>Access</span></header>
+      <section className="admin-table students-table">
+        <header><span>Student ID</span><span>Student</span><span>Email</span><span>Progress</span><span>Joined</span><span>Access</span></header>
         {filtered.length === 0 ? (
           <p className="empty-note">No students found{query ? ` for “${q}”` : ""}.</p>
         ) : (
           filtered.map((student) => (
-            <div className="student-row" key={student.id}>
-              <strong>{[student.firstName, student.lastName].filter(Boolean).join(" ") || "—"}</strong>
+            <div className="student-row student-row-ids" key={student.id}>
+              <CopyId value={student.publicId} />
+              <div>
+                <Link href={`/customers/${student.id}`}>
+                  <strong>{[student.firstName, student.lastName].filter(Boolean).join(" ") || "—"}</strong>
+                </Link>
+                {student.businessName ? <small>{student.businessName}</small> : null}
+              </div>
               <span>{student.email}</span>
               <span>{totalLessons > 0 ? `${Math.round((student.completedLessons / totalLessons) * 100)}%` : "—"}<small> ({student.completedLessons}/{totalLessons})</small></span>
               <span>{new Date(student.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
@@ -67,12 +75,12 @@ export default async function AdminStudentsPage({ searchParams }: { searchParams
       </section>
 
       <section className="admin-table">
-        <header><span>Purchase</span><span>Email</span><span>Offer</span><span>Status</span><span /></header>
+        <header><span>Purchase ID</span><span>Email</span><span>Offer</span><span>Status</span><span /></header>
         {purchases.length === 0 ? (
           <p className="empty-note">No purchases yet.</p>
         ) : purchases.map((purchase) => (
           <div className="student-row" key={purchase.id}>
-            <strong>{purchase.id.slice(0, 8)}</strong>
+            <CopyId value={purchase.id} label={purchase.id.slice(0, 8)} />
             <span>{purchase.email}</span>
             <span>{purchase.offer}</span>
             <i className={`status-pill ${purchase.status === "paid" ? "live" : ""}`}>{purchase.status}</i>
