@@ -4,9 +4,9 @@
 
 **Goal:** Move the production web and identity boundaries to `https://app.syntholo.com` without exposing backend credentials, then publish any required reviewed correction under one newer exact release identity.
 
-**Architecture:** Vercel serves the canonical web hostname and keeps the existing relative `/v1` rewrite to Railway. Clerk moves from the temporary `syntholo.vercel.app` proxy configuration to DNS mode on the owned domain, while WorkOS and Railway consume the same canonical origin. Provider changes are ordered so DNS and redirect validation precede origin cutover.
+**Architecture:** Vercel serves the canonical web hostname and keeps the existing relative `/v1` rewrite to Railway. Clerk moves from the temporary `syntholo.vercel.app` proxy configuration to DNS mode on the owned domain, while Cloudflare Access and Railway consume the same canonical origin. Provider changes are ordered so DNS and redirect validation precede origin cutover.
 
-**Tech Stack:** Vercel CLI, Railway CLI, Clerk Backend API 2026-05-12, WorkOS Dashboard/API, GoDaddy DNS, Next.js 16, Fastify, curl/dig
+**Tech Stack:** Vercel CLI, Railway CLI, Clerk Backend API 2026-05-12, Cloudflare Access Dashboard/API, GoDaddy DNS, Next.js 16, Fastify, curl/dig
 
 **Spec:** `docs/superpowers/specs/2026-08-14-production-domain-cutover-design.md`
 
@@ -14,7 +14,7 @@
 
 - Canonical web origin is exactly `https://app.syntholo.com`.
 - The apex `syntholo.com` is unchanged.
-- Clerk secret and WorkOS secret remain only in Railway API; Vercel receives no backend credential.
+- Clerk secret and Cloudflare Access secret remain only in Railway API; Vercel receives no backend credential.
 - The browser continues to call relative `/v1` paths through the Vercel rewrite.
 - All deployments and health responses remain bound to Git SHA `0843b6e9835a0899b193edb2c4ba8b84d331a574` unless an intentional repository change creates and pushes a newer reviewed SHA. The embedded-auth routing correction does create such a release.
 - Provider credentials must never appear in terminal output, logs, patches, commits, or reports.
@@ -97,7 +97,7 @@ curl -fsS -X PATCH \
 ```
 
 Expected: Clerk returns DNS targets for the new domain and no proxy URL. If the
-PATCH is rejected, stop before changing WorkOS or either runtime origin and
+PATCH is rejected, stop before changing Cloudflare Access or either runtime origin and
 record Clerk's exact response for a revised provider-specific plan.
 
 - [x] **Step 3: Add only the exact Clerk-returned CNAME records in GoDaddy**
@@ -133,13 +133,13 @@ If Clerk returns a new publishable or secret key, copy it directly into the same
 - Read: `docs/architecture/identity-and-sessions.md`
 - Modify externally: Vercel production `WEB_ORIGIN`
 - Modify externally: Railway API production `WEB_ORIGIN`
-- Modify externally: WorkOS redirect URI
+- Modify externally: Cloudflare Access redirect URI
 
 **Interfaces:**
 - Consumes: verified Clerk DNS from Task 2.
-- Produces: one canonical hostname for web redirect, embedded Clerk routes, API CORS/cookie decisions, and WorkOS callback.
+- Produces: one canonical hostname for web redirect, embedded Clerk routes, API CORS/cookie decisions, and Cloudflare Access callback.
 
-- [x] **Step 1: Update WorkOS redirect URI first**
+- [x] **Step 1: Update Cloudflare Access redirect URI first**
 
 Set the application homepage, initiate-login URI, and production callback to:
 
@@ -184,7 +184,7 @@ Expected: Railway confirms only the API variable was changed.
 
 - [x] **Step 5: Confirm Vercel remains free of backend credentials**
 
-Pull production variables to an ignored file and report only key names. Fail if `CLERK_SECRET_KEY`, `WORKOS_API_KEY`, database URLs, or another forbidden server credential is present.
+Pull production variables to an ignored file and report only key names. Fail if `CLERK_SECRET_KEY`, `REMOVED_API_KEY`, database URLs, or another forbidden server credential is present.
 
 ### Task 4: Redeploy and verify the cutover
 
@@ -233,7 +233,7 @@ check from `/sign-up`.
 curl -fsSI https://app.syntholo.com/v1/staff/auth/sign-in
 ```
 
-Expected: redirect uses the existing WorkOS client/organization and exact `app.syntholo.com` callback. The login cookie remains `Secure`, `HttpOnly`, `SameSite=Lax`, host-only, and `Path=/`.
+Expected: redirect uses the existing Cloudflare Access client/organization and exact `app.syntholo.com` callback. The login cookie remains `Secure`, `HttpOnly`, `SameSite=Lax`, host-only, and `Path=/`.
 
 - [x] **Step 6: Run local regression gates**
 
@@ -259,7 +259,7 @@ Expected: all locally executable checks pass.
 
 - [x] **Step 1: Replace temporary-host documentation with the verified canonical values**
 
-Record `app.syntholo.com`, the exact WorkOS callback, Clerk DNS mode, Vercel/Railway service boundaries, deployment IDs, and verification timestamps. Do not record credentials.
+Record `app.syntholo.com`, the exact Cloudflare Access callback, Clerk DNS mode, Vercel/Railway service boundaries, deployment IDs, and verification timestamps. Do not record credentials.
 
 - [x] **Step 2: Run documentation and repository checks**
 

@@ -39,7 +39,7 @@ const apiFixture = createHttpsServer({
     response.end(JSON.stringify({
       kind: "staff",
       actorId: "10000000-0000-4000-8000-000000000001",
-      workosUserId: "production-browser-staff",
+      accessUserId: "production-browser-staff",
       staffId: "10000000-0000-4000-8000-000000000002",
       role: "admin",
       permissions: ["certificates:deliver"],

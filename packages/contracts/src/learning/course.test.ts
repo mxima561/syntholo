@@ -3,7 +3,7 @@ import {
   MemberCourseResponseSchema,
   MemberLessonResponseSchema,
   LessonPlaybackResponseSchema,
-} from "./course.js";
+} from "./course";
 
 const course = {
   schemaVersion: 1,

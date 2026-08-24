@@ -15,6 +15,7 @@ import {
   stripeWebhookRoutes,
   type StripeWebhookRouteHandler,
 } from "./routes/webhooks/stripe.js";
+import { waitlistRoutes, type WaitlistPort } from "./routes/waitlist.js";
 
 export type ApiDependencies = Readonly<{
   releaseSha: string;
@@ -33,6 +34,10 @@ export type ApiDependencies = Readonly<{
     provider: Pick<ReturnType<typeof createStripeAdapter>, "createCheckout" | "createBillingPortal">;
   }>;
   close?: () => Promise<void>;
+  waitlist?: Readonly<{
+    webOrigin: string;
+    subscribe: WaitlistPort["subscribe"];
+  }>;
 }>;
 
 const ApiDependenciesSchema = z
@@ -83,6 +88,10 @@ const ApiDependenciesSchema = z
       }).strict(),
     ]).optional().default({ kind: "disabled" }),
     close: z.custom<() => Promise<void>>((value) => typeof value === "function").optional(),
+    waitlist: z.object({
+      webOrigin: z.string().trim().min(1),
+      subscribe: z.custom<WaitlistPort["subscribe"]>((value) => typeof value === "function"),
+    }).strict().optional(),
   })
   .strict();
 
@@ -123,6 +132,13 @@ export async function buildApp(
     await app.register(stripeWebhookRoutes, {
       prefix: "/v1/webhooks/stripe",
       handler: parsedDependencies.data.stripe.handler,
+    });
+  }
+  if (parsedDependencies.data.waitlist !== undefined) {
+    await app.register(waitlistRoutes, {
+      prefix: "/v1",
+      webOrigin: parsedDependencies.data.waitlist.webOrigin,
+      waitlist: { subscribe: parsedDependencies.data.waitlist.subscribe },
     });
   }
   if (parsedDependencies.data.auth.kind === "enabled") {

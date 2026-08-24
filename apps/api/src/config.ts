@@ -47,11 +47,11 @@ const ApiEnvironmentSchema = z.object({
   CLERK_SECRET_KEY: optionalNonemptyString,
   CLERK_PUBLISHABLE_KEY: optionalNonemptyString,
   CLERK_AUDIENCE: optionalNonemptyString,
-  WORKOS_API_KEY: optionalNonemptyString,
-  WORKOS_CLIENT_ID: optionalNonemptyString,
-  WORKOS_ORGANIZATION_ID: optionalNonemptyString,
-  WORKOS_ISSUER: optionalNonemptyString,
-  WORKOS_JWKS_URL: optionalNonemptyString,
+  REMOVED_API_KEY: optionalNonemptyString,
+  REMOVED_CLIENT_ID: optionalNonemptyString,
+  REMOVED_ORGANIZATION_ID: optionalNonemptyString,
+  REMOVED_ISSUER: optionalNonemptyString,
+  REMOVED_JWKS_URL: optionalNonemptyString,
   STAFF_SESSION_ENCRYPTION_KEYS: optionalNonemptyString,
   IMPLEMENTATION_CURSOR_SECRET: optionalNonemptyString,
   CERTIFICATE_CURSOR_SECRET: optionalNonemptyString,
@@ -67,6 +67,8 @@ const ApiEnvironmentSchema = z.object({
   MUX_WEBHOOK_SECRET: optionalNonemptyString,
   MUX_SIGNING_KEY_ID: optionalNonemptyString,
   MUX_SIGNING_PRIVATE_KEY: optionalNonemptyString,
+  MUX_RECONCILE_TOKEN_ID: optionalNonemptyString,
+  MUX_RECONCILE_TOKEN_SECRET: optionalNonemptyString,
   STRIPE_COMMERCE_ENABLED: z.enum(["true", "false"]).default("false"),
   COMMERCE_PAYLOAD_KEYS: optionalNonemptyString,
 });
@@ -83,11 +85,11 @@ export type ApiConfig = Readonly<{
   clerkSecretKey: string;
   clerkPublishableKey: string;
   clerkAudience: string;
-  workosApiKey: string;
-  workosClientId: string;
-  workosOrganizationId: string;
-  workosIssuer: string;
-  workosJwksUrl: string;
+  accessApiKey: string;
+  accessClientId: string;
+  accessOrganizationId: string;
+  accessIssuer: string;
+  accessJwksUrl: string;
   sessionEncryptionKeys: string;
   implementationCursorSecret: string;
   certificateBlob?: Readonly<{
@@ -104,6 +106,8 @@ export type ApiConfig = Readonly<{
     webhookSecret: string;
     signingKeyId: string;
     signingPrivateKey: string;
+    uploadTokenId?: string;
+    uploadTokenSecret?: string;
   }>;
   stripe: Readonly<{ kind: "disabled" }> | (Readonly<{ kind: "configured" }>
     & ReturnType<typeof parseStripeApiEnvironment>);
@@ -131,8 +135,8 @@ export function diagnoseApiConfig(
   for (const key of [
     "MEMBER_DATABASE_URL", "STAFF_DATABASE_URL", "SYSTEM_DATABASE_URL",
     "RELEASE_SHA", "WEB_ORIGIN", "CLERK_SECRET_KEY", "CLERK_PUBLISHABLE_KEY",
-    "CLERK_AUDIENCE", "WORKOS_API_KEY", "WORKOS_CLIENT_ID",
-    "WORKOS_ORGANIZATION_ID", "WORKOS_ISSUER", "WORKOS_JWKS_URL",
+    "CLERK_AUDIENCE", "REMOVED_API_KEY", "REMOVED_CLIENT_ID",
+    "REMOVED_ORGANIZATION_ID", "REMOVED_ISSUER", "REMOVED_JWKS_URL",
     "STAFF_SESSION_ENCRYPTION_KEYS", "IMPLEMENTATION_CURSOR_SECRET",
   ]) if (!present(key)) issues.push(`MISSING:${key}`);
 
@@ -196,11 +200,11 @@ export function parseApiConfig(
       clerkSecretKey: result.CLERK_SECRET_KEY,
       clerkPublishableKey: result.CLERK_PUBLISHABLE_KEY,
       clerkAudience: result.CLERK_AUDIENCE,
-      workosApiKey: result.WORKOS_API_KEY,
-      workosClientId: result.WORKOS_CLIENT_ID,
-      workosOrganizationId: result.WORKOS_ORGANIZATION_ID,
-      workosIssuer: result.WORKOS_ISSUER,
-      workosJwksUrl: result.WORKOS_JWKS_URL,
+      accessApiKey: result.REMOVED_API_KEY,
+      accessClientId: result.REMOVED_CLIENT_ID,
+      accessOrganizationId: result.REMOVED_ORGANIZATION_ID,
+      accessIssuer: result.REMOVED_ISSUER,
+      accessJwksUrl: result.REMOVED_JWKS_URL,
       sessionEncryptionKeys: result.STAFF_SESSION_ENCRYPTION_KEYS,
       implementationCursorSecret: result.IMPLEMENTATION_CURSOR_SECRET,
     };
@@ -268,6 +272,15 @@ export function parseApiConfig(
       || (result.MUX_SIGNING_KEY_ID !== undefined && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$/u.test(result.MUX_SIGNING_KEY_ID))) {
       throw new Error("Mux configuration invalid");
     }
+    const hasUploadTokenId = result.MUX_RECONCILE_TOKEN_ID !== undefined;
+    const hasUploadTokenSecret = result.MUX_RECONCILE_TOKEN_SECRET !== undefined;
+    if (hasUploadTokenId !== hasUploadTokenSecret
+      || (hasUploadTokenId && !muxEnabled)
+      || (result.MUX_RECONCILE_TOKEN_ID !== undefined
+        && !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,254}$/u.test(result.MUX_RECONCILE_TOKEN_ID))
+      || (result.MUX_RECONCILE_TOKEN_SECRET !== undefined && result.MUX_RECONCILE_TOKEN_SECRET.length < 16)) {
+      throw new Error("Mux upload token configuration invalid");
+    }
     const certificateBlobEnabled = result.CERTIFICATE_BLOB_ENABLED === "true";
     const certificateBlobValues = [
       result.CERTIFICATE_BLOB_ENVIRONMENT,
@@ -289,8 +302,8 @@ export function parseApiConfig(
     }
     parseStaffSessionKeyRing(required.sessionEncryptionKeys as string);
     const webOrigin = exactUrl(required.webOrigin as string, "origin");
-    const workosIssuer = exactUrl(required.workosIssuer as string, "issuer");
-    const workosJwksUrl = exactUrl(required.workosJwksUrl as string, "https-url");
+    const accessIssuer = exactUrl(required.accessIssuer as string, "issuer");
+    const accessJwksUrl = exactUrl(required.accessJwksUrl as string, "https-url");
     if (result.NODE_ENV === "production" && !webOrigin.startsWith("https://")) {
       throw new Error("production origin requires https");
     }
@@ -306,9 +319,9 @@ export function parseApiConfig(
       clerkSecretKey: required.clerkSecretKey as string,
       clerkPublishableKey: required.clerkPublishableKey as string,
       clerkAudience: required.clerkAudience as string,
-      workosApiKey: required.workosApiKey as string,
-      workosClientId: required.workosClientId as string,
-      workosOrganizationId: required.workosOrganizationId as string,
+      accessApiKey: required.accessApiKey as string,
+      accessClientId: required.accessClientId as string,
+      accessOrganizationId: required.accessOrganizationId as string,
       sessionEncryptionKeys: required.sessionEncryptionKeys as string,
       implementationCursorSecret: required.implementationCursorSecret as string,
       ...(certificateBlobEnabled ? {
@@ -325,14 +338,18 @@ export function parseApiConfig(
         }),
       } : {}),
       webOrigin,
-      workosIssuer,
-      workosJwksUrl,
+      accessIssuer,
+      accessJwksUrl,
       mux: muxEnabled ? Object.freeze({
         kind: "configured" as const,
         environmentId: result.MUX_ENVIRONMENT_ID as string,
         webhookSecret: result.MUX_WEBHOOK_SECRET as string,
         signingKeyId: result.MUX_SIGNING_KEY_ID as string,
         signingPrivateKey: signingPrivateKey as string,
+        ...(result.MUX_RECONCILE_TOKEN_ID !== undefined ? {
+          uploadTokenId: result.MUX_RECONCILE_TOKEN_ID,
+          uploadTokenSecret: result.MUX_RECONCILE_TOKEN_SECRET,
+        } : {}),
       }) : Object.freeze({ kind: "disabled" as const }),
       stripe: stripe === undefined
         ? Object.freeze({ kind: "disabled" as const })

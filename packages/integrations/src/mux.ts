@@ -182,6 +182,15 @@ export type MuxAssetManagementPort = Readonly<{
     environmentId: string;
     tracks: readonly NonNullable<MuxWebhookEvent["track"]>[];
   }>>;
+  createDirectUpload(input: Readonly<{ corsOrigin: string }>, signal: AbortSignal): Promise<Readonly<{
+    uploadId: string;
+    url: string;
+  }>>;
+  retrieveUpload(uploadId: string, signal: AbortSignal): Promise<Readonly<{
+    uploadId: string;
+    status: "waiting" | "asset_created" | "errored" | "cancelled";
+    assetId: string | null;
+  }>>;
 }>;
 
 type Fetch = (input: string, init: RequestInit) => Promise<Response>;
@@ -232,7 +241,98 @@ export function createMuxAssetManagementClient(input: Readonly<{
   const request = input.fetch ?? globalThis.fetch;
   const authorization = `Basic ${Buffer.from(`${input.tokenId}:${input.tokenSecret}`, "utf8").toString("base64")}`;
 
+  function originValid(value: string): boolean {
+    try {
+      const url = new URL(value);
+      return (url.protocol === "https:" || url.protocol === "http:") && url.origin === value;
+    } catch {
+      return false;
+    }
+  }
+
   return Object.freeze({
+    async createDirectUpload(uploadInput: Readonly<{ corsOrigin: string }>, signal: AbortSignal) {
+      if (!originValid(uploadInput.corsOrigin) || !(signal instanceof AbortSignal)) return failManagement();
+      let response: Response;
+      try {
+        response = await request("https://api.mux.com/video/v1/uploads", {
+          method: "POST",
+          redirect: "error",
+          signal,
+          headers: new Headers({
+            accept: "application/json",
+            "content-type": "application/json",
+            authorization,
+          }),
+          body: JSON.stringify({
+            cors_origin: uploadInput.corsOrigin,
+            new_asset_settings: {
+              playback_policies: ["signed"],
+              inputs: [{ generated_subtitles: [{ language_code: "en", name: "English" }] }],
+            },
+          }),
+        });
+      } catch {
+        return failManagement();
+      }
+      if (response.status === 401 || response.status === 403) {
+        throw new MuxManagementError("MUX_MANAGEMENT_AUTH_TERMINAL", true);
+      }
+      if (!response.ok || !response.headers.get("content-type")?.toLowerCase().includes("application/json")) {
+        return failManagement();
+      }
+      try {
+        const envelope = await response.json() as unknown;
+        if (!providerObject(envelope) || !providerObject(envelope.data)) return failManagement();
+        const data = envelope.data;
+        const url = typeof data.url === "string" ? data.url : failManagement();
+        if (!/^https:\/\//u.test(url)) return failManagement();
+        return { uploadId: string(data.id), url };
+      } catch (error) {
+        if (error instanceof Error && error.message === "MUX_MANAGEMENT_UNAVAILABLE") throw error;
+        return failManagement();
+      }
+    },
+    async retrieveUpload(uploadId: string, signal: AbortSignal) {
+      if (!identifier.test(uploadId) || !(signal instanceof AbortSignal)) return failManagement();
+      let response: Response;
+      try {
+        response = await request(
+          `https://api.mux.com/video/v1/uploads/${encodeURIComponent(uploadId)}`,
+          {
+            method: "GET",
+            redirect: "error",
+            signal,
+            headers: new Headers({ accept: "application/json", authorization }),
+          },
+        );
+      } catch {
+        return failManagement();
+      }
+      if (response.status === 404) throw new MuxManagementError("MUX_MANAGEMENT_OBJECT_TERMINAL", true);
+      if (response.status === 401 || response.status === 403) {
+        throw new MuxManagementError("MUX_MANAGEMENT_AUTH_TERMINAL", true);
+      }
+      if (!response.ok || !response.headers.get("content-type")?.toLowerCase().includes("application/json")) {
+        return failManagement();
+      }
+      try {
+        const envelope = await response.json() as unknown;
+        if (!providerObject(envelope) || !providerObject(envelope.data)) return failManagement();
+        const data = envelope.data;
+        if (string(data.id) !== uploadId) return failManagement();
+        const status = data.status;
+        if (status !== "waiting" && status !== "asset_created" && status !== "errored" && status !== "cancelled") {
+          return failManagement();
+        }
+        const assetId = data.asset_id === undefined || data.asset_id === null ? null : string(data.asset_id);
+        if (status === "asset_created" && assetId === null) return failManagement();
+        return { uploadId, status, assetId };
+      } catch (error) {
+        if (error instanceof Error && error.message === "MUX_MANAGEMENT_UNAVAILABLE") throw error;
+        return failManagement();
+      }
+    },
     async retrieveAsset(providerAssetId: string, signal: AbortSignal) {
       if (!identifier.test(providerAssetId) || !(signal instanceof AbortSignal)) return failManagement();
       let response: Response;

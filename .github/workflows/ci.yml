@@ -187,9 +187,9 @@ jobs:
             -e STAFF_DATABASE_URL=postgres://staff_runtime:staff_runtime@127.0.0.1:5432/syntholo_test \
             -e WEB_ORIGIN=https://app.syntholo.test -e CLERK_SECRET_KEY=sk_test \
             -e CLERK_PUBLISHABLE_KEY=pk_test -e CLERK_AUDIENCE=syntholo-member-api \
-            -e WORKOS_API_KEY=sk_test -e WORKOS_CLIENT_ID=client_test \
-            -e WORKOS_ORGANIZATION_ID=org_test -e WORKOS_ISSUER=https://api.workos.test \
-            -e WORKOS_JWKS_URL=https://api.workos.test/sso/jwks/client_test \
+            -e REMOVED_API_KEY=sk_test -e REMOVED_CLIENT_ID=client_test \
+            -e REMOVED_ORGANIZATION_ID=org_test -e REMOVED_ISSUER=https://api.access.test \
+            -e REMOVED_JWKS_URL=https://api.access.test/sso/jwks/client_test \
             -e STAFF_SESSION_ENCRYPTION_KEYS=1:BQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQU \
             "syntholo-api:${GITHUB_SHA}"
           for attempt in $(seq 1 30); do

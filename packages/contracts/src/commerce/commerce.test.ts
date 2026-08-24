@@ -13,7 +13,7 @@ import {
   StripeEventEnvelopeSchema,
   StripeMetadataSchema,
   SafeClaimPreviewSchema,
-} from "./index.js";
+} from "./index";
 
 describe("commerce wire contracts", () => {
   it("accepts a provider-free public offer projection and rejects provider authority", () => {

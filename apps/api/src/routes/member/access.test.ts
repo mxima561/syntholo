@@ -80,7 +80,7 @@ function dependencies(
           sessions: {} as AuthRouteDependencies["staff"]["sessions"],
           identities: {} as AuthRouteDependencies["staff"]["identities"],
           tokens: {} as AuthRouteDependencies["staff"]["tokens"],
-          workos: {} as AuthRouteDependencies["staff"]["workos"],
+          access: {} as AuthRouteDependencies["staff"]["access"],
           sleep: async () => undefined,
         },
       },

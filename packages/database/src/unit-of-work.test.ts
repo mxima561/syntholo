@@ -18,7 +18,7 @@ describe("UnitOfWork Commerce boundary", () => {
         permissions: ["commerce:write"],
         role: "admin",
         staffId: "10000000-0000-4000-8000-000000000002",
-        workosUserId: "staff_commerce_test",
+        accessUserId: "staff_commerce_test",
       },
       clock: { now: () => new Date("2026-08-15T16:00:00.000Z") },
       correlationId: "10000000-0000-4000-8000-000000000003",

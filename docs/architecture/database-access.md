@@ -100,7 +100,7 @@ The API verifies a token and resolves an internal actor before selecting a pool:
 | Authorized execution path | Database pool |
 | --- | --- |
 | Clerk member actor with a resolved account | member login granted `syntholo_member_api` |
-| WorkOS staff actor with route permission | staff login granted `syntholo_staff_api` |
+| Cloudflare Access staff actor with route permission | staff login granted `syntholo_staff_api` |
 | Signed provider fulfillment/lifecycle command | system login granted `syntholo_system_api` |
 | Durable job/outbox/provider processing | worker login granted `syntholo_worker` |
 | Versioned production migration | dedicated direct Neon owner/migration login |
@@ -257,7 +257,7 @@ The concrete transaction entitlement repository and its constructor are also
 package-internal. Consumers receive only the frozen repository interface on the
 canonical `TransactionContext`; an escaped or unawaited repository call fails
 after the callback closes. Recent-auth provenance follows the same authority
-boundary: only the verified Clerk/WorkOS authentication composition can register
+boundary: only the verified Clerk/Cloudflare Access authentication composition can register
 the canonical millisecond instant. A structurally similar actor or caller-chosen
 `Date` is never trusted as recent authentication.
 

@@ -11,9 +11,9 @@ const MAX_PERMISSION_COUNT = 256;
 const CLOCK_TOLERANCE_SECONDS = 5;
 const MAX_DATE_SECONDS = 8_640_000_000_000;
 
-export interface VerifiedWorkosAccessClaims {
-  readonly workosUserId: string;
-  readonly workosSessionId: string;
+export interface VerifiedAccessAccessClaims {
+  readonly accessUserId: string;
+  readonly accessSessionId: string;
   readonly tokenId: string;
   readonly clientId: string;
   readonly organizationId: string;
@@ -25,7 +25,7 @@ export interface VerifiedWorkosAccessClaims {
   readonly expiresAt: Date;
 }
 
-export interface WorkosTokenVerificationOptions {
+export interface AccessTokenVerificationOptions {
   readonly jwks: JWTVerifyGetKey;
   readonly issuer: string;
   readonly clientId: string;
@@ -34,13 +34,13 @@ export interface WorkosTokenVerificationOptions {
   readonly now?: Date;
 }
 
-export function createWorkosJwks(jwks: JSONWebKeySet): JWTVerifyGetKey {
+export function createAccessJwks(jwks: JSONWebKeySet): JWTVerifyGetKey {
   return createLocalJWKSet(jwks);
 }
 
-export function createRemoteWorkosJwks(url: URL): JWTVerifyGetKey {
+export function createRemoteAccessJwks(url: URL): JWTVerifyGetKey {
   if (url.protocol !== "https:") {
-    throw new Error("WORKOS_JWKS_URL_INVALID");
+    throw new Error("REMOVED_JWKS_URL_INVALID");
   }
   return createRemoteJWKSet(url, {
     cooldownDuration: 30_000,
@@ -81,10 +81,10 @@ function stringList(value: unknown, allowEmpty: boolean): readonly string[] {
   return Object.freeze(values);
 }
 
-export async function verifyWorkosAccessToken(
+export async function verifyAccessAccessToken(
   token: string,
-  options: WorkosTokenVerificationOptions,
-): Promise<VerifiedWorkosAccessClaims> {
+  options: AccessTokenVerificationOptions,
+): Promise<VerifiedAccessAccessClaims> {
   try {
     if (token.length === 0 || token.length > 16_384) {
       throw new Error("invalid token");
@@ -99,8 +99,8 @@ export async function verifyWorkosAccessToken(
     });
 
     if (payload.act !== undefined) throw new Error("impersonation denied");
-    const workosUserId = requiredString(payload.sub);
-    const workosSessionId = requiredString(payload.sid);
+    const accessUserId = requiredString(payload.sub);
+    const accessSessionId = requiredString(payload.sid);
     const tokenId = requiredString(payload.jti);
     const clientId = requiredString(payload.client_id);
     const organizationId = requiredString(payload.org_id);
@@ -126,8 +126,8 @@ export async function verifyWorkosAccessToken(
     }
 
     return Object.freeze({
-      workosUserId,
-      workosSessionId,
+      accessUserId,
+      accessSessionId,
       tokenId,
       clientId,
       organizationId,
@@ -139,6 +139,6 @@ export async function verifyWorkosAccessToken(
       expiresAt: new Date(expiresAt * 1_000),
     });
   } catch {
-    throw new Error("WORKOS_TOKEN_INVALID");
+    throw new Error("REMOVED_TOKEN_INVALID");
   }
 }

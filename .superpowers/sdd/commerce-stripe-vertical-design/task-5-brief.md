@@ -27,7 +27,7 @@ The durable `received` state is the handoff to the later canonical-retrieval/ful
 
 ## Exact HTTP and safety contract
 
-- Method/path is exactly `POST /v1/webhooks/stripe`; implicit `HEAD`, `GET`, query parameters, cookies, Clerk, WorkOS, CSRF, and alternate authorization are rejected or ignored as authority.
+- Method/path is exactly `POST /v1/webhooks/stripe`; implicit `HEAD`, `GET`, query parameters, cookies, Clerk, Cloudflare Access, CSRF, and alternate authorization are rejected or ignored as authority.
 - The route alone enables `config.rawBody=true`; all other routes remain raw-body free. Body limit is exactly `1_048_576` bytes, and an empty/missing/non-Buffer raw body fails as signature-invalid.
 - `stripe-signature` must occur exactly once in the request's raw header pairs and normalize to one nonempty string. Duplicate header occurrences/array values fail before verifier invocation; commas inside the single official Stripe signature value remain valid verifier syntax.
 - Success body is exactly `{ received: true }`. Success and errors use `Cache-Control: no-store`; errors use the accepted strict envelope and canonical request correlation ID. No CORS credential behavior is added.

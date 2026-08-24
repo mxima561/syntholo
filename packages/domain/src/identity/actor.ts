@@ -11,7 +11,7 @@ export type MemberActor = Readonly<{
 export type StaffActor = Readonly<{
   kind: "staff";
   actorId: string;
-  workosUserId: string;
+  accessUserId: string;
   staffId: string;
   role: "coach" | "admin";
   permissions: readonly string[];

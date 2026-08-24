@@ -3,7 +3,7 @@ import {
   CompleteLessonRequestSchema,
   CompleteLessonResponseSchema,
   ResumeLessonRequestSchema,
-} from "./progress.js";
+} from "./progress";
 
 describe("member learning progress contracts", () => {
   it("accepts only path-matched resume positions without caller authority", () => {

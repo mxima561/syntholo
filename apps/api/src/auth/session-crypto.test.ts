@@ -11,7 +11,7 @@ const keyTwo = Buffer.alloc(32, 2).toString("base64url");
 const binding = {
   sessionHash: Buffer.alloc(32, 7),
   staffIdentityId: "00000000-0000-4000-8000-000000000007",
-  workosSessionId: "session_staff_7",
+  accessSessionId: "session_staff_7",
 };
 
 describe("staff session cryptography", () => {
@@ -37,7 +37,7 @@ describe("staff session cryptography", () => {
     [
       "wrong AAD",
       {},
-      { ...binding, workosSessionId: "session_attacker" },
+      { ...binding, accessSessionId: "session_attacker" },
     ],
     ["unknown key", { keyVersion: 9 }, binding],
   ])("fails closed for %s", (_case, encryptedPatch, decryptBinding) => {

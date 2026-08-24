@@ -333,7 +333,9 @@ export async function assertDatabaseCapability(
                     'syntholo_redeem_invitation(uuid,uuid,text,bytea,text,text,timestamp with time zone)',
                     'syntholo_refund_product(uuid,uuid,text,uuid,text,timestamp with time zone)',
                     'syntholo_resolve_dispute(uuid,uuid,text,uuid,text,timestamp with time zone)',
-                    'syntholo_runtime_readiness()'
+                    'syntholo_runtime_readiness()',
+                    'syntholo_waitlist_subscribe_v1(text,text)',
+                    'syntholo_waitlist_get_by_email_v1(text)'
                   ))) or (n.nspname = 'public' and p.proname ~ '^syntholo_'
                     and exists (
                       select 1

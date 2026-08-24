@@ -391,7 +391,7 @@ describe.sequential("entitlement authority database", () => {
     clockNow = now,
     actor: StaffActor = trustedStaffActor({
       kind: "staff", actorId: "30000000-0000-4000-8000-000000000001",
-      workosUserId: "workos-admin", staffId: "30000000-0000-4000-8000-000000000001",
+      accessUserId: "access-admin", staffId: "30000000-0000-4000-8000-000000000001",
       role: "admin", permissions: Object.freeze(["entitlements:manage"]),
       authenticatedAt: now,
     }),
@@ -433,7 +433,7 @@ describe.sequential("entitlement authority database", () => {
     await harness.reset();
     await harness.database.pool.query(
       `insert into staff_identities(id,provider_user_id,role,permissions)
-       values('30000000-0000-4000-8000-000000000001','workos-admin','admin',
+       values('30000000-0000-4000-8000-000000000001','access-admin','admin',
          array['entitlements:manage'])`,
     );
   });
@@ -455,7 +455,7 @@ describe.sequential("entitlement authority database", () => {
       `select hash,created_at::text created_at
        from drizzle.__drizzle_migrations order by id`,
     );
-    expect(journal.rowCount).toBe(14);
+    expect(journal.rowCount).toBe(16);
     expect(journal.rows.slice(3, 5)).toEqual([
       {
         created_at: "1786640400000",
@@ -752,7 +752,7 @@ describe.sequential("entitlement authority database", () => {
         from accounts where id='30000000-0000-4000-8000-000000000003'
       `);
       expect(upgraded.rows).toEqual([{
-        journal_count: 14,
+        journal_count: 16,
         owner_established_at: "2026-01-02T03:04:05.123Z",
       }]);
       const afterUpgrade = await upgrade.pool.query<{
@@ -3636,17 +3636,17 @@ describe.sequential("entitlement authority database", () => {
     const actors: StaffActor[] = [
       trustedStaffActor({ kind: "staff",
         actorId: "30000000-0000-4000-8000-000000000002",
-        workosUserId: "coach", staffId: "30000000-0000-4000-8000-000000000002",
+        accessUserId: "coach", staffId: "30000000-0000-4000-8000-000000000002",
         role: "coach", permissions: Object.freeze(["entitlements:manage"]),
         authenticatedAt: now }),
       trustedStaffActor({ kind: "staff",
         actorId: "30000000-0000-4000-8000-000000000003",
-        workosUserId: "admin-no-permission",
+        accessUserId: "admin-no-permission",
         staffId: "30000000-0000-4000-8000-000000000003",
         role: "admin", permissions: Object.freeze([]), authenticatedAt: now }),
       trustedStaffActor({ kind: "staff",
         actorId: "30000000-0000-4000-8000-000000000004",
-        workosUserId: "stale-admin", staffId: "30000000-0000-4000-8000-000000000004",
+        accessUserId: "stale-admin", staffId: "30000000-0000-4000-8000-000000000004",
         role: "admin", permissions: Object.freeze(["entitlements:manage"]),
         authenticatedAt: new Date(now.getTime() - 300_001) }),
     ];
@@ -3676,7 +3676,7 @@ describe.sequential("entitlement authority database", () => {
       actor: {
         kind: "staff",
         actorId: "30000000-0000-4000-8000-000000000001",
-        workosUserId: "workos-admin",
+        accessUserId: "access-admin",
         staffId: "30000000-0000-4000-8000-000000000001",
         role: "admin",
         permissions: Object.freeze(["entitlements:manage"]),
@@ -5383,7 +5383,7 @@ describe.sequential("entitlement authority database", () => {
     const coachId = "30000000-0000-4000-8000-000000000002";
     await harness.database.pool.query(
       `insert into staff_identities(id,provider_user_id,role,permissions)
-       values($1,'workos-coach','coach',array[]::text[])`,
+       values($1,'access-coach','coach',array[]::text[])`,
       [coachId],
     );
     expect((await harness.database.pool.query<{ allowed: boolean }>(
@@ -5416,7 +5416,7 @@ describe.sequential("entitlement authority database", () => {
     const coach = trustedStaffActor({
       kind: "staff" as const,
       actorId: coachId,
-      workosUserId: "workos-coach",
+      accessUserId: "access-coach",
       staffId: coachId,
       role: "coach" as const,
       permissions: Object.freeze([]),

@@ -12,7 +12,8 @@
     "./content": "./src/content/index.ts",
     "./learning": "./src/learning/index.ts",
     "./commerce": "./src/commerce/index.ts",
-    "./implementation": "./src/implementation/index.ts"
+    "./implementation": "./src/implementation/index.ts",
+    "./staff": "./src/staff/index.ts"
   },
   "scripts": {
     "lint": "eslint --config ../../eslint.config.mjs src",

@@ -23,7 +23,7 @@ import type {
   LoginAttemptRecord,
   StaffIdentityRecord,
   StaffSessionRecord,
-  WorkosAccessClaims,
+  AccessAccessClaims,
 } from "./types.js";
 
 const now = new Date("2026-08-13T12:00:00.000Z");
@@ -32,12 +32,12 @@ const sessionCrypto = createStaffSessionCrypto(
   parseStaffSessionKeyRing(`1:${key}`),
 );
 
-const workosClaims = (
-  patch: Partial<WorkosAccessClaims> = {},
-): WorkosAccessClaims => ({
-  workosUserId: "workos_user_staff",
-  workosSessionId: "workos_session_staff",
-  tokenId: "workos_token_staff",
+const accessClaims = (
+  patch: Partial<AccessAccessClaims> = {},
+): AccessAccessClaims => ({
+  accessUserId: "removed_user_staff",
+  accessSessionId: "removed_session_staff",
+  tokenId: "removed_token_staff",
   clientId: "client_staff",
   organizationId: "org_staff",
   role: "admin",
@@ -90,7 +90,7 @@ class MemoryStaffSessions {
     if (
       existingIndex >= 0 &&
       this.records[existingIndex]?.staffIdentityId === record.staffIdentityId &&
-      this.records[existingIndex]?.workosUserId === record.workosUserId &&
+      this.records[existingIndex]?.accessUserId === record.accessUserId &&
       this.records[existingIndex]?.organizationId === record.organizationId &&
       this.records[existingIndex]?.revokedAt === null &&
       this.records[existingIndex]?.refreshLeaseId === null
@@ -103,7 +103,7 @@ class MemoryStaffSessions {
     }
     const sameSidIndex = this.records.findIndex(
       (candidate) =>
-        candidate.workosSessionId === record.workosSessionId &&
+        candidate.accessSessionId === record.accessSessionId &&
         candidate.revokedAt === null,
     );
     if (sameSidIndex >= 0) {
@@ -146,7 +146,7 @@ class MemoryStaffSessions {
     leaseId: string;
     expectedVersion: number;
     encryptedTokens: StaffSessionRecord["encryptedTokens"];
-    claims: WorkosAccessClaims;
+    claims: AccessAccessClaims;
     now: Date;
   }): Promise<StaffSessionRecord | null> {
     const record = await this.findByHash(input.sessionHash);
@@ -189,11 +189,11 @@ class MemoryStaffSessions {
   async revoke(
     sessionHash: Buffer,
     revokedAt: Date,
-  ): Promise<{ workosSessionId: string } | null> {
+  ): Promise<{ accessSessionId: string } | null> {
     const record = await this.findByHash(sessionHash);
     if (!record) return null;
     record.revokedAt ??= revokedAt;
-    return { workosSessionId: record.workosSessionId };
+    return { accessSessionId: record.accessSessionId };
   }
 }
 
@@ -202,7 +202,7 @@ function authFakes(options: {
   member?: MemberActor | null;
   memberFirstFactorVerifiedAt?: Date | null;
   staff?: StaffIdentityRecord | null;
-  claims?: WorkosAccessClaims;
+  claims?: AccessAccessClaims;
 } = {}) {
   const loginAttempts = new MemoryLoginAttempts();
   const staffSessions = new MemoryStaffSessions();
@@ -227,20 +227,20 @@ function authFakes(options: {
     }),
   );
   const authenticateWithCode = vi.fn(async () => ({
-    accessToken: "workos-access-token",
-    refreshToken: "workos-refresh-token",
+    accessToken: "access-access-token",
+    refreshToken: "access-refresh-token",
   }));
   const authenticateWithRefreshToken = vi.fn(async () => ({
-    accessToken: "workos-refreshed-access-token",
-    refreshToken: "workos-refreshed-refresh-token",
+    accessToken: "access-refreshed-access-token",
+    refreshToken: "access-refreshed-refresh-token",
   }));
   const revokeSession = vi.fn(async () => undefined);
-  const claims = options.claims ?? workosClaims();
+  const claims = options.claims ?? accessClaims();
   const staffIdentity =
     options.staff === undefined
       ? {
           actorId: "staff_identity_1",
-          workosUserId: "workos_user_staff",
+          accessUserId: "removed_user_staff",
           staffId: "staff_identity_1",
           role: "admin" as const,
           permissions: ["content:publish"],
@@ -290,20 +290,20 @@ function authFakes(options: {
       loginAttempts,
       sessions: staffSessions,
       identities: {
-        findStaffIdentityByWorkosUserId: vi.fn(async () => staffIdentity),
+        findStaffIdentityByAccessUserId: vi.fn(async () => staffIdentity),
       },
       tokens: {
         verify: vi.fn(async (token: string) => {
           if (
-            token !== "workos-access-token" &&
-            token !== "workos-refreshed-access-token"
+            token !== "access-access-token" &&
+            token !== "access-refreshed-access-token"
           ) {
-            throw new Error("WORKOS_TOKEN_INVALID");
+            throw new Error("REMOVED_TOKEN_INVALID");
           }
           return claims;
         }),
       },
-      workos: {
+      access: {
         createAuthorizationUrl,
         authenticateWithCode,
         authenticateWithRefreshToken,
@@ -349,20 +349,20 @@ async function createStoredSession(
   const sessionHash = hashOpaqueSessionId(rawCookie);
   const encryptedTokens = sessionCrypto.encryptTokenBundle(
     {
-      accessToken: "workos-access-token",
-      refreshToken: "workos-refresh-token",
+      accessToken: "access-access-token",
+      refreshToken: "access-refresh-token",
     },
     {
       sessionHash,
       staffIdentityId: "staff_identity_1",
-      workosSessionId: "workos_session_staff",
+      accessSessionId: "removed_session_staff",
     },
   );
   await fakes.staffSessions.create({
     sessionHash,
     staffIdentityId: "staff_identity_1",
-    workosUserId: "workos_user_staff",
-    workosSessionId: "workos_session_staff",
+    accessUserId: "removed_user_staff",
+    accessSessionId: "removed_session_staff",
     organizationId: "org_staff",
     providerRoles: ["admin"],
     providerPermissions: ["content:publish"],
@@ -413,7 +413,7 @@ describe("separate member and staff authentication", () => {
 
   it.each([
     ["anonymous", {}],
-    ["WorkOS token", { authorization: "Bearer workos-access-token" }],
+    ["Cloudflare Access token", { authorization: "Bearer access-access-token" }],
     [
       "staff cookie",
       { cookie: "__Host-syntholo_staff_session=opaque-staff" },
@@ -483,7 +483,7 @@ describe("separate member and staff authentication", () => {
     expect(response.json()).toEqual({
       kind: "staff",
       actorId: "staff_identity_1",
-      workosUserId: "workos_user_staff",
+      accessUserId: "removed_user_staff",
       staffId: "staff_identity_1",
       role: "admin",
       permissions: ["content:publish"],
@@ -514,7 +514,7 @@ describe("separate member and staff authentication", () => {
 
   it.each([
     ["anonymous", {}],
-    ["raw WorkOS bearer", { authorization: "Bearer workos-access-token" }],
+    ["raw Cloudflare Access bearer", { authorization: "Bearer access-access-token" }],
     ["Clerk bearer", { authorization: "Bearer clerk-member-token" }],
     [
       "mixed bearer and cookie",
@@ -546,7 +546,7 @@ describe("separate member and staff authentication", () => {
     const fakes = authFakes({
       staff: {
         actorId: "staff_identity_1",
-        workosUserId: "workos_user_staff",
+        accessUserId: "removed_user_staff",
         staffId: "staff_identity_1",
         role: "coach",
         permissions: [],
@@ -615,8 +615,8 @@ describe("staff OAuth transaction and browser controls", () => {
           : "syntholo_local_staff_session";
       expect(serialized).toContain(`${sessionCookieName}=`);
       expect(serialized).toContain(`${loginCookieName}=;`);
-      expect(serialized).not.toContain("workos-access-token");
-      expect(serialized).not.toContain("workos-refresh-token");
+      expect(serialized).not.toContain("access-access-token");
+      expect(serialized).not.toContain("access-refresh-token");
       expect(serialized).not.toContain("Domain=");
       expect(fakes.staffSessions.records).toHaveLength(1);
       expect(fakes.loginAttempts.records[0]?.consumedAt).toEqual(now);
@@ -804,9 +804,9 @@ describe("staff OAuth transaction and browser controls", () => {
     await app.close();
   });
 
-  it("rotates the opaque cookie when reauth returns a new WorkOS session", async () => {
+  it("rotates the opaque cookie when reauth returns a new Cloudflare Access session", async () => {
     const fakes = authFakes({
-      claims: workosClaims({ workosSessionId: "workos_session_reauthenticated" }),
+      claims: accessClaims({ accessSessionId: "removed_session_reauthenticated" }),
     });
     const oldCookie = await createStoredSession(fakes);
     const app = await buildApp(appDependencies(fakes.dependencies));
@@ -822,8 +822,8 @@ describe("staff OAuth transaction and browser controls", () => {
     });
 
     expect(callback.statusCode).toBe(302);
-    expect(fakes.staffSessions.records[0]?.workosSessionId).toBe(
-      "workos_session_reauthenticated",
+    expect(fakes.staffSessions.records[0]?.accessSessionId).toBe(
+      "removed_session_reauthenticated",
     );
     const callbackCookies = Array.isArray(callback.headers["set-cookie"])
       ? callback.headers["set-cookie"]
@@ -847,7 +847,7 @@ describe("staff OAuth transaction and browser controls", () => {
     await app.close();
   });
 
-  it("recovers the same WorkOS session after only the local cookie is lost", async () => {
+  it("recovers the same Cloudflare Access session after only the local cookie is lost", async () => {
     const fakes = authFakes();
     const lostCookie = await createStoredSession(fakes);
     const app = await buildApp(appDependencies(fakes.dependencies));
@@ -914,7 +914,7 @@ describe("staff OAuth transaction and browser controls", () => {
     await app.close();
   });
 
-  it("refreshes once with CAS and treats real WorkOS invalid_grant as terminal", async () => {
+  it("refreshes once with CAS and treats real Cloudflare Access invalid_grant as terminal", async () => {
     const fakes = authFakes();
     const cookie = await createStoredSession(fakes, {
       accessTokenExpiresAt: new Date(now.getTime() - 1),
@@ -976,8 +976,8 @@ describe("staff OAuth transaction and browser controls", () => {
     });
     expect(signedOut.statusCode).toBe(204);
     resolveRefresh({
-      accessToken: "workos-refreshed-access-token",
-      refreshToken: "workos-refreshed-refresh-token",
+      accessToken: "access-refreshed-access-token",
+      refreshToken: "access-refreshed-refresh-token",
     });
     expect((await refreshing).statusCode).toBe(401);
     expect(fakes.staffSessions.records[0]?.revokedAt).toEqual(now);
@@ -986,7 +986,7 @@ describe("staff OAuth transaction and browser controls", () => {
 
   it("never lets refresh advance auth_time into recent authentication", async () => {
     const fakes = authFakes({
-      claims: workosClaims({ authenticatedAt: new Date(now.getTime() - 10_000) }),
+      claims: accessClaims({ authenticatedAt: new Date(now.getTime() - 10_000) }),
     });
     const cookie = await createStoredSession(fakes, {
       accessTokenExpiresAt: new Date(now.getTime() - 1),

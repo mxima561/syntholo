@@ -17,7 +17,7 @@
     "@syntholo/contracts": "^0.1.0",
     "@syntholo/domain": "^0.1.0",
     "@vercel/blob": "2.8.0",
-    "@workos-inc/node": "10.10.0",
+    "removed": "10.10.0",
     "jose": "6.2.8",
     "stripe": "22.3.2"
   }

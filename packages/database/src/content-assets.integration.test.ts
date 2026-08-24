@@ -138,7 +138,7 @@ describe("content media closed authority", () => {
     await apply({ eventId: "evt_ready" });
     const staffId = randomUUID();
     await harness.database.pool.query(
-      "insert into staff_identities(id,provider_user_id,role) values($1,'workos_mux_staff','admin')",
+      "insert into staff_identities(id,provider_user_id,role) values($1,'removed_mux_staff','admin')",
       [staffId],
     );
     const client = await staff.pool.connect();
@@ -246,7 +246,7 @@ describe("content media closed authority", () => {
     const manifestHash = createHash("sha256").update("{}").digest("hex");
     await harness.database.pool.query(
       "insert into staff_identities(id,provider_user_id,role) values($1,$2,'admin')",
-      [staffId, `workos_${staffId}`],
+      [staffId, `removed_${staffId}`],
     );
     await harness.database.pool.query(
       "insert into courses(id,slug,title,description) values($1,$2,'Course','Description')",

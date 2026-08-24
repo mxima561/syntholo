@@ -42,13 +42,13 @@ export default function PricingPage() {
             <div className="plan-price"><strong>{plan.price}</strong><span>{plan.detail}</span></div>
             <p>{plan.description}</p>
             <ul>{plan.included.map((item) => <li key={item}><Check aria-hidden size={14} />{item}</li>)}</ul>
-            <Button href={`/checkout/${plan.id}`} size="large" variant={plan.featured ? "primary" : "dark"}>Choose {plan.label.toLowerCase()} <ArrowRight aria-hidden size={16} /></Button>
+            <Button href="/" size="large" variant={plan.featured ? "primary" : "dark"}>Choose {plan.label.toLowerCase()} <ArrowRight aria-hidden size={16} /></Button>
           </article>
         ))}
       </section>
       <section className="business-os-offer shell">
         <div><span className="micro-label light">OPTIONAL SOFTWARE UPSELL</span><h2>Want the system installed for you?</h2><p>Syntholo Business OS gives you a configured, separately branded HighLevel workspace after the academy helps you decide what should be built.</p></div>
-        <div className="os-price"><span>Setup</span><strong>$999</strong><Minus aria-hidden size={14} /><span>Then</span><strong>$199/mo</strong><Button href="/checkout/business-os" variant="secondary">Review the package</Button></div>
+        <div className="os-price"><span>Setup</span><strong>$999</strong><Minus aria-hidden size={14} /><span>Then</span><strong>$199/mo</strong><Button href="/" variant="secondary">Review the package</Button></div>
       </section>
       <div className="pricing-note shell">Prices are USD. Usage-based messaging, phone, and AI charges for Business OS are separate and disclosed before purchase.</div>
     </main>

@@ -98,7 +98,7 @@ function dependencies(enabled = true) {
       member,
       staff: {
         config: { environment: "test", webOrigin: "https://app.syntholo.test", clientId: "client", organizationId: "org", callbackUrl: "https://app.syntholo.test/v1/staff/auth/callback", defaultReturnTo: "/admin", allowedReturnToPrefixes: ["/admin"], sessionHardTtlSeconds: 3600, loginAttemptTtlSeconds: 300, refreshLeaseSeconds: 5 },
-        clock: { now: () => new Date() }, sessionCrypto: {}, loginAttempts: {}, sessions: {}, identities: {}, tokens: {}, workos: {}, sleep: async () => undefined,
+        clock: { now: () => new Date() }, sessionCrypto: {}, loginAttempts: {}, sessions: {}, identities: {}, tokens: {}, access: {}, sleep: async () => undefined,
       },
     } },
   } as unknown as ApiDependencies;

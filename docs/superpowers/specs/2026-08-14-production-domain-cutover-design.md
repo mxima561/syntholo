@@ -18,7 +18,7 @@ boundaries, and same-origin `/v1` API topology.
 - The browser continues to call relative `/v1` paths. Vercel rewrites those
   paths to the existing Railway API origin; the Railway origin is not exposed
   as the browser's canonical API URL.
-- Railway API and WorkOS use `https://app.syntholo.com` for allowed-origin,
+- Railway API and Cloudflare Access use `https://app.syntholo.com` for allowed-origin,
   callback, cookie, and redirect decisions.
 - Clerk uses DNS mode for the production primary domain. The Clerk secret
   remains only in Railway API. Vercel receives only the public Clerk key.
@@ -40,16 +40,16 @@ boundaries, and same-origin `/v1` API topology.
    `app.syntholo.com`.
 3. Run Clerk's DNS verification, then change the primary domain from the
    temporary Vercel hostname to `app.syntholo.com` and disable proxy mode.
-4. Update Vercel and Railway `WEB_ORIGIN` values and the WorkOS redirect URI.
+4. Update Vercel and Railway `WEB_ORIGIN` values and the Cloudflare Access redirect URI.
 5. Redeploy the web and API from the accepted Git SHA without changing the
    release identity.
 6. Verify canonical redirects, health/readiness, Clerk JWKS and member sign-in,
-   WorkOS staff sign-in/callback, secure host-only cookies, and exact release
+   Cloudflare Access staff sign-in/callback, secure host-only cookies, and exact release
    SHA on public endpoints.
 
 ## Failure and rollback
 
-- Do not switch Clerk or WorkOS before their required DNS/redirect records are
+- Do not switch Clerk or Cloudflare Access before their required DNS/redirect records are
   accepted.
 - A failed verification leaves the current service deployment running; no
   application secret is copied to Vercel.
@@ -67,7 +67,7 @@ boundaries, and same-origin `/v1` API topology.
 - Clerk production JWKS is reachable through its verified DNS hostname, the
   member sign-in UI loads without proxy or DNS errors, and sign-in/sign-up
   navigation remains on the two embedded local routes.
-- WorkOS sign-in uses the exact `app.syntholo.com` callback and preserves the
+- Cloudflare Access sign-in uses the exact `app.syntholo.com` callback and preserves the
   `Secure`, `HttpOnly`, host-only staff cookie contract.
 - Vercel contains no Clerk secret or other backend credential.
 - The tracked worktree is clean and matches the pushed branch after any code or

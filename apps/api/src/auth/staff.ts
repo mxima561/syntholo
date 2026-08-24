@@ -11,7 +11,7 @@ import type {
   LoginAttemptRecord,
   StaffIdentityRecord,
   StaffSessionRecord,
-  WorkosAccessClaims,
+  AccessAccessClaims,
 } from "./types.js";
 import { projectStaffActor } from "./authorize.js";
 
@@ -140,14 +140,14 @@ function equalStrings(left: readonly string[], right: readonly string[]): boolea
 }
 
 function validateProviderIdentity(
-  claims: WorkosAccessClaims,
+  claims: AccessAccessClaims,
   identity: StaffIdentityRecord,
   config: StaffDependencies["config"],
 ): void {
   if (
     claims.clientId !== config.clientId ||
     claims.organizationId !== config.organizationId ||
-    claims.workosUserId !== identity.workosUserId ||
+    claims.accessUserId !== identity.accessUserId ||
     claims.role !== identity.role ||
     claims.roles.length !== 1 ||
     claims.roles[0] !== identity.role ||
@@ -158,7 +158,7 @@ function validateProviderIdentity(
 }
 
 function validateStoredClaims(
-  claims: WorkosAccessClaims,
+  claims: AccessAccessClaims,
   session: StaffSessionRecord,
   config: StaffDependencies["config"],
 ): void {
@@ -166,8 +166,8 @@ function validateStoredClaims(
     claims.clientId !== config.clientId ||
     claims.organizationId !== session.organizationId ||
     claims.organizationId !== config.organizationId ||
-    claims.workosUserId !== session.workosUserId ||
-    claims.workosSessionId !== session.workosSessionId ||
+    claims.accessUserId !== session.accessUserId ||
+    claims.accessSessionId !== session.accessSessionId ||
     claims.role !== session.providerRoles[0] ||
     claims.roles.length !== 1 ||
     !equalStrings(claims.roles, session.providerRoles) ||
@@ -181,7 +181,7 @@ function tokenBinding(session: StaffSessionRecord) {
   return {
     sessionHash: session.sessionHash,
     staffIdentityId: session.staffIdentityId,
-    workosSessionId: session.workosSessionId,
+    accessSessionId: session.accessSessionId,
   };
 }
 
@@ -242,7 +242,7 @@ async function refreshSession(
       acquired.encryptedTokens,
       tokenBinding(acquired),
     );
-    const refreshedTokens = await dependencies.workos.authenticateWithRefreshToken({
+    const refreshedTokens = await dependencies.access.authenticateWithRefreshToken({
       refreshToken: currentTokens.refreshToken,
       clientId: dependencies.config.clientId,
     });
@@ -306,7 +306,7 @@ export async function authenticateStaff(
     session = await refreshSession(session, dependencies, now);
   }
   if (session.revokedAt !== null || session.hardExpiresAt <= now) unauthenticated();
-  let claims: WorkosAccessClaims;
+  let claims: AccessAccessClaims;
   try {
     const tokens = dependencies.sessionCrypto.decryptTokenBundle(
       session.encryptedTokens,
@@ -318,8 +318,8 @@ export async function authenticateStaff(
   }
   validateStoredClaims(claims, session, dependencies.config);
   if (claims.expiresAt <= now) unauthenticated();
-  const identity = await dependencies.identities.findStaffIdentityByWorkosUserId(
-    claims.workosUserId,
+  const identity = await dependencies.identities.findStaffIdentityByAccessUserId(
+    claims.accessUserId,
   );
   if (!identity || identity.actorId !== session.staffIdentityId) unauthenticated();
   validateProviderIdentity(claims, identity, dependencies.config);
@@ -331,7 +331,7 @@ export async function authenticateStaff(
     {
       kind: "staff",
       actorId: identity.actorId,
-      workosUserId: identity.workosUserId,
+      accessUserId: identity.accessUserId,
       staffId: identity.staffId,
       role: identity.role,
       permissions: Object.freeze([...identity.permissions]),
@@ -369,7 +369,7 @@ export async function beginStaffSignIn(
       unauthenticated();
     }
   }
-  const authorization = await dependencies.workos.createAuthorizationUrl({
+  const authorization = await dependencies.access.createAuthorizationUrl({
     state,
     clientId: dependencies.config.clientId,
     organizationId: dependencies.config.organizationId,
@@ -447,9 +447,9 @@ export async function completeStaffSignIn(
     `syntholo-staff-login-v1:${stateHash.toString("base64url")}`,
   );
   let tokens: { accessToken: string; refreshToken: string };
-  let claims: WorkosAccessClaims;
+  let claims: AccessAccessClaims;
   try {
-    tokens = await dependencies.workos.authenticateWithCode({
+    tokens = await dependencies.access.authenticateWithCode({
       code,
       codeVerifier,
       clientId: dependencies.config.clientId,
@@ -458,8 +458,8 @@ export async function completeStaffSignIn(
   } catch {
     unauthenticated();
   }
-  const identity = await dependencies.identities.findStaffIdentityByWorkosUserId(
-    claims.workosUserId,
+  const identity = await dependencies.identities.findStaffIdentityByAccessUserId(
+    claims.accessUserId,
   );
   if (!identity) unauthenticated();
   validateProviderIdentity(claims, identity, dependencies.config);
@@ -469,8 +469,8 @@ export async function completeStaffSignIn(
   const record: StaffSessionRecord = {
     sessionHash,
     staffIdentityId: identity.actorId,
-    workosUserId: claims.workosUserId,
-    workosSessionId: claims.workosSessionId,
+    accessUserId: claims.accessUserId,
+    accessSessionId: claims.accessSessionId,
     organizationId: claims.organizationId,
     providerRoles: Object.freeze([...claims.roles]),
     providerPermissions: Object.freeze([...claims.permissions]),
@@ -551,7 +551,7 @@ export async function signOutStaff(
     );
     if (revoked) {
       try {
-        await dependencies.workos.revokeSession({ sessionId: revoked.workosSessionId });
+        await dependencies.access.revokeSession({ sessionId: revoked.accessSessionId });
       } catch {
         // Local revocation is authoritative; provider revocation is best effort.
       }

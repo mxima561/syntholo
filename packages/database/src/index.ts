@@ -10,6 +10,10 @@ export {
 } from "./member-read-deadlines.js";
 export { AccountRepository } from "./repositories/accounts.js";
 export { ContentCommandConflictError, StaffContentCommandRepository } from "./repositories/content.js";
+export { ContentAuthoringCommandConflictError, StaffContentAuthoringRepository } from "./repositories/content-authoring.js";
+export { LearningAdminCommandConflictError, StaffLearningAdminRepository } from "./repositories/learning-admin.js";
+export { StaffAccountsRepository } from "./repositories/staff-accounts.js";
+export { WaitlistRepository, WaitlistInputError } from "./repositories/waitlist.js";
 export {
   CertificateCandidateInputError,
   LearningPrerequisiteInputError,
@@ -83,7 +87,7 @@ export type {
   DatabaseLoginAttempt,
   DatabaseStaffIdentity,
   DatabaseStaffSession,
-  DatabaseWorkosClaims,
+  DatabaseAccessClaims,
   EncryptedDatabaseValue,
 } from "./repositories/auth.js";
 export type {
@@ -138,6 +142,7 @@ export {
   staffIdentities,
   staffLoginAttempts,
   staffSessions,
+  waitlistSignups,
   seatInvitationTokenGenerations,
   seatInvitations,
   seatReservations,

@@ -13,11 +13,13 @@ const allowedKeys = new Set([
   "eventId",
   "handlerName",
   "kind",
+  "mediaAssetId",
   "outcome",
   "queue",
   "reference",
   "referenceId",
   "references",
+  "requestedRevision",
   "revision",
   "role",
   "schemaVersion",
@@ -29,7 +31,7 @@ const allowedKeys = new Set([
 const safeValuePattern = /^[A-Za-z0-9._:/-]*$/u;
 const forbiddenValuePattern = /(?:^|[._:-])(?:api[-_]?key|bearer|credential|password|private[-_]?key|secret|sk_(?:live|test)|token)(?:$|[._:-])/iu;
 const jwtPattern = /^eyJ[A-Za-z0-9_-]+\.eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/u;
-const providerSecretPattern = /(?:ghp_|github_pat_|xox[baprs]-|AKIA|ASIA|sess(?:ion)?[_:-]|staff_session[_:-]|clerk[_:-]|workos[_:-])/iu;
+const providerSecretPattern = /(?:ghp_|github_pat_|xox[baprs]-|AKIA|ASIA|sess(?:ion)?[_:-]|staff_session[_:-]|clerk[_:-]|access[_:-])/iu;
 const opaqueSecretPattern = /[A-Za-z0-9_-]{48,}/u;
 const prototypeKeys = new Set(["__proto__", "constructor", "prototype"]);
 

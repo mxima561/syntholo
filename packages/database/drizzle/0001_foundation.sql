@@ -50,7 +50,7 @@ CREATE TABLE "memberships" (
 --> statement-breakpoint
 CREATE TABLE "staff_identities" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-  "provider" text DEFAULT 'workos' NOT NULL,
+  "provider" text DEFAULT 'access' NOT NULL,
   "provider_user_id" text NOT NULL,
   "email" text,
   "display_name" text,

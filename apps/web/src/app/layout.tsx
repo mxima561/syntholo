@@ -6,11 +6,11 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "Syntholo — Put AI to work across your business",
+    default: "Syntholo — Put AI to work in your life and your business",
     template: "%s · Syntholo",
   },
   description:
-    "A practical AI operating system academy for professional-services businesses.",
+    "A practical school. Self-paced lessons, live sessions, and a person to help when you get stuck.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {

@@ -7,12 +7,12 @@
 
 ## Context
 
-The PRD and production addendum establish separate public, Clerk-member, WorkOS-staff, and signed-provider surfaces. The focused plans fix 15 product paths but otherwise name route modules and commands without fixing their REST shapes. Client work, Zod contracts, authorization tests, and database migrations must not begin against locally invented paths.
+The PRD and production addendum establish separate public, Clerk-member, Cloudflare Access-staff, and signed-provider surfaces. The focused plans fix 15 product paths but otherwise name route modules and commands without fixing their REST shapes. Client work, Zod contracts, authorization tests, and database migrations must not begin against locally invented paths.
 
 This ADR makes one v1 contract while preserving these non-negotiable boundaries:
 
 - the API is the only business-write authority;
-- Clerk and WorkOS identities are never interchangeable;
+- Clerk and Cloudflare Access identities are never interchangeable;
 - every member-owned read or write is scoped to the actor's immutable `accountId` and protected by scoped repositories plus RLS;
 - no public certificate lookup, certificate identifier, verification endpoint, QR code, or accreditation claim exists;
 - Circle owns community posts, comments, reactions, files, and moderation content; Syntholo exposes only access-sync state and a handoff;
@@ -51,8 +51,8 @@ This ADR makes one v1 contract while preserving these non-negotiable boundaries:
 - `/v1/public/**` is anonymous unless a route uses an explicit opaque bearer-by-token capability. Public routes never infer member eligibility from an optional or dual-provider token.
 - Anonymous write rate limits use a server-issued random 128-bit `anonymous_principal` cookie (Secure, HttpOnly, SameSite=Lax, no user data) as the stable retry/idempotency scope. On the first request the server creates the principal before command execution and binds it to the command receipt. Raw IP address is only a short-lived secondary abuse signal; it is never the sole principal, and the system does not build a browser fingerprint or persist raw IP in command receipts.
 - `/v1/member/**` accepts only a Clerk member token with the member issuer/audience. The member actor supplies `accountId`, membership ID, member ID, and role. Member request bodies and query strings never accept `accountId`, member ID, entitlement flags, price IDs, or amounts as authority.
-- `/v1/staff/**` accepts only the WorkOS staff session and requires the named permission. Admin MFA is enforced by WorkOS policy. Staff cross-account access is explicit, permission-checked, scoped in the repository call, and audited when it mutates state or exposes sensitive account context. Coaches never receive commerce, refund, card, revenue, entitlement-administration, staff-administration, or unrestricted-export data.
-- `/v1/webhooks/**` accepts only a verified provider signature over the route-scoped raw body. It never accepts Clerk or WorkOS as alternate authorization.
+- `/v1/staff/**` accepts only the Cloudflare Access staff session and requires the named permission. Admin MFA is enforced by Cloudflare Access policy. Staff cross-account access is explicit, permission-checked, scoped in the repository call, and audited when it mutates state or exposes sensitive account context. Coaches never receive commerce, refund, card, revenue, entitlement-administration, staff-administration, or unrestricted-export data.
+- `/v1/webhooks/**` accepts only a verified provider signature over the route-scoped raw body. It never accepts Clerk or Cloudflare Access as alternate authorization.
 - State-changing cookie-authenticated staff requests and pending-token cookie requests require the existing same-origin/CSRF control. Allowed browser origins are explicit by environment.
 - Every path-token route, including `:reportToken` and `:authorizationToken`, sets `Referrer-Policy: no-referrer` and `Cache-Control: no-store`. Access logging records only the matched route template, never the raw URL/path. Sentry transaction names and breadcrumbs use the route template, and analytics receives neither raw URLs nor tokens. Token values are redacted from structured request fields, errors, traces, metrics labels, audit data, and provider-safe metadata before any sink receives them.
 - `R5` below means trusted provider authentication time no more than 300 seconds old. Reauthentication is mandatory for ownership transfer, seat replacement, Pilot decisions, content schedule/publish/archive, content-readiness approval, refund/provider-action approval or legal override, protected session join-metadata changes, certificate redelivery, Business OS activation or destructive state transition, notification replay, and job replay. A client-supplied timestamp never satisfies `R5`.
@@ -107,7 +107,7 @@ These paths are pre-existing focused-plan contracts and are not renamed by this 
 
 ## Canonical routes for the 20 previously unspecified families
 
-The route list below is exhaustive for the named v1 commands. `I` and `R5` have the meanings above. Permission names are contract names; their WorkOS mapping is deployment configuration.
+The route list below is exhaustive for the named v1 commands. `I` and `R5` have the meanings above. Permission names are contract names; their Cloudflare Access mapping is deployment configuration.
 
 ### 1. Offer catalog and availability
 
@@ -122,14 +122,14 @@ Operator Club account eligibility and start time are deliberately returned by it
 
 | Method and path | Authorization | Controls and response | Owner |
 |---|---|---|---|
-| `GET /v1/staff/pilot-applications` | WorkOS `applications:review` | Cursor list; safe applicant/review data | `routes/staff/applications.ts` |
-| `GET /v1/staff/pilot-applications/:applicationId` | WorkOS `applications:review` | Application and paginated decision history | `routes/staff/applications.ts` |
-| `POST /v1/staff/pilot-applications/:applicationId/decisions` | WorkOS admin, `applications:approve`, `R5` | `I`; body `{ decision, reason, cohortId? }`; approval requires capacity and cohort | `routes/staff/applications.ts` |
-| `PUT /v1/staff/pilot-applications/:applicationId/cohort-assignment` | WorkOS admin, `applications:approve`, `R5` | `I`, `expectedVersion`, reason; locks cohort capacity | `routes/staff/applications.ts` |
-| `POST /v1/staff/pilot-applications/:applicationId/checkout-authorizations` | WorkOS admin, `applications:approve`, `R5` | `I`; creates/reuses one 72-hour single-use authorization and enqueues delivery; returns `202` without raw token | `routes/staff/applications.ts` |
-| `GET /v1/staff/cohorts` | WorkOS `cohorts:read` | Cursor list with capacity, never card data | `routes/staff/cohorts.ts` |
-| `POST /v1/staff/cohorts` | WorkOS admin, `cohorts:manage` | `I`; creates cohort | `routes/staff/cohorts.ts` |
-| `PATCH /v1/staff/cohorts/:cohortId` | WorkOS admin, `cohorts:manage` | `expectedVersion`; no silent capacity reduction below reservations | `routes/staff/cohorts.ts` |
+| `GET /v1/staff/pilot-applications` | Cloudflare Access `applications:review` | Cursor list; safe applicant/review data | `routes/staff/applications.ts` |
+| `GET /v1/staff/pilot-applications/:applicationId` | Cloudflare Access `applications:review` | Application and paginated decision history | `routes/staff/applications.ts` |
+| `POST /v1/staff/pilot-applications/:applicationId/decisions` | Cloudflare Access admin, `applications:approve`, `R5` | `I`; body `{ decision, reason, cohortId? }`; approval requires capacity and cohort | `routes/staff/applications.ts` |
+| `PUT /v1/staff/pilot-applications/:applicationId/cohort-assignment` | Cloudflare Access admin, `applications:approve`, `R5` | `I`, `expectedVersion`, reason; locks cohort capacity | `routes/staff/applications.ts` |
+| `POST /v1/staff/pilot-applications/:applicationId/checkout-authorizations` | Cloudflare Access admin, `applications:approve`, `R5` | `I`; creates/reuses one 72-hour single-use authorization and enqueues delivery; returns `202` without raw token | `routes/staff/applications.ts` |
+| `GET /v1/staff/cohorts` | Cloudflare Access `cohorts:read` | Cursor list with capacity, never card data | `routes/staff/cohorts.ts` |
+| `POST /v1/staff/cohorts` | Cloudflare Access admin, `cohorts:manage` | `I`; creates cohort | `routes/staff/cohorts.ts` |
+| `PATCH /v1/staff/cohorts/:cohortId` | Cloudflare Access admin, `cohorts:manage` | `expectedVersion`; no silent capacity reduction below reservations | `routes/staff/cohorts.ts` |
 
 ### 3. Seats, invitations, invitation redemption, replacement, and owner transfer
 
@@ -162,10 +162,10 @@ The server computes `startsAt = max(exact included-support end, trusted fulfillm
 |---|---|---|---|
 | `POST /v1/member/commerce-cases` | Clerk owner | `I`, rate-limited; opens `refund \| cancellation` request against an account-visible purchase/subscription | `routes/member/commerce-cases.ts` |
 | `GET /v1/member/commerce-cases` | Clerk owner | Cursor list for actor account | `routes/member/commerce-cases.ts` |
-| `GET /v1/staff/commerce-cases` | WorkOS admin, `commerce:cases:read` | Cursor list/filter; never available to coach | `routes/staff/commerce-cases.ts` |
-| `GET /v1/staff/commerce-cases/:caseId` | WorkOS admin, `commerce:cases:read` | Case, policy, immutable decision/provider-action history | `routes/staff/commerce-cases.ts` |
-| `POST /v1/staff/commerce-cases/:caseId/decisions` | WorkOS admin, `commerce:cases:decide`, `R5` | `I`; approve/deny/legal override, reason and policy version required | `routes/staff/commerce-cases.ts` |
-| `POST /v1/staff/commerce-cases/:caseId/provider-actions` | WorkOS admin, `commerce:provider:act`, `R5` | `I`; persists intent, calls provider outside DB transaction, returns `202` when awaiting provider event | `routes/staff/commerce-cases.ts` |
+| `GET /v1/staff/commerce-cases` | Cloudflare Access admin, `commerce:cases:read` | Cursor list/filter; never available to coach | `routes/staff/commerce-cases.ts` |
+| `GET /v1/staff/commerce-cases/:caseId` | Cloudflare Access admin, `commerce:cases:read` | Case, policy, immutable decision/provider-action history | `routes/staff/commerce-cases.ts` |
+| `POST /v1/staff/commerce-cases/:caseId/decisions` | Cloudflare Access admin, `commerce:cases:decide`, `R5` | `I`; approve/deny/legal override, reason and policy version required | `routes/staff/commerce-cases.ts` |
+| `POST /v1/staff/commerce-cases/:caseId/provider-actions` | Cloudflare Access admin, `commerce:provider:act`, `R5` | `I`; persists intent, calls provider outside DB transaction, returns `202` when awaiting provider event | `routes/staff/commerce-cases.ts` |
 
 There is no staff endpoint for asserting a provider result. Signed Stripe events at the fixed webhook route are the authoritative application path for asynchronous results; a synchronous provider response may be applied only by the module that made the idempotent call and must later reconcile to a signed event. Progress, earned certificates, account, financial, and audit history are never deleted.
 
@@ -173,22 +173,22 @@ There is no staff endpoint for asserting a provider result. Signed Stripe events
 
 | Method and path | Authorization | Controls and response | Owner |
 |---|---|---|---|
-| `POST /v1/staff/content/courses` | WorkOS admin, `content:write` | `I`; creates draft course | `routes/staff/content.ts` |
-| `PATCH /v1/staff/content/courses/:courseId` | WorkOS admin, `content:write` | `expectedVersion`; draft metadata/order only | `routes/staff/content.ts` |
-| `POST /v1/staff/content/courses/:courseId/stages` | WorkOS admin, `content:write` | `I`; creates/reorders within draft | `routes/staff/content.ts` |
-| `PATCH /v1/staff/content/stages/:stageId` | WorkOS admin, `content:write` | `expectedVersion`; draft only | `routes/staff/content.ts` |
-| `POST /v1/staff/content/stages/:stageId/lessons` | WorkOS admin, `content:write` | `I`; creates lesson draft | `routes/staff/content.ts` |
-| `PATCH /v1/staff/content/lessons/:lessonId` | WorkOS admin, `content:write` | `expectedVersion`; draft only; published versions immutable | `routes/staff/content.ts` |
-| `GET /v1/staff/content/courses/:courseId/preview` | WorkOS `content:read` | Immutable preview projection | `routes/staff/content.ts` |
-| `GET /v1/staff/content/lessons/:lessonId/preview` | WorkOS `content:read` | Immutable preview projection and all blockers | `routes/staff/content.ts` |
-| `POST /v1/staff/content/courses/:courseId/schedules` | WorkOS admin, `content:publish`, `R5` | `I`; `expectedVersion`, future time, reason; durable authorizing decision | `routes/staff/content.ts` |
-| `POST /v1/staff/content/lessons/:lessonId/schedules` | WorkOS admin, `content:publish`, `R5` | Same controls | `routes/staff/content.ts` |
-| `POST /v1/staff/content/courses/:courseId/publications` | WorkOS admin, `content:publish`, `R5` | `I`; validates and creates immutable version; reason | `routes/staff/content.ts` |
-| `POST /v1/staff/content/lessons/:lessonId/publications` | WorkOS admin, `content:publish`, `R5` | Same controls; all publication blockers returned together | `routes/staff/content.ts` |
-| `POST /v1/staff/content/courses/:courseId/archives` | WorkOS admin, `content:publish`, `R5` | `I`; reason; never edits/deletes history | `routes/staff/content.ts` |
-| `POST /v1/staff/content/lessons/:lessonId/archives` | WorkOS admin, `content:publish`, `R5` | Same controls | `routes/staff/content.ts` |
-| `GET /v1/staff/content/courses/:courseId/versions` | WorkOS `content:read` | Cursor history | `routes/staff/content.ts` |
-| `GET /v1/staff/content/lessons/:lessonId/versions` | WorkOS `content:read` | Cursor history | `routes/staff/content.ts` |
+| `POST /v1/staff/content/courses` | Cloudflare Access admin, `content:write` | `I`; creates draft course | `routes/staff/content.ts` |
+| `PATCH /v1/staff/content/courses/:courseId` | Cloudflare Access admin, `content:write` | `expectedVersion`; draft metadata/order only | `routes/staff/content.ts` |
+| `POST /v1/staff/content/courses/:courseId/stages` | Cloudflare Access admin, `content:write` | `I`; creates/reorders within draft | `routes/staff/content.ts` |
+| `PATCH /v1/staff/content/stages/:stageId` | Cloudflare Access admin, `content:write` | `expectedVersion`; draft only | `routes/staff/content.ts` |
+| `POST /v1/staff/content/stages/:stageId/lessons` | Cloudflare Access admin, `content:write` | `I`; creates lesson draft | `routes/staff/content.ts` |
+| `PATCH /v1/staff/content/lessons/:lessonId` | Cloudflare Access admin, `content:write` | `expectedVersion`; draft only; published versions immutable | `routes/staff/content.ts` |
+| `GET /v1/staff/content/courses/:courseId/preview` | Cloudflare Access `content:read` | Immutable preview projection | `routes/staff/content.ts` |
+| `GET /v1/staff/content/lessons/:lessonId/preview` | Cloudflare Access `content:read` | Immutable preview projection and all blockers | `routes/staff/content.ts` |
+| `POST /v1/staff/content/courses/:courseId/schedules` | Cloudflare Access admin, `content:publish`, `R5` | `I`; `expectedVersion`, future time, reason; durable authorizing decision | `routes/staff/content.ts` |
+| `POST /v1/staff/content/lessons/:lessonId/schedules` | Cloudflare Access admin, `content:publish`, `R5` | Same controls | `routes/staff/content.ts` |
+| `POST /v1/staff/content/courses/:courseId/publications` | Cloudflare Access admin, `content:publish`, `R5` | `I`; validates and creates immutable version; reason | `routes/staff/content.ts` |
+| `POST /v1/staff/content/lessons/:lessonId/publications` | Cloudflare Access admin, `content:publish`, `R5` | Same controls; all publication blockers returned together | `routes/staff/content.ts` |
+| `POST /v1/staff/content/courses/:courseId/archives` | Cloudflare Access admin, `content:publish`, `R5` | `I`; reason; never edits/deletes history | `routes/staff/content.ts` |
+| `POST /v1/staff/content/lessons/:lessonId/archives` | Cloudflare Access admin, `content:publish`, `R5` | Same controls | `routes/staff/content.ts` |
+| `GET /v1/staff/content/courses/:courseId/versions` | Cloudflare Access `content:read` | Cursor history | `routes/staff/content.ts` |
+| `GET /v1/staff/content/lessons/:lessonId/versions` | Cloudflare Access `content:read` | Cursor history | `routes/staff/content.ts` |
 
 These suffixes are the canonical expansion of the focused plan's `POST/PATCH /v1/staff/content/...` family. Scheduled publication runs only from its stored admin authorization; the worker has no public HTTP command.
 
@@ -217,7 +217,7 @@ Artifact content is never copied into audit, analytics, error details, or Sentry
 | Method and path | Authorization | Controls and response | Owner |
 |---|---|---|---|
 | `GET /v1/member/certificates/:certificateId/download` | Active Clerk membership that personally earned that certificate | Authenticated server fetch of the exact private object; streamed `200 application/pdf`; `private, no-store`; no provider URL/token | `routes/member/certificates.ts` |
-| `POST /v1/staff/certificates/:certificateId/deliveries` | WorkOS admin, `certificates:deliver`, `R5` | `I`; reason; creates an immutable audited `delivery_pending` request and performs no send; returns `202` | `routes/staff/certificates.ts` |
+| `POST /v1/staff/certificates/:certificateId/deliveries` | Cloudflare Access admin, `certificates:deliver`, `R5` | `I`; reason; creates an immutable audited `delivery_pending` request and performs no send; returns `202` | `routes/staff/certificates.ts` |
 
 There is intentionally no `/v1/public/certificates`, lookup, verify, certificate-ID, or public download route. Account teammates cannot fetch one another's certificate.
 
@@ -225,10 +225,10 @@ There is intentionally no `/v1/public/certificates`, lookup, verify, certificate
 
 | Method and path | Authorization | Controls and response | Owner |
 |---|---|---|---|
-| `POST /v1/staff/content-readiness/evaluations` | WorkOS admin, `content:readiness:evaluate` | `I`; computes and persists canonical hash/report; cannot force pass | `routes/staff/content-readiness.ts` |
-| `GET /v1/staff/content-readiness` | WorkOS `content:readiness:read` | Cursor evaluation history/current summary | `routes/staff/content-readiness.ts` |
-| `GET /v1/staff/content-readiness/:evaluationId` | WorkOS `content:readiness:read` | Exact per-lesson issues and hash | `routes/staff/content-readiness.ts` |
-| `POST /v1/staff/content-readiness/:evaluationId/approvals` | WorkOS admin, `content:readiness:approve`, `R5` | `I`; reason; approves only an automated-pass current hash | `routes/staff/content-readiness.ts` |
+| `POST /v1/staff/content-readiness/evaluations` | Cloudflare Access admin, `content:readiness:evaluate` | `I`; computes and persists canonical hash/report; cannot force pass | `routes/staff/content-readiness.ts` |
+| `GET /v1/staff/content-readiness` | Cloudflare Access `content:readiness:read` | Cursor evaluation history/current summary | `routes/staff/content-readiness.ts` |
+| `GET /v1/staff/content-readiness/:evaluationId` | Cloudflare Access `content:readiness:read` | Exact per-lesson issues and hash | `routes/staff/content-readiness.ts` |
+| `POST /v1/staff/content-readiness/:evaluationId/approvals` | Cloudflare Access admin, `content:readiness:approve`, `R5` | `I`; reason; approves only an automated-pass current hash | `routes/staff/content-readiness.ts` |
 
 Any content change invalidates the approval by hash. The public offer cache cannot enable payment. Both public Self-Paced Checkout and private Guided Pilot Checkout synchronously re-evaluate the persisted current hash and approval before Stripe session creation. Business OS Checkout uses its separate readiness dependency and does not imply Academy readiness or access.
 
@@ -239,12 +239,12 @@ Any content change invalidates the approval by hash. The public offer cache cann
 | `GET /v1/member/support/threads` | Clerk member with support access | Cursor list for actor account | `routes/member/support.ts` |
 | `POST /v1/member/support/threads` | Clerk member with support access | `I`, rate-limited; opens thread and first message atomically | `routes/member/support.ts` |
 | `GET /v1/member/support/threads/:threadId` | Clerk member with support access; actor account | Thread plus cursor messages | `routes/member/support.ts` |
-| `GET /v1/staff/support/threads` | WorkOS coach/admin, `support:read` | Cursor queue with assigned/unassigned filter and SLA projection; no commerce fields | `routes/staff/support.ts` |
-| `GET /v1/staff/support/threads/:threadId` | Assigned/eligible WorkOS coach or admin, `support:read` | Account context limited to support need | `routes/staff/support.ts` |
-| `POST /v1/staff/support/threads/:threadId/messages` | Assigned WorkOS coach/admin, `support:reply` | `I`; `responseKind`; customer-visible substantive replies may satisfy SLA | `routes/staff/support.ts` |
-| `PUT /v1/staff/support/threads/:threadId/assignment` | WorkOS `support:assign` | `I`, `expectedVersion`; manual reassign requires reason; auto-assignment remains internal | `routes/staff/support.ts` |
-| `POST /v1/staff/support/threads/:threadId/transitions` | Assigned WorkOS coach/admin, `support:transition` | `I`; action/reason; audited state transition | `routes/staff/support.ts` |
-| `POST /v1/staff/support/threads/:threadId/effort-entries` | WorkOS coach/admin, `support:effort` | `I`; `1..480` minutes and allowlisted category; no body content | `routes/staff/support.ts` |
+| `GET /v1/staff/support/threads` | Cloudflare Access coach/admin, `support:read` | Cursor queue with assigned/unassigned filter and SLA projection; no commerce fields | `routes/staff/support.ts` |
+| `GET /v1/staff/support/threads/:threadId` | Assigned/eligible Cloudflare Access coach or admin, `support:read` | Account context limited to support need | `routes/staff/support.ts` |
+| `POST /v1/staff/support/threads/:threadId/messages` | Assigned Cloudflare Access coach/admin, `support:reply` | `I`; `responseKind`; customer-visible substantive replies may satisfy SLA | `routes/staff/support.ts` |
+| `PUT /v1/staff/support/threads/:threadId/assignment` | Cloudflare Access `support:assign` | `I`, `expectedVersion`; manual reassign requires reason; auto-assignment remains internal | `routes/staff/support.ts` |
+| `POST /v1/staff/support/threads/:threadId/transitions` | Assigned Cloudflare Access coach/admin, `support:transition` | `I`; action/reason; audited state transition | `routes/staff/support.ts` |
+| `POST /v1/staff/support/threads/:threadId/effort-entries` | Cloudflare Access coach/admin, `support:effort` | `I`; `1..480` minutes and allowlisted category; no body content | `routes/staff/support.ts` |
 
 The external support-state union is exactly `new | assigned | waiting_on_coach | waiting_on_customer | resolved | closed` on every member/staff response, filter, event contract, and error detail. Storage may normalize an active thread to an internal `open` lifecycle plus assignment/SLA projections, but `open` is never serialized by the API. The projection is deterministic: unassigned active work is `new`; assigned administrative work not yet waiting on a party is `assigned`; an active customer message awaiting a substantive coach response is `waiting_on_coach`; the other three values map directly. Contract tests reject `open` at the response boundary.
 
@@ -254,10 +254,10 @@ The external support-state union is exactly `new | assigned | waiting_on_coach |
 |---|---|---|---|
 | `GET /v1/member/artifact-reviews` | Clerk member with support access | Actor-account history/current state, cursor-paginated | `routes/member/reviews.ts` |
 | `POST /v1/member/artifact-reviews` | Clerk member with support access | `I`; exact immutable `artifactVersionId`; DB enforces one active review/account | `routes/member/reviews.ts` |
-| `GET /v1/staff/artifact-reviews` | WorkOS coach/admin, `reviews:read` | Cursor assigned/unassigned queue | `routes/staff/reviews.ts` |
-| `GET /v1/staff/artifact-reviews/:reviewId` | Assigned/eligible WorkOS coach/admin | Exact version reference and safe context | `routes/staff/reviews.ts` |
-| `POST /v1/staff/artifact-reviews/:reviewId/starts` | Assigned WorkOS coach/admin, `reviews:work` | `I`; submitted to in-review | `routes/staff/reviews.ts` |
-| `POST /v1/staff/artifact-reviews/:reviewId/returns` | Assigned WorkOS coach/admin, `reviews:work` | `I`; feedback, exact version, releases account lock | `routes/staff/reviews.ts` |
+| `GET /v1/staff/artifact-reviews` | Cloudflare Access coach/admin, `reviews:read` | Cursor assigned/unassigned queue | `routes/staff/reviews.ts` |
+| `GET /v1/staff/artifact-reviews/:reviewId` | Assigned/eligible Cloudflare Access coach/admin | Exact version reference and safe context | `routes/staff/reviews.ts` |
+| `POST /v1/staff/artifact-reviews/:reviewId/starts` | Assigned Cloudflare Access coach/admin, `reviews:work` | `I`; submitted to in-review | `routes/staff/reviews.ts` |
+| `POST /v1/staff/artifact-reviews/:reviewId/returns` | Assigned Cloudflare Access coach/admin, `reviews:work` | `I`; feedback, exact version, releases account lock | `routes/staff/reviews.ts` |
 
 Audit stores IDs and state only, never artifact or feedback content.
 
@@ -280,13 +280,13 @@ The client can upload only to a server-generated quarantine key. The scan worker
 | `POST /v1/member/sessions/:sessionId/rsvps` | Clerk member with applicable access | `I`; capacity/waitlist transaction; returns confirmed/waitlisted | `routes/member/sessions.ts` |
 | `DELETE /v1/member/sessions/:sessionId/rsvp` | Clerk member who owns RSVP | Idempotent cancel; atomically promotes oldest waitlisted RSVP | `routes/member/sessions.ts` |
 | `GET /v1/member/sessions/:sessionId/join` | Clerk confirmed attendee | `no-store`; available from 15 minutes before start through end; otherwise safe unavailable status | `routes/member/sessions.ts` |
-| `GET /v1/staff/sessions` | WorkOS `sessions:read` | Cursor list | `routes/staff/sessions.ts` |
-| `POST /v1/staff/session-generations` | WorkOS admin, `sessions:manage` | `I`; Pilot/office-hours generation; recurrence key makes duplicates safe | `routes/staff/sessions.ts` |
-| `PUT /v1/staff/sessions/:sessionId/attendance/:membershipId` | WorkOS coach/admin, `sessions:attendance` | `I`; attended/absent with expected RSVP version | `routes/staff/sessions.ts` |
-| `GET /v1/staff/sessions/:sessionId/join-metadata` | WorkOS admin, `sessions:manage`, `R5` | `no-store`; protected operations-only value | `routes/staff/sessions.ts` |
-| `PUT /v1/staff/sessions/:sessionId/join-metadata` | WorkOS admin, `sessions:manage`, `R5` | `I`; encrypted/protected storage; secret absent from audit | `routes/staff/sessions.ts` |
-| `POST /v1/staff/sessions/:sessionId/incidents` | WorkOS coach/admin, `sessions:incident` | `I`; `missing_link \| wrong_link \| timezone_error`, safe reason | `routes/staff/sessions.ts` |
-| `GET /v1/staff/sessions/automation-trigger-report` | WorkOS admin, `sessions:manage` | Concurrent cohorts, incidents/90d, scheduling minutes/month | `routes/staff/sessions.ts` |
+| `GET /v1/staff/sessions` | Cloudflare Access `sessions:read` | Cursor list | `routes/staff/sessions.ts` |
+| `POST /v1/staff/session-generations` | Cloudflare Access admin, `sessions:manage` | `I`; Pilot/office-hours generation; recurrence key makes duplicates safe | `routes/staff/sessions.ts` |
+| `PUT /v1/staff/sessions/:sessionId/attendance/:membershipId` | Cloudflare Access coach/admin, `sessions:attendance` | `I`; attended/absent with expected RSVP version | `routes/staff/sessions.ts` |
+| `GET /v1/staff/sessions/:sessionId/join-metadata` | Cloudflare Access admin, `sessions:manage`, `R5` | `no-store`; protected operations-only value | `routes/staff/sessions.ts` |
+| `PUT /v1/staff/sessions/:sessionId/join-metadata` | Cloudflare Access admin, `sessions:manage`, `R5` | `I`; encrypted/protected storage; secret absent from audit | `routes/staff/sessions.ts` |
+| `POST /v1/staff/sessions/:sessionId/incidents` | Cloudflare Access coach/admin, `sessions:incident` | `I`; `missing_link \| wrong_link \| timezone_error`, safe reason | `routes/staff/sessions.ts` |
+| `GET /v1/staff/sessions/automation-trigger-report` | Cloudflare Access admin, `sessions:manage` | Concurrent cohorts, incidents/90d, scheduling minutes/month | `routes/staff/sessions.ts` |
 
 Zoom creation remains manual. There is no Zoom API route or webhook in v1.
 
@@ -304,9 +304,9 @@ This is the entire Syntholo community HTTP surface. There are no routes for post
 |---|---|---|---|
 | `GET /v1/member/business-os` | Clerk member with effective Business OS capability | Actor-account onboarding/provisioning/status, customer-safe incidents, validated external-login hyperlink only | `routes/member/business-os.ts` |
 | `PATCH /v1/member/business-os/onboarding` | Clerk owner with effective Business OS capability | `expectedVersion`; approved operational questionnaire fields only | `routes/member/business-os.ts` |
-| `GET /v1/staff/business-os/accounts` | WorkOS `business_os:read` | Cursor provisioning queue | `routes/staff/business-os.ts` |
-| `GET /v1/staff/business-os/accounts/:accountId` | WorkOS `business_os:read` | Explicit audited account scope; no Academy mutation interface and no HighLevel data | `routes/staff/business-os.ts` |
-| `PATCH /v1/staff/business-os/accounts/:accountId` | WorkOS admin, `business_os:manage` | `expectedVersion`, reason; `R5` for suspend/cancel or other access-affecting transition | `routes/staff/business-os.ts` |
+| `GET /v1/staff/business-os/accounts` | Cloudflare Access `business_os:read` | Cursor provisioning queue | `routes/staff/business-os.ts` |
+| `GET /v1/staff/business-os/accounts/:accountId` | Cloudflare Access `business_os:read` | Explicit audited account scope; no Academy mutation interface and no HighLevel data | `routes/staff/business-os.ts` |
+| `PATCH /v1/staff/business-os/accounts/:accountId` | Cloudflare Access admin, `business_os:manage` | `expectedVersion`, reason; `R5` for suspend/cancel or other access-affecting transition | `routes/staff/business-os.ts` |
 
 The external URL is built from an environment-approved HTTPS origin plus opaque path, contains no Syntholo token or customer query data, opens separately, and is never embedded. There is no HighLevel webhook, API route, OAuth callback, credential, or SSO route.
 
@@ -314,9 +314,9 @@ The external URL is built from an environment-approved HTTPS origin plus opaque 
 
 | Method and path | Authorization | Controls and response | Owner |
 |---|---|---|---|
-| `GET /v1/staff/business-os/accounts/:accountId/checks` | WorkOS `business_os:read` | Latest current check set and cursor history; opaque evidence refs only | `routes/staff/business-os-checks.ts` |
-| `PUT /v1/staff/business-os/accounts/:accountId/checks/:checkCode` | WorkOS admin, `business_os:verify` | `I`, `expectedVersion`; pending/passed/failed, opaque evidence ref, checked time | `routes/staff/business-os-checks.ts` |
-| `POST /v1/staff/business-os/accounts/:accountId/activations` | WorkOS admin, `business_os:activate`, `R5` | `I`; reason; atomically re-reads seven current passed checks and ready state | `routes/staff/business-os-checks.ts` |
+| `GET /v1/staff/business-os/accounts/:accountId/checks` | Cloudflare Access `business_os:read` | Latest current check set and cursor history; opaque evidence refs only | `routes/staff/business-os-checks.ts` |
+| `PUT /v1/staff/business-os/accounts/:accountId/checks/:checkCode` | Cloudflare Access admin, `business_os:verify` | `I`, `expectedVersion`; pending/passed/failed, opaque evidence ref, checked time | `routes/staff/business-os-checks.ts` |
+| `POST /v1/staff/business-os/accounts/:accountId/activations` | Cloudflare Access admin, `business_os:activate`, `R5` | `I`; reason; atomically re-reads seven current passed checks and ready state | `routes/staff/business-os-checks.ts` |
 
 `checkCode` is exactly one of `lead_capture`, `lead_routing`, `calendar_booking`, `two_way_messaging`, `client_onboarding`, `ai_human_escalation`, or `dashboard_reporting`. Activation never loads or changes Academy entitlements.
 
@@ -324,13 +324,13 @@ The external URL is built from an environment-approved HTTPS origin plus opaque 
 
 | Method and path | Authorization | Controls and response | Owner |
 |---|---|---|---|
-| `GET /v1/staff/business-os/verifications` | WorkOS `business_os:read` | Cursor due/run list | `routes/staff/business-os-verification.ts` |
-| `GET /v1/staff/business-os/verifications/:runId` | WorkOS `business_os:read` | Seven results, cadence reason, safe linked incident | `routes/staff/business-os-verification.ts` |
-| `POST /v1/staff/business-os/accounts/:accountId/verifications` | WorkOS admin, `business_os:verify` | `I`; starts `monthly \| material_change \| customer_report`; unique period/reason | `routes/staff/business-os-verification.ts` |
-| `POST /v1/staff/business-os/verifications/:runId/completions` | WorkOS admin, `business_os:verify`, `R5` | `I`; exactly seven results; atomically degrade/open incident or restore/resolve | `routes/staff/business-os-verification.ts` |
-| `POST /v1/staff/business-os/accounts/:accountId/incidents` | WorkOS admin, `business_os:incident` | `I`; customer-report/material-change incident; no customer data body | `routes/staff/business-os-verification.ts` |
-| `POST /v1/staff/business-os/incidents/:incidentId/resolutions` | WorkOS admin, `business_os:incident`, `R5` | `I`; reason and passed current verification required for recovery | `routes/staff/business-os-verification.ts` |
-| `GET /v1/staff/business-os/monitoring-trigger-report` | WorkOS admin, `business_os:read` | Active accounts, early degradations/90d, operator minutes/month | `routes/staff/business-os-verification.ts` |
+| `GET /v1/staff/business-os/verifications` | Cloudflare Access `business_os:read` | Cursor due/run list | `routes/staff/business-os-verification.ts` |
+| `GET /v1/staff/business-os/verifications/:runId` | Cloudflare Access `business_os:read` | Seven results, cadence reason, safe linked incident | `routes/staff/business-os-verification.ts` |
+| `POST /v1/staff/business-os/accounts/:accountId/verifications` | Cloudflare Access admin, `business_os:verify` | `I`; starts `monthly \| material_change \| customer_report`; unique period/reason | `routes/staff/business-os-verification.ts` |
+| `POST /v1/staff/business-os/verifications/:runId/completions` | Cloudflare Access admin, `business_os:verify`, `R5` | `I`; exactly seven results; atomically degrade/open incident or restore/resolve | `routes/staff/business-os-verification.ts` |
+| `POST /v1/staff/business-os/accounts/:accountId/incidents` | Cloudflare Access admin, `business_os:incident` | `I`; customer-report/material-change incident; no customer data body | `routes/staff/business-os-verification.ts` |
+| `POST /v1/staff/business-os/incidents/:incidentId/resolutions` | Cloudflare Access admin, `business_os:incident`, `R5` | `I`; reason and passed current verification required for recovery | `routes/staff/business-os-verification.ts` |
+| `GET /v1/staff/business-os/monitoring-trigger-report` | Cloudflare Access admin, `business_os:read` | Active accounts, early degradations/90d, operator minutes/month | `routes/staff/business-os-verification.ts` |
 
 Cron only enqueues due-run jobs with unique `(accountId, periodStart, reason)`; it has no externally callable route. Business OS degradation or recovery never touches Academy, support, Circle, or Operator Club state.
 
@@ -338,9 +338,9 @@ Cron only enqueues due-run jobs with unique `(accountId, periodStart, reason)`; 
 
 | Method and path | Authorization | Controls and response | Owner |
 |---|---|---|---|
-| `GET /v1/staff/notifications` | WorkOS admin, `notifications:read` | Cursor delivery list with safe status/attempt metadata | `routes/staff/notifications.ts` |
-| `GET /v1/staff/notifications/:deliveryId` | WorkOS admin, `notifications:read` | One logical delivery and cursor attempts; no rendered private body | `routes/staff/notifications.ts` |
-| `POST /v1/staff/notifications/:deliveryId/replays` | WorkOS admin, `notifications:replay`, `R5` | `I`; reason; new audited attempt on same logical delivery, returns `202` | `routes/staff/notifications.ts` |
+| `GET /v1/staff/notifications` | Cloudflare Access admin, `notifications:read` | Cursor delivery list with safe status/attempt metadata | `routes/staff/notifications.ts` |
+| `GET /v1/staff/notifications/:deliveryId` | Cloudflare Access admin, `notifications:read` | One logical delivery and cursor attempts; no rendered private body | `routes/staff/notifications.ts` |
+| `POST /v1/staff/notifications/:deliveryId/replays` | Cloudflare Access admin, `notifications:replay`, `R5` | `I`; reason; new audited attempt on same logical delivery, returns `202` | `routes/staff/notifications.ts` |
 
 The logical key remains `(eventId, recipientId, templateVersion, channel)`; replay never creates a duplicate logical notification record.
 
@@ -348,12 +348,12 @@ The logical key remains `(eventId, recipientId, templateVersion, channel)`; repl
 
 | Method and path | Authorization | Controls and response | Owner |
 |---|---|---|---|
-| `GET /v1/staff/operations/health` | WorkOS admin, `operations:read` | Safe API/worker/cron/dependency metric projection; no URLs, keys, or account IDs | `routes/staff/operations.ts` |
-| `GET /v1/staff/operations/jobs` | WorkOS admin, `operations:read` | Cursor jobs/attempts summary | `routes/staff/operations.ts` |
-| `GET /v1/staff/operations/jobs/:jobId` | WorkOS admin, `operations:read` | Safe payload type, attempts, impact, next action; no private payload | `routes/staff/operations.ts` |
-| `GET /v1/staff/operations/dead-letters` | WorkOS admin, `operations:read` | Cursor dead-letter queue | `routes/staff/operations.ts` |
-| `GET /v1/staff/operations/incidents` | WorkOS admin, `operations:read` | Cursor cross-domain safe incident list | `routes/staff/operations.ts` |
-| `POST /v1/staff/operations/jobs/:jobId/replays` | WorkOS admin, `operations:replay`, `R5` | `I`; reason and dry-run impact acknowledgement; audited enqueue, returns `202` | `routes/staff/operations.ts` |
+| `GET /v1/staff/operations/health` | Cloudflare Access admin, `operations:read` | Safe API/worker/cron/dependency metric projection; no URLs, keys, or account IDs | `routes/staff/operations.ts` |
+| `GET /v1/staff/operations/jobs` | Cloudflare Access admin, `operations:read` | Cursor jobs/attempts summary | `routes/staff/operations.ts` |
+| `GET /v1/staff/operations/jobs/:jobId` | Cloudflare Access admin, `operations:read` | Safe payload type, attempts, impact, next action; no private payload | `routes/staff/operations.ts` |
+| `GET /v1/staff/operations/dead-letters` | Cloudflare Access admin, `operations:read` | Cursor dead-letter queue | `routes/staff/operations.ts` |
+| `GET /v1/staff/operations/incidents` | Cloudflare Access admin, `operations:read` | Cursor cross-domain safe incident list | `routes/staff/operations.ts` |
+| `POST /v1/staff/operations/jobs/:jobId/replays` | Cloudflare Access admin, `operations:replay`, `R5` | `I`; reason and dry-run impact acknowledgement; audited enqueue, returns `202` | `routes/staff/operations.ts` |
 
 The existing public `GET /v1/health/live` and `GET /v1/health/ready` remain infrastructure probes and are not replacements for this protected operations surface.
 
@@ -409,7 +409,7 @@ Rejected as the default. Paths such as `/approvePilot` or `/activateBusinessOs` 
 
 ### Generic `/commands` endpoint
 
-Rejected. It would weaken route-level WorkOS permissions, raw-webhook isolation, rate limits, OpenAPI/Zod contracts, cache rules, and audit ownership.
+Rejected. It would weaken route-level Cloudflare Access permissions, raw-webhook isolation, rate limits, OpenAPI/Zod contracts, cache rules, and audit ownership.
 
 ### Optional member identity on public offers
 

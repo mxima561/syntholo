@@ -1,12 +1,12 @@
 export {
-  createRemoteWorkosJwks,
-  createWorkosJwks,
-  verifyWorkosAccessToken,
-  type VerifiedWorkosAccessClaims,
-  type WorkosTokenVerificationOptions,
-} from "./workos/jwt.js";
+  createRemoteAccessJwks,
+  createAccessJwks,
+  verifyAccessAccessToken,
+  type VerifiedAccessAccessClaims,
+  type AccessTokenVerificationOptions,
+} from "./access/jwt.js";
 export { createClerkSessionAuthenticator } from "./clerk/client.js";
-export { createWorkosStaffClient } from "./workos/client.js";
+export { createAccessStaffClient } from "./access/client.js";
 export * from "./mux.js";
 export * from "./mux-playback.js";
 export * from "./blob/private-certificates.js";

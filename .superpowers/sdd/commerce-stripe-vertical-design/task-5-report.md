@@ -31,7 +31,7 @@ Stripe API composition is explicitly disabled by default. Disabled mode construc
 
 ## Exact HTTP and persistence behavior
 
-- Registered surface: only `POST /v1/webhooks/stripe`; GET, implicit HEAD, and query parameters are rejected. The route is unconnected to Clerk, WorkOS, cookies, CSRF, member, or staff authorization.
+- Registered surface: only `POST /v1/webhooks/stripe`; GET, implicit HEAD, and query parameters are rejected. The route is unconnected to Clerk, Cloudflare Access, cookies, CSRF, member, or staff authorization.
 - The route alone requests raw-body capture and installs a scoped JSON buffer parser. The exact body limit is 1,048,576 bytes. Empty, missing, oversized, non-Buffer, malformed, stale, mutated, wrong-secret, or duplicate-header input is signature-invalid.
 - Request abort/response close reaches the handler before a receipt transaction starts. Once the closed database command begins, it remains atomic; a disconnect does not roll back or misreport a durable commit.
 - Stored authority is limited to event/object IDs and types, livemode, nullable observed API version, millisecond provider time, receiver/account/context binding, raw-body SHA-256, status, and empty payload. Raw bytes, signature, matched key ID, endpoint secrets, restricted key, provider object, URL, email/address/token, and exception detail are not persisted or returned.

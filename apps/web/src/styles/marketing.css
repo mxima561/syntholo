@@ -83,6 +83,32 @@
 .site-footer .brand { color: var(--ink); }
 .site-footer > div { display: flex; gap: 20px; }
 
+/* School waitlist capture */
+.waitlist-hero { grid-template-columns: minmax(0, 640px); padding-block: 88px 120px; }
+.waitlist-form { display: grid; gap: 10px; max-width: 420px; }
+.waitlist-form label { font: 700 13px/1 var(--font-heading); }
+.waitlist-form input[type="email"] {
+  min-height: 52px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: white;
+}
+.waitlist-form .button { justify-self: start; margin-top: 6px; }
+.waitlist-form [role="alert"] { margin: 0; color: #9b2c1a; font-size: 13px; }
+.internal-waitlist { display: grid; place-items: center; padding: 88px 24px; }
+.internal-waitlist-card {
+  width: min(560px, 100%);
+  padding: 40px;
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.internal-waitlist-card h1 { margin: 0 0 16px; font: 750 clamp(32px, 4vw, 44px)/1.05 var(--font-heading); letter-spacing: -0.05em; }
+.internal-waitlist-card p { margin: 0 0 24px; color: #585956; font-size: 18px; line-height: 1.65; }
+.internal-waitlist-card [role="status"] { margin: 0; color: var(--ink); font-weight: 650; }
+
 /* Readiness scorecard */
 .scorecard-page { min-height: 100vh; background: #f4f5f2; }
 .scorecard-header { width: min(1080px, calc(100% - 40px)); height: 76px; margin-inline: auto; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
@@ -95,11 +121,12 @@
 .question-card > p { max-width: 650px; margin: 0 0 31px; color: var(--muted); font-size: 13px; line-height: 1.6; }
 .answer-list { display: grid; gap: 9px; }
 .answer-option { min-height: 56px; padding: 10px 13px; display: grid; grid-template-columns: 31px 1fr 24px; gap: 11px; align-items: center; border: 1px solid var(--border); border-radius: 10px; background: #fbfbf9; color: var(--ink); text-align: left; cursor: pointer; transition: border-color 160ms ease, background 160ms ease, transform 160ms ease; }
-.answer-option:hover { transform: translateX(3px); border-color: #a5bfba; background: #f1f7f5; }
+.answer-option:hover { transform: translateX(3px); border-color: #c9cdc6; background: #f7f7f4; }
 .answer-option > span { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 7px; background: #eef0ed; color: var(--muted); font: 700 10px var(--font-heading); }
 .answer-option strong { font: 650 12px var(--font-heading); }
 .answer-option svg { opacity: 0; color: var(--teal); }
-.answer-option:hover svg { opacity: 1; }
+.answer-option.selected svg,
+.answer-option[aria-pressed="true"] svg { opacity: 1; }
 .scorecard-footer { display: flex; justify-content: space-between; align-items: center; padding: 16px 3px; color: #93958f; font-size: 9px; }
 .back-button { display: flex; align-items: center; gap: 6px; border: 0; background: transparent; color: var(--ink); font-size: 11px; cursor: pointer; }
 .back-button:disabled { opacity: .35; cursor: default; }
@@ -188,10 +215,10 @@
 .claim-card .button { width: 100%; }
 
 /* Legal and error states */
-.state-page { min-height: 100vh; max-width: 620px; margin-inline: auto; padding: 90px 24px; display: flex; align-items: flex-start; flex-direction: column; justify-content: center; }
+.state-page { min-height: 100vh; width: min(620px, 100%); max-width: 620px; margin-inline: auto; padding: 90px 20px; display: flex; align-items: flex-start; flex-direction: column; justify-content: center; overflow: visible; }
 .state-page > .micro-label { margin-top: 28px; }
-.state-page h1 { margin: 14px 0 10px; font: 700 42px/1.04 var(--font-heading); letter-spacing: -.05em; }
-.state-page p { max-width: 510px; margin: 0 0 24px; color: var(--muted); font-size: 13px; line-height: 1.65; }
+.state-page h1 { max-width: 100%; margin: 14px 0 10px; overflow-wrap: anywhere; font: 700 clamp(28px, 8vw, 42px)/1.12 var(--font-heading); letter-spacing: -.04em; }
+.state-page p { max-width: 100%; margin: 0 0 24px; color: var(--muted); font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
 .state-page .button + .button { margin-top: 8px; }
 .legal-page { width: min(720px, calc(100% - 40px)); margin-inline: auto; padding-block: 56px 90px; }
 .legal-page > .micro-label { display: block; margin-top: 65px; color: var(--coral); }
@@ -266,11 +293,13 @@
 .report-summary p { font-size: var(--text-body); }
 .answer-list { gap: 12px; }
 .answer-option { min-height: 64px; padding: 16px; grid-template-columns: 32px 1fr auto; gap: 12px; border-radius: var(--radius-control); background: var(--surface); transition: border-color var(--motion-fast) ease, background-color var(--motion-fast) ease, transform var(--motion-fast) ease; }
-.answer-option:hover { transform: translateX(2px); border-color: var(--teal); background: var(--teal-tint); }
+.answer-option:hover { transform: translateX(2px); border-color: var(--border-strong); background: #f7f7f4; }
 .answer-option > span { width: 30px; height: 30px; font-size: 12px; }
 .answer-option strong { font-size: var(--text-ui); }
-.answer-option.selected { border-color: var(--teal); background: var(--teal-tint); }
-.answer-option.selected > span:first-child { background: var(--teal); color: white; }
+.answer-option.selected,
+.answer-option[aria-pressed="true"] { border-color: var(--teal); background: var(--teal-tint); }
+.answer-option.selected > span:first-child,
+.answer-option[aria-pressed="true"] > span:first-child { background: var(--teal); color: white; }
 .answer-option .answer-status { width: auto; height: auto; display: inline-flex; gap: 5px; align-items: center; border-radius: 0; background: transparent; color: var(--teal); font: 750 var(--text-meta)/1 var(--font-heading); text-transform: uppercase; letter-spacing: .05em; }
 .answer-option .answer-status svg { opacity: 1; }
 .scorecard-footer { font-size: var(--text-meta); }
@@ -329,3 +358,20 @@
   .checkout-card { padding: 20px; }
   .claim-card { padding: 28px 20px; }
 }
+
+.public-auth-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 48px 24px;
+  background: var(--canvas);
+}
+.public-auth-card {
+  width: min(440px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: 22px;
+}
+.public-auth-card .brand { font: 750 18px var(--font-heading); }
+.public-auth-card .cl-rootBox, .public-auth-card > div { width: 100%; }
+.public-auth-home { color: var(--teal); font-size: 14px; font-weight: 750; }

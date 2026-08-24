@@ -29,10 +29,42 @@ afterEach(async () => {
 
 describe("published migration inventory", () => {
   it("reserves 0014 as journal index thirteen after the immutable certificate migration", () => {
-    expect(PUBLISHED_MIGRATIONS.at(-1)).toMatchObject({
+    expect(PUBLISHED_MIGRATIONS.find((migration) => migration.tag === "0014_commerce_catalog")).toMatchObject({
       idx: 13,
       when: 1787029200000,
       tag: "0014_commerce_catalog",
+    });
+  });
+
+  it("reserves 0015 as journal index fourteen after the content authoring migration", () => {
+    expect(PUBLISHED_MIGRATIONS.find((migration) => migration.tag === "0015_content_authoring")).toMatchObject({
+      idx: 14,
+      when: 1787115600000,
+      tag: "0015_content_authoring",
+    });
+  });
+
+  it("reserves 0016 as journal index fifteen after the content authoring editing migration", () => {
+    expect(PUBLISHED_MIGRATIONS.find((migration) => migration.tag === "0016_content_authoring_editing")).toMatchObject({
+      idx: 15,
+      when: 1787202000000,
+      tag: "0016_content_authoring_editing",
+    });
+  });
+
+  it("reserves 0017 as journal index sixteen after the waitlist migration", () => {
+    expect(PUBLISHED_MIGRATIONS.find((migration) => migration.tag === "0017_waitlist")).toMatchObject({
+      idx: 16,
+      when: 1787288400000,
+      tag: "0017_waitlist",
+    });
+  });
+
+  it("reserves 0018 as journal index seventeen after the Mux direct upload migration", () => {
+    expect(PUBLISHED_MIGRATIONS.at(-1)).toMatchObject({
+      idx: 17,
+      when: 1787374800000,
+      tag: "0018_mux_direct_upload",
     });
   });
 
@@ -64,15 +96,15 @@ describe("published migration inventory", () => {
 
     expect(queries[0]).toBe("select pg_advisory_lock($1::integer,$2::integer)");
     expect(queries.at(-1)).toBe("select pg_advisory_unlock($1::integer,$2::integer)");
-    expect(queries.filter((query) => query === "begin")).toHaveLength(8);
-    expect(queries.filter((query) => query === "commit")).toHaveLength(8);
+    expect(queries.filter((query) => query === "begin")).toHaveLength(12);
+    expect(queries.filter((query) => query === "commit")).toHaveLength(12);
     expect(queries.filter((query) => query === "set constraints all immediate"))
       .toHaveLength(1);
     const immediate = queries.indexOf("set constraints all immediate");
     expect(queries[immediate - 1]).toBe("begin");
     expect(queries.filter((query) => query.startsWith(
       "insert into drizzle.__drizzle_migrations",
-    ))).toHaveLength(7);
+    ))).toHaveLength(11);
     expect(released).toBe(true);
   });
 
@@ -405,6 +437,10 @@ describe("published migration inventory", () => {
       { idx: 11, when: 1786856400000, tag: "0012_implementation", hash: "dabb54d9842c3e06c67e1ef5b17f42312011ffb133275b4dd346afd2465939a9" },
       { idx: 12, when: 1786942800000, tag: "0013_certificates", hash: "878a759f41c44e0cbb9cf7492889bdf4d6f0ab087f0e9d7b26865f988fbe1bd9" },
       { idx: 13, when: 1787029200000, tag: "0014_commerce_catalog", hash: "4bc124a641e6912d84fc6675133476f92e52e8fa89151079d05433d31deba8d4" },
+      { idx: 14, when: 1787115600000, tag: "0015_content_authoring", hash: "46184aca0892173b5bd2267d263e51fbc0bff7bd01dc1fe9fb2de1b6ae51e44e" },
+      { idx: 15, when: 1787202000000, tag: "0016_content_authoring_editing", hash: "500d340145b6a179e407a260ecaf89311bb90cf3165b741077882bbed7c8896b" },
+      { idx: 16, when: 1787288400000, tag: "0017_waitlist", hash: "12d2e9ffd47113bf4bd877a3f4a7e42c6e7c2ed0dbe435b2dd006e0e431b4857" },
+      { idx: 17, when: 1787374800000, tag: "0018_mux_direct_upload", hash: "d5a496d87e217e0d44e892d06cf430946f0536f1d1e9c4b1444d7d3f03b6893e" },
     ]);
   });
 

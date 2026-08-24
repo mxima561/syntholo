@@ -6,12 +6,12 @@
 
 **Architecture:** Migrate the existing Next.js application into an npm-workspace monorepo with independently deployable web, Fastify API, and PostgreSQL-backed worker processes. Keep all business writes in the API, all durable side effects in the worker, all access decisions in the entitlement authority, and all customer data in Neon PostgreSQL. Execute the six focused plans below in dependency order and release only through the six approved gates.
 
-**Tech Stack:** Next.js 16.3, React 19.2, TypeScript 5.9, Fastify 5, Zod 4, Drizzle ORM and PostgreSQL/Neon, Clerk, WorkOS AuthKit, Stripe, Mux, Resend, Vercel Blob, Circle, PostHog, Sentry, Vitest, Testing Library, Playwright, axe-core, Vercel, and Railway.
+**Tech Stack:** Next.js 16.3, React 19.2, TypeScript 5.9, Fastify 5, Zod 4, Drizzle ORM and PostgreSQL/Neon, Clerk, Clerk / Cloudflare Access, Stripe, Mux, Resend, Vercel Blob, Circle, PostHog, Sentry, Vitest, Testing Library, Playwright, axe-core, Vercel, and Railway.
 
 ## Global Constraints
 
 - Keep the approved visual system and current route experience unless a focused plan explicitly changes a production behavior.
-- Use Clerk only for public/member identity and WorkOS only for coach/admin identity; never merge or silently translate the sessions.
+- Use Clerk only for public/member identity and Cloudflare Access only for coach/admin identity; never merge or silently translate the sessions.
 - Put every customer-owned row under immutable `accountId`; enforce scoped repositories and PostgreSQL RLS for the member runtime role.
 - Compute access only through `packages/domain/src/entitlements`; UI flags and provider status never grant access directly.
 - Treat course completion and certificates as immutable achievement facts, never entitlement grants.
@@ -39,7 +39,7 @@ syntholo/
 │   ├── api/
 │   │   └── src/
 │   │       ├── app.ts               # Fastify composition
-│   │       ├── auth/                # Clerk and WorkOS verification
+│   │       ├── auth/                # Clerk and Cloudflare Access verification
 │   │       ├── routes/              # public/member/staff/webhook route adapters
 │   │       └── modules/             # use cases; no vendor SDK imports
 │   └── worker/
@@ -82,7 +82,7 @@ export type MemberActor = Readonly<{
 export type StaffActor = Readonly<{
   kind: "staff";
   actorId: string;
-  workosUserId: string;
+  accessUserId: string;
   staffId: string;
   role: "coach" | "admin";
   permissions: readonly string[];
@@ -228,7 +228,7 @@ flowchart TD
 |---|---|
 | Launch offers, pricing, entry rules, and all-18-before-payment | Commerce 1/3; Content 9; Launch 10 |
 | Monorepo and independent web/API/worker deployables | Foundation 1/2/5/9 |
-| Public/member/coach/admin surfaces and Clerk/WorkOS split | Foundation 6; Launch 3 |
+| Public/member/coach/admin surfaces and Clerk/Cloudflare Access split | Foundation 6; Launch 3 |
 | Production API as sole business-write authority and stable errors | Foundation 2/5; Launch 9 |
 | PostgreSQL-only system of record, RLS, scoped repositories | Foundation 3/4/9; Launch 9 |
 | Audit, outbox, job retry/dead-letter, idempotency | Foundation 3/7; Business OS 6/8 |
@@ -259,7 +259,7 @@ Self-review result: all addendum sections have an owning implementation task. Th
 
 - Create one integration branch from the current approved visual baseline: `codex/production-platform`.
 - Implement each numbered task on a short `codex/<plan>-<task>` branch or isolated worktree, then merge only after the task's focused checks and plan-level regression pass.
-- Use `local`, `test`, `staging`, and `production` configuration modes. Staging and production use separate Clerk, WorkOS, Stripe, Neon, Mux, Blob, Resend, Circle, PostHog, and Sentry resources.
+- Use `local`, `test`, `staging`, and `production` configuration modes. Staging and production use separate Clerk, Cloudflare Access, Stripe, Neon, Mux, Blob, Resend, Circle, PostHog, and Sentry resources.
 - Use five `NOLOGIN` PostgreSQL capability roles: migration, RLS-constrained member API, audited staff API, signed-provider system API, and worker runtime. Member, staff, system, and worker use separate least-privilege login pools selected only after authorization; migrations use the dedicated direct owner connection.
 - Attach one immutable `RELEASE_SHA` to web, API, worker, Sentry, health responses, and deployment annotations.
 
@@ -268,9 +268,9 @@ Self-review result: all addendum sections have an owning implementation task. Th
 ### Gate 1 — Foundation
 
 - [ ] Foundation plan test suite, cross-account denial suite, RLS integration suite, entitlement state/property suite, API health, and worker claim tests pass.
-- [ ] Clerk tokens cannot enter staff routes; WorkOS sessions cannot enter member routes.
-- [ ] Record the exact canonical host/callback/redirects, Clerk production instance/authorized party/audience, and WorkOS issuer/client/organization/singleton roles/permissions/MFA/session policy.
-- [ ] Capture staging WorkOS token-schema evidence for `client_id` and `auth_time` without token material; assign the encryption-key owner and prove two-phase rotation/recovery.
+- [ ] Clerk tokens cannot enter staff routes; Cloudflare Access sessions cannot enter member routes.
+- [ ] Record the exact canonical host/callback/redirects, Clerk production instance/authorized party/audience, and Cloudflare Access issuer/client/organization/singleton roles/permissions/MFA/session policy.
+- [ ] Capture staging Cloudflare Access token-schema evidence for `client_id` and `auth_time` without token material; assign the encryption-key owner and prove two-phase rotation/recovery.
 - [ ] Prove deployed `/v1` proxy conformance for status, body, `Location`, `Set-Cookie`, `Cookie`, and `Authorization`, plus exact member/staff PostgreSQL runtime capability attestation.
 - [ ] Web, API, and worker build independently and report the same release SHA.
 

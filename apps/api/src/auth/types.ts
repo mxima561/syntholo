@@ -1,5 +1,5 @@
 import type { MemberActor, StaffActor } from "@syntholo/domain";
-import type { ContentPublicationIssue } from "@syntholo/contracts/content";
+import type { ContentPublicationIssue, LessonBlock, Transcript } from "@syntholo/contracts/content";
 import type {
   CompleteLessonRequest,
   CompleteLessonResponse,
@@ -28,9 +28,9 @@ import type { EncryptedValue, StaffSessionCrypto } from "./session-crypto.js";
 
 export type AuthEnvironment = "local" | "test" | "staging" | "production";
 
-export interface WorkosAccessClaims {
-  workosUserId: string;
-  workosSessionId: string;
+export interface AccessAccessClaims {
+  accessUserId: string;
+  accessSessionId: string;
   tokenId: string;
   clientId: string;
   organizationId: string;
@@ -44,7 +44,7 @@ export interface WorkosAccessClaims {
 
 export interface StaffIdentityRecord {
   actorId: string;
-  workosUserId: string;
+  accessUserId: string;
   staffId: string;
   role: "coach" | "admin";
   permissions: readonly string[];
@@ -64,8 +64,8 @@ export interface LoginAttemptRecord {
 export interface StaffSessionRecord {
   sessionHash: Buffer;
   staffIdentityId: string;
-  workosUserId: string;
-  workosSessionId: string;
+  accessUserId: string;
+  accessSessionId: string;
   organizationId: string;
   providerRoles: readonly string[];
   providerPermissions: readonly string[];
@@ -197,7 +197,7 @@ export interface AuthRouteDependencies {
         leaseId: string;
         expectedVersion: number;
         encryptedTokens: EncryptedValue;
-        claims: WorkosAccessClaims;
+        claims: AccessAccessClaims;
         now: Date;
       }): Promise<StaffSessionRecord | null>;
       releaseRefresh(input: {
@@ -208,15 +208,15 @@ export interface AuthRouteDependencies {
       revoke(
         sessionHash: Buffer,
         revokedAt: Date,
-      ): Promise<{ workosSessionId: string } | null>;
+      ): Promise<{ accessSessionId: string } | null>;
     };
     identities: {
-      findStaffIdentityByWorkosUserId(
-        workosUserId: string,
+      findStaffIdentityByAccessUserId(
+        accessUserId: string,
       ): Promise<StaffIdentityRecord | null>;
     };
-    tokens: { verify(token: string): Promise<WorkosAccessClaims> };
-    workos: {
+    tokens: { verify(token: string): Promise<AccessAccessClaims> };
+    access: {
       createAuthorizationUrl(input: {
         state: string;
         clientId: string;
@@ -297,6 +297,90 @@ export interface AuthRouteDependencies {
     };
     certificates?: {
       createDelivery(actor: StaffActor, correlationId: string, certificateId: string, input: CreateCertificateDeliveryRequest, idempotencyKey: string, parentDeadline?: number): Promise<CertificateDeliveryResponse>;
+    };
+    contentAuthoring?: {
+      listCourses(input: Readonly<{ actor: StaffActor; correlationId: string }>): Promise<readonly Readonly<{
+        courseId: string; slug: string; title: string; description: string;
+        revision: number; published: boolean; createdAt: string; enrolledCount: number;
+      }>[]>;
+      createCourseDraft(input: Readonly<{
+        actor: StaffActor; correlationId: string;
+        slug: string; title: string; description: string; idempotencyKey: string;
+      }>): Promise<Readonly<{
+        courseId: string; slug: string; title: string; description: string;
+        revision: number; createdAt: string;
+      }>>;
+      upsertStageDraft(input: Readonly<{
+        actor: StaffActor; correlationId: string;
+        courseId: string; stageId?: string; expectedCourseRevision: number;
+        slug: string; title: string; description: string; order: number; idempotencyKey: string;
+      }>): Promise<Readonly<{
+        stageId: string; courseId: string; slug: string; title: string; description: string;
+        order: number; revision: number;
+      }>>;
+      upsertLessonDraft(input: Readonly<{
+        actor: StaffActor; correlationId: string;
+        courseId: string; stageId: string; lessonId?: string;
+        slug: string; title: string; summary: string; durationSeconds: number;
+        blocks: readonly LessonBlock[]; transcript: Transcript;
+        order: number; required: boolean; idempotencyKey: string;
+      }>): Promise<Readonly<{
+        lessonId: string; courseId: string; stageId: string; slug: string;
+        revision: number; mediaAssetId: string; order: number; required: boolean;
+      }>>;
+      recordLessonReview(input: Readonly<{
+        actor: StaffActor; correlationId: string;
+        lessonId: string; expectedRevision: number; reason: string;
+      }>): Promise<Readonly<{
+        lessonId: string; draftRevision: number; draftHash: string;
+        accessibilityDecisionId: string; disclosureDecisionId: string;
+      }>>;
+      updateCourseDraft(input: Readonly<{
+        actor: StaffActor; correlationId: string;
+        courseId: string; expectedRevision: number; title: string; description: string; idempotencyKey: string;
+      }>): Promise<Readonly<{
+        courseId: string; title: string; description: string; revision: number;
+      }>>;
+      getCourseDraftTree(input: Readonly<{
+        actor: StaffActor; correlationId: string; courseId: string;
+      }>): Promise<Readonly<{
+        courseId: string; slug: string; title: string; description: string; revision: number;
+        stages: readonly Readonly<{
+          stageId: string; slug: string; title: string; description: string; order: number; revision: number;
+          lessons: readonly Readonly<{
+            lessonId: string; slug: string; title: string; summary: string; durationSeconds: number;
+            blocks: readonly LessonBlock[]; transcript: Transcript; order: number; required: boolean; revision: number;
+          }>[];
+        }>[];
+      }>>;
+    };
+    mediaUploads?: {
+      createUpload(input: Readonly<{
+        actor: StaffActor; correlationId: string; lessonId: string;
+      }>): Promise<Readonly<{ uploadId: string; url: string }>>;
+      finalizeUpload(input: Readonly<{
+        actor: StaffActor; correlationId: string;
+        lessonId: string; uploadId: string; expectedRevision: number;
+      }>): Promise<Readonly<{
+        lessonId: string; revision: number; mediaAssetId: string;
+        mediaState: "waiting" | "preparing" | "ready" | "errored" | "deleted";
+      }>>;
+    };
+    learningAdmin?: {
+      grantEnrollment(input: Readonly<{
+        actor: StaffActor; correlationId: string;
+        accountId: string; courseId: string; reason: string; idempotencyKey: string;
+      }>): Promise<Readonly<{
+        enrollmentId: string; accountId: string; courseId: string;
+        courseVersionId: string; enrolledAt: string;
+      }>>;
+    };
+    accounts?: {
+      list(input: Readonly<{
+        actor: StaffActor; correlationId: string; query?: string;
+      }>): Promise<readonly Readonly<{
+        accountId: string; accountName: string; status: string; ownerEmail: string | null; enrolledCourseCount: number;
+      }>[]>;
     };
   };
 }

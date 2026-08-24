@@ -10,7 +10,7 @@ enters the durable worker receipt lane without closing the work item.
 
 ## Authority and visibility
 
-Only a WorkOS staff actor with role `admin`, permission
+Only a Cloudflare Access staff actor with role `admin`, permission
 `entitlements:manage`, and recent authentication may list, claim, or resolve
 these records. Coaches, members, worker jobs, and the signed-provider system
 login have no raw table access. Never copy provider identifiers, token material,

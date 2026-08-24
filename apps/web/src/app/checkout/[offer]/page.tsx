@@ -27,7 +27,7 @@ export default async function CheckoutPage({ params }: { params: Promise<{ offer
         Enrollment opens once the full curriculum is published and the launch
         gates pass. No payment can be taken before then.
       </p>
-      <Link className="button button-dark button-medium" href="/pricing">
+      <Link className="button button-dark button-medium" href="/">
         Back to program options
       </Link>
     </main>

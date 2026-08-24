@@ -35,3 +35,14 @@ describe("ScorecardClient", () => {
     expect(screen.getByText("Selected")).toBeVisible();
   });
 });
+  it("does not keep the previous question selected after advancing", async () => {
+    const user = userEvent.setup();
+    render(<ScorecardClient />);
+
+    await user.click(screen.getByRole("button", { name: /we have a clear plan/i }));
+
+    expect(screen.getByText("Question 2 of 20")).toBeInTheDocument();
+    expect(screen.queryByText("Selected")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { pressed: true })).not.toBeInTheDocument();
+  });
+

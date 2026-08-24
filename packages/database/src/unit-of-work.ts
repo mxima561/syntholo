@@ -216,7 +216,7 @@ export function createUnitOfWork(
         permissions: Object.freeze([...metadata.actor.permissions]),
         role: metadata.actor.role,
         staffId: metadata.actor.staffId,
-        workosUserId: metadata.actor.workosUserId,
+        accessUserId: metadata.actor.accessUserId,
       });
     registerTrustedActorAuthentication(
       actor,

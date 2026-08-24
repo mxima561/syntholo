@@ -76,7 +76,7 @@ describe("content publication closed commands", () => {
     const courseId = "10000000-0000-4000-8000-000000000010";
     await harness.database.pool.query(
       `insert into staff_identities (id, provider_user_id, role)
-       values ($1, 'workos_content_admin', 'admin')`,
+       values ($1, 'removed_content_admin', 'admin')`,
       [staffId],
     );
     await harness.database.pool.query(
@@ -130,7 +130,7 @@ describe("content publication closed commands", () => {
     const courseId = "10000000-0000-4000-8000-000000000012";
     await harness.database.pool.query(
       `insert into staff_identities (id, provider_user_id, role)
-       values ($1, 'workos_content_reset', 'admin')`,
+       values ($1, 'removed_content_reset', 'admin')`,
       [staffId],
     );
     await harness.database.pool.query(
@@ -166,7 +166,7 @@ describe("content publication closed commands", () => {
     const stageId = "10000000-0000-4000-8000-000000000023";
     const lessonId = "10000000-0000-4000-8000-000000000033";
     await harness.database.pool.query(
-      "insert into staff_identities (id,provider_user_id,role) values ($1,'workos_release_admin','admin')",
+      "insert into staff_identities (id,provider_user_id,role) values ($1,'removed_release_admin','admin')",
       [staffId],
     );
     await harness.database.pool.query(

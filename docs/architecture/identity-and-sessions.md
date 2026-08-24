@@ -1,7 +1,7 @@
 # Identity and session boundary
 
 Syntholo keeps consumer and workforce identity separate. Clerk session JWTs
-authenticate members; WorkOS AuthKit authenticates staff. Neither issuer can
+authenticate members; Clerk / Cloudflare Access authenticates staff. Neither issuer can
 cross the other API surface, and provider claims never become internal account,
 membership, or staff identifiers without an active PostgreSQL mapping.
 
@@ -18,7 +18,7 @@ Production staff authority is one host-only
 `Path=/`, no `Domain`. Local development uses the distinct non-Secure
 `syntholo_local_staff_session`. Member requests carry exactly one Clerk bearer
 and set `credentials: omit`; staff browser requests use the same origin and
-never expose a WorkOS token to JavaScript. Server-side web calls close over the
+never expose a Cloudflare Access token to JavaScript. Server-side web calls close over the
 validated upstream and forward exactly one named, canonical opaque cookie.
 
 ## Member flow
@@ -87,7 +87,7 @@ const runOwnerRequest = useReverification(async () => {
 PKCE S256. PostgreSQL stores only the state/nonce hashes and an AES-GCM encrypted
 verifier, with a five-minute one-use deadline and allowlisted relative return
 path. Reauthentication binds the attempt to the existing opaque-session hash and
-requests WorkOS `max_age=0`. The callback consumes the attempt atomically,
+requests Cloudflare Access `max_age=0`. The callback consumes the attempt atomically,
 exchanges the code, validates the access JWT, resolves the active database staff
 identity, and issues or rotates the session through narrow security-definer
 state-transition functions. Sign-out winning a race fences the callback.
@@ -95,10 +95,10 @@ state-transition functions. Sign-out winning a race fences the callback.
 The browser receives only a random 32-byte base64url credential. PostgreSQL uses
 its SHA-256 hash as the lookup key. Access and rotating refresh tokens are stored
 as one bounded AES-256-GCM bundle with a fresh 12-byte IV, 16-byte tag, positive
-key version, and AAD binding the lookup hash, staff identity, and WorkOS session.
+key version, and AAD binding the lookup hash, staff identity, and Cloudflare Access session.
 Rows are rejected for revocation or hard expiry before decryption.
 
-WorkOS JWT verification pins RS256, JWKS, issuer, `client_id`, organization,
+Cloudflare Access JWT verification pins RS256, JWKS, issuer, `client_id`, organization,
 `sub`, `sid`, `jti`, singleton role, permissions, `iat`, `auth_time`, expiry and
 not-before, and rejects `act`. `client_id` is not treated as `aud`. Provider role,
 permissions, identity, organization, and session must exactly match the stored
@@ -110,10 +110,10 @@ session and active database identity. Recent authentication is driven only by
 Refresh uses a short database lease plus version/id compare-and-swap. Completion
 is accepted only for the current lease/version, before database-side lease,
 session, and new-access-token expiry, and while `revoked_at IS NULL`. Concurrent
-requests observe the committed generation. WorkOS `invalid_grant` (including
+requests observe the committed generation. Cloudflare Access `invalid_grant` (including
 the SDK's `.error` shape) is terminal and revokes locally; network, timeout,
 408, 429, and 5xx failure is transient and never authorizes an expired token.
-Sign-out clears the exact cookie and revokes locally before best-effort WorkOS
+Sign-out clears the exact cookie and revokes locally before best-effort Cloudflare Access
 revocation. Bounded worker-only cleanup deletes only terminal attempts and
 expired/revoked sessions; runtime roles have no table `DELETE`.
 
@@ -141,11 +141,11 @@ Removing an in-use key is a fail-closed logout, not a recovery mechanism.
 
 Production remains blocked until evidence records:
 
-- the exact canonical host, WorkOS callback, embedded Clerk sign-in/sign-up
+- the exact canonical host, Cloudflare Access callback, embedded Clerk sign-in/sign-up
   paths, and allowed redirect URLs;
 - the Clerk production instance, publishable/secret keys, audience, and exact
   authorized party;
-- the WorkOS production issuer, client, organization, singleton roles,
+- the Cloudflare Access production issuer, client, organization, singleton roles,
   permissions, MFA enforcement, and session policy;
 - a staging access-token schema capture confirming `client_id`, `auth_time`, and
   the absence/presence of any real audience without recording token material;

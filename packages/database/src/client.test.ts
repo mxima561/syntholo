@@ -48,7 +48,17 @@ describe("createDatabase", () => {
       "syntholo_commerce_reserve_public_bos_setup_v1(text,text,text,text,uuid,uuid,bytea,bytea,text,text,bytea,bytea,bytea,text,bytea,bytea,bytea,text,text,text,text,text,jsonb,timestamp with time zone,timestamp with time zone)",
       "syntholo_commerce_reserve_public_self_paced_v1(text,text,text,text,uuid,uuid,bytea,bytea,bytea,bytea,text,bytea,bytea,bytea,text,text,text,text,text,jsonb,timestamp with time zone,timestamp with time zone)",
     ]));
-    expect(clientAllowlist).toEqual(sqlAllowlist);
+    // The SQL side is a frozen snapshot of migration 0014's allowlist (50 entries,
+    // immutable once applied). Functions granted to syntholo_system_api by LATER
+    // migrations (e.g. the waitlist feature in 0017_waitlist.sql) legitimately
+    // extend the client-side list beyond that snapshot — list them explicitly here
+    // so a real omission (a new system-granted function nobody added anywhere)
+    // still fails loudly, while an intentional post-0014 addition doesn't.
+    const postSqlSnapshotAdditions = [
+      "syntholo_waitlist_get_by_email_v1(text)",
+      "syntholo_waitlist_subscribe_v1(text,text)",
+    ];
+    expect(clientAllowlist).toEqual([...sqlAllowlist, ...postSqlSnapshotAdditions].sort());
   });
 
   it.each(["", "   "])("rejects a blank database URL", (url) => {

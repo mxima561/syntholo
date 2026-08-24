@@ -1,10 +1,10 @@
-import { WorkOS } from "@workos-inc/node";
+import { Cloudflare Access } from "removed";
 
-export function createWorkosStaffClient(input: {
+export function createAccessStaffClient(input: {
   apiKey: string;
   clientId: string;
 }) {
-  const workos = new WorkOS(input.apiKey, { clientId: input.clientId });
+  const access = new Cloudflare Access(input.apiKey, { clientId: input.clientId });
   return Object.freeze({
     async createAuthorizationUrl(options: {
       state: string;
@@ -13,8 +13,8 @@ export function createWorkosStaffClient(input: {
       redirectUri: string;
       maxAge?: number;
     }): Promise<{ url: string; codeVerifier: string }> {
-      const pair = await workos.pkce.generate();
-      const url = workos.userManagement.getAuthorizationUrl({
+      const pair = await access.pkce.generate();
+      const url = access.userManagement.getAuthorizationUrl({
         provider: "authkit",
         clientId: options.clientId,
         organizationId: options.organizationId,
@@ -31,7 +31,7 @@ export function createWorkosStaffClient(input: {
       codeVerifier: string;
       clientId: string;
     }): Promise<{ accessToken: string; refreshToken: string }> {
-      const response = await workos.userManagement.authenticateWithCode({
+      const response = await access.userManagement.authenticateWithCode({
         code: options.code,
         codeVerifier: options.codeVerifier,
         clientId: options.clientId,
@@ -42,14 +42,14 @@ export function createWorkosStaffClient(input: {
       refreshToken: string;
       clientId: string;
     }): Promise<{ accessToken: string; refreshToken: string }> {
-      const response = await workos.userManagement.authenticateWithRefreshToken({
+      const response = await access.userManagement.authenticateWithRefreshToken({
         refreshToken: options.refreshToken,
         clientId: options.clientId,
       });
       return { accessToken: response.accessToken, refreshToken: response.refreshToken };
     },
     revokeSession(options: { sessionId: string }): Promise<void> {
-      return workos.userManagement.revokeSession(options);
+      return access.userManagement.revokeSession(options);
     },
   });
 }

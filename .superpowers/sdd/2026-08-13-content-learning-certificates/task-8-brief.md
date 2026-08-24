@@ -15,7 +15,7 @@ Read this first; it is the exact bounded task contract.
 ## Required authority
 
 1. Certificate eligibility is only the personal immutable 0011 chain `learning.course_completed.v1` -> `certificate_prerequisites` -> exact `course_completions` tuple. No 0012 implementation artifact, workflow, or implementation completion may gate, create, revoke, rename, or otherwise affect a certificate.
-2. A certificate uses a member-confirmed recipient display name. Never infer it from email, account name, Clerk/WorkOS fields, provider metadata, or demo data.
+2. A certificate uses a member-confirmed recipient display name. Never infer it from email, account name, Clerk/Cloudflare Access fields, provider metadata, or demo data.
 3. Recipient names are immutable, actor-bound versions with one optimistic current head per exact `(account_id,membership_id)`. Confirmation requires an active membership whose `member_identity_id` equals the authenticated actor. A completed member without a confirmed name is honestly `awaiting_recipient_name`.
 4. One certificate record exists per personal `course_completion_id` and per exact prerequisite. It snapshots the business name, published course title/version, UTC completion time, renderer version, and the exact personal account/membership/enrollment/course/version tuple.
 5. Recipient name/version may be absent at candidate creation. The only permitted snapshot mutation is a one-time bind from null to the exact confirmed current name version; after binding it is immutable.
@@ -112,7 +112,7 @@ Append the missing name route and replace the outdated certificate-download `303
   - server-fetches the exact private object and returns `200` streamed `application/pdf`, exact `Content-Length`, safe attachment filename, `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer`, `X-Content-Type-Options: nosniff`, and no Blob/provider URL in any header/body/log/audit/analytics/Sentry;
   - stream acquisition and transfer are bounded/cancellable; object key/hash/length/MIME/ETag are reconciled to the immutable file row before response. A mismatch fails closed and records a consistency incident; never overwrite.
 - `POST /v1/staff/certificates/:certificateId/deliveries`
-  - WorkOS admin, permission `certificates:deliver`, R5 and CSRF;
+  - Cloudflare Access admin, permission `certificates:deliver`, R5 and CSRF;
   - required idempotency key; exact body `{ reason }`; authorization before replay;
   - under the same locked command transaction, require the target certificate to be `issued` and its one immutable exact file row to exist; unknown, awaiting, pending, failed, cross-account, or file-missing targets collapse to safe 404 and create no receipt/request/audit fact;
   - first/replay `202 { status: "delivery_pending" }`; no destination override and no provider send.

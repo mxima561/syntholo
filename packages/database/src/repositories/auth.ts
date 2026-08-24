@@ -19,9 +19,9 @@ export interface DatabaseLoginAttempt {
   createdAt: Date;
 }
 
-export interface DatabaseWorkosClaims {
-  workosUserId: string;
-  workosSessionId: string;
+export interface DatabaseAccessClaims {
+  accessUserId: string;
+  accessSessionId: string;
   organizationId: string;
   roles: readonly string[];
   permissions: readonly string[];
@@ -32,8 +32,8 @@ export interface DatabaseWorkosClaims {
 export interface DatabaseStaffSession {
   sessionHash: Buffer;
   staffIdentityId: string;
-  workosUserId: string;
-  workosSessionId: string;
+  accessUserId: string;
+  accessSessionId: string;
   organizationId: string;
   providerRoles: readonly string[];
   providerPermissions: readonly string[];
@@ -51,7 +51,7 @@ export interface DatabaseStaffSession {
 
 export interface DatabaseStaffIdentity {
   actorId: string;
-  workosUserId: string;
+  accessUserId: string;
   staffId: string;
   role: "coach" | "admin";
   permissions: readonly string[];
@@ -75,8 +75,8 @@ type SessionRow = {
   session_hash: Buffer;
   previous_session_hash: Buffer | null;
   staff_identity_id: string;
-  workos_user_id: string;
-  workos_session_id: string;
+  removed_user_id: string;
+  removed_session_id: string;
   organization_id: string;
   provider_roles: string[];
   provider_permissions: string[];
@@ -96,7 +96,7 @@ type SessionRow = {
 };
 
 const sessionColumns = `
-  session_hash, previous_session_hash, staff_identity_id, workos_user_id, workos_session_id,
+  session_hash, previous_session_hash, staff_identity_id, removed_user_id, removed_session_id,
   organization_id, provider_roles, provider_permissions, token_ciphertext,
   token_iv, token_tag, key_version, access_token_expires_at, hard_expires_at,
   authenticated_at, refresh_version, refresh_lease_id,
@@ -124,8 +124,8 @@ function mapSession(row: SessionRow): DatabaseStaffSession {
   return {
     sessionHash: row.session_hash,
     staffIdentityId: row.staff_identity_id,
-    workosUserId: row.workos_user_id,
-    workosSessionId: row.workos_session_id,
+    accessUserId: row.removed_user_id,
+    accessSessionId: row.removed_session_id,
     organizationId: row.organization_id,
     providerRoles: row.provider_roles,
     providerPermissions: row.provider_permissions,
@@ -174,8 +174,8 @@ export class MemberIdentityRepository {
 export class StaffIdentityRepository {
   constructor(private readonly database: Database) {}
 
-  async findStaffIdentityByWorkosUserId(
-    workosUserId: string,
+  async findStaffIdentityByAccessUserId(
+    accessUserId: string,
   ): Promise<DatabaseStaffIdentity | null> {
     const result = await this.database.pool.query<{
       id: string;
@@ -185,15 +185,15 @@ export class StaffIdentityRepository {
     }>(
       `select id, provider_user_id, role, permissions
        from staff_identities
-       where provider = 'workos' and provider_user_id = $1 and status = 'active'
+       where provider = 'access' and provider_user_id = $1 and status = 'active'
        limit 1`,
-      [workosUserId],
+      [accessUserId],
     );
     const row = result.rows[0];
     if (!row || (row.role !== "coach" && row.role !== "admin")) return null;
     return Object.freeze({
       actorId: row.id,
-      workosUserId: row.provider_user_id,
+      accessUserId: row.provider_user_id,
       staffId: row.id,
       role: row.role,
       permissions: Object.freeze([...row.permissions]),
@@ -251,8 +251,8 @@ export class StaffSessionRepository {
           expectedPriorSessionHash,
           record.sessionHash,
           record.staffIdentityId,
-          record.workosUserId,
-          record.workosSessionId,
+          record.accessUserId,
+          record.accessSessionId,
           record.organizationId,
           record.providerRoles,
           record.providerPermissions,
@@ -302,7 +302,7 @@ export class StaffSessionRepository {
     leaseId: string;
     expectedVersion: number;
     encryptedTokens: EncryptedDatabaseValue;
-    claims: DatabaseWorkosClaims;
+    claims: DatabaseAccessClaims;
     now: Date;
   }): Promise<DatabaseStaffSession | null> {
     const result = await this.database.pool.query<SessionRow>(
@@ -339,13 +339,13 @@ export class StaffSessionRepository {
   async revoke(
     sessionHash: Buffer,
     revokedAt: Date,
-  ): Promise<{ workosSessionId: string } | null> {
+  ): Promise<{ accessSessionId: string } | null> {
     void revokedAt;
-    const result = await this.database.pool.query<{ workos_session_id: string }>(
+    const result = await this.database.pool.query<{ removed_session_id: string }>(
       "select * from staff_revoke_session($1)",
       [sessionHash],
     );
     const row = result.rows[0];
-    return row ? { workosSessionId: row.workos_session_id } : null;
+    return row ? { accessSessionId: row.removed_session_id } : null;
   }
 }

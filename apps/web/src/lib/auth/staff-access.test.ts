@@ -4,7 +4,7 @@ import { resolveProductionAdminAccess } from "./staff-access";
 const staffActor = {
   kind: "staff",
   actorId: "10000000-0000-4000-8000-000000000001",
-  workosUserId: "user_workos_1",
+  accessUserId: "user_removed_1",
   staffId: "20000000-0000-4000-8000-000000000002",
   role: "admin",
   permissions: ["content:read", "operations:read"],
@@ -21,12 +21,12 @@ function resolve(response: Response) {
 }
 
 describe("production staff access", () => {
-  it("accepts a valid API-resolved WorkOS administrator", async () => {
+  it("accepts a valid API-resolved Cloudflare Access administrator", async () => {
     await expect(resolve(new Response(JSON.stringify(staffActor), { status: 200 })))
       .resolves.toBe("authorized");
   });
 
-  it("does not authorize a valid WorkOS coach for the admin surface", async () => {
+  it("does not authorize a valid Cloudflare Access coach for the admin surface", async () => {
     await expect(resolve(new Response(JSON.stringify({ ...staffActor, role: "coach" }), {
       status: 200,
     }))).resolves.toBe("forbidden");

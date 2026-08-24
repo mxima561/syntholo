@@ -33,7 +33,7 @@ describe("Mux reconciliation worker handler", () => {
     });
     const handler = createMuxReconcileJobHandler({
       enabled: true,
-      management: { retrieveAsset: vi.fn(async () => ({
+      management: { createDirectUpload: vi.fn(), retrieveUpload: vi.fn(), retrieveAsset: vi.fn(async () => ({
         environmentId: "env_staging",
         providerAssetId: "asset_123",
         state: "ready" as const,
@@ -81,7 +81,7 @@ describe("Mux reconciliation worker handler", () => {
 
     const handler = createMuxReconcileJobHandler({
       enabled: true,
-      management: { retrieveAsset: vi.fn(async () => ({
+      management: { createDirectUpload: vi.fn(), retrieveUpload: vi.fn(), retrieveAsset: vi.fn(async () => ({
         environmentId: "env_production",
         providerAssetId: "asset_123",
         state: "ready" as const,
@@ -109,7 +109,7 @@ describe("Mux reconciliation worker handler", () => {
   it("permanently classifies provider terminal failures", async () => {
     const handler = createMuxReconcileJobHandler({
       enabled: true,
-      management: { retrieveAsset: vi.fn(async () => {
+      management: { createDirectUpload: vi.fn(), retrieveUpload: vi.fn(), retrieveAsset: vi.fn(async () => {
         throw new MuxManagementError("MUX_MANAGEMENT_OBJECT_TERMINAL", true);
       }) },
       repository: {
@@ -131,7 +131,7 @@ describe("Mux reconciliation worker handler", () => {
   it("permanently classifies a closed-command terminal target", async () => {
     const handler = createMuxReconcileJobHandler({
       enabled: true,
-      management: { retrieveAsset: vi.fn() },
+      management: { createDirectUpload: vi.fn(), retrieveUpload: vi.fn(), retrieveAsset: vi.fn() },
       repository: {
         loadTarget: vi.fn(async () => ({ kind: "terminal" as const })),
         apply: vi.fn(),

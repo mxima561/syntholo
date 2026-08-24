@@ -133,7 +133,7 @@ export const staffIdentities = pgTable(
   "staff_identities",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    provider: text("provider").notNull().default("workos"),
+    provider: text("provider").notNull().default("access"),
     providerUserId: text("provider_user_id").notNull(),
     email: text("email"),
     displayName: text("display_name"),

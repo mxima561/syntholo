@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LessonBlockSchema, ReleaseRuleSchema, TranscriptSchema } from "./blocks.js";
+import { LessonBlockSchema, ReleaseRuleSchema, TranscriptSchema } from "./blocks";
 
 describe("content block contracts", () => {
   it("accepts the complete safe lesson block union and rejects unknown fields and unsafe URLs", () => {

@@ -67,7 +67,21 @@ describe("production member routes", () => {
     expect(screen.queryByText(/Maria Chen|Northstar Advisory/u)).not.toBeInTheDocument();
   });
 
+  it("hides member chrome until Clerk is loaded and signed in", async () => {
+    render(await LearnLayout({ children: <p>Production member state</p> }));
+
+    expect(screen.getByText("Production member state")).toBeInTheDocument();
+    expect(screen.queryByRole("navigation", { name: "Member navigation" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Signed-in member workspace")).not.toBeInTheDocument();
+  });
+
   it("adds a production-safe member shell without demo identity", async () => {
+    useAuth.mockReturnValue({
+      getToken: vi.fn(),
+      isLoaded: true,
+      isSignedIn: true,
+      sessionId: "session_clerk_1",
+    });
     render(await LearnLayout({ children: <p>Production member state</p> }));
 
     expect(screen.getByText("Production member state")).toBeInTheDocument();
@@ -78,6 +92,7 @@ describe("production member routes", () => {
     expect(screen.getByRole("link", { name: "Workflows" })).toHaveAttribute("href", "/learn/workflows");
     expect(screen.getByRole("link", { name: "Certificates" })).toHaveAttribute("href", "/learn/settings/certificates");
     expect(screen.getByText("Signed-in member workspace")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Menu" })).toHaveAttribute("aria-expanded", "false");
     expect(screen.queryByText(/Maria Chen|Northstar Advisory/u)).not.toBeInTheDocument();
   });
 
@@ -85,5 +100,11 @@ describe("production member routes", () => {
     const css = await readFile(resolve(process.cwd(), "src/styles/responsive.css"), "utf8");
     expect(css).toContain(".production-member-sidebar nav, .production-member-sidebar .nav-group:first-child { grid-template-columns: repeat(5, minmax(0, 1fr)); }");
     expect(css).toContain(".member-sidebar .nav-group a { min-height: 44px; }");
+  });
+
+  it("lets the member access heading wrap at narrow widths", async () => {
+    const css = await readFile(resolve(process.cwd(), "src/styles/marketing.css"), "utf8");
+    expect(css).toContain(".state-page h1 { max-width: 100%;");
+    expect(css).toContain("overflow-wrap: anywhere");
   });
 });

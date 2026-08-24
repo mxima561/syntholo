@@ -7,7 +7,7 @@ import {
   ContentPublicationIssueSchema,
   PublishCourseRequestSchema,
   UpdateLessonRequestSchema,
-} from "./courses.js";
+} from "./courses";
 
 describe("content course command contracts", () => {
   it("accepts strict authoring inputs without actor, review-time, or account authority", () => {

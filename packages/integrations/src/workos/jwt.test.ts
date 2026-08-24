@@ -1,8 +1,8 @@
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
-  createWorkosJwks,
-  verifyWorkosAccessToken,
+  createAccessJwks,
+  verifyAccessAccessToken,
 } from "./jwt.js";
 
 const now = new Date("2026-08-13T12:00:00.000Z");
@@ -12,14 +12,14 @@ const organizationId = "org_syntholo_staff";
 const nowSeconds = Math.floor(now.getTime() / 1_000);
 
 let privateKey: CryptoKey;
-let jwks: ReturnType<typeof createWorkosJwks>;
+let jwks: ReturnType<typeof createAccessJwks>;
 
 beforeAll(async () => {
   const keys = await generateKeyPair("RS256");
   privateKey = keys.privateKey;
   const publicJwk = await exportJWK(keys.publicKey);
-  jwks = createWorkosJwks({
-    keys: [{ ...publicJwk, alg: "RS256", kid: "workos-test-key", use: "sig" }],
+  jwks = createAccessJwks({
+    keys: [{ ...publicJwk, alg: "RS256", kid: "access-test-key", use: "sig" }],
   });
 });
 
@@ -27,7 +27,7 @@ async function token(
   patch: Record<string, unknown> = {},
   protectedHeader: { alg: "RS256"; kid: string } = {
     alg: "RS256",
-    kid: "workos-test-key",
+    kid: "access-test-key",
   },
 ): Promise<string> {
   const tokenIssuer =
@@ -62,13 +62,13 @@ const verification = () => ({
   now,
 });
 
-describe("verifyWorkosAccessToken", () => {
+describe("verifyAccessAccessToken", () => {
   it("accepts the current client_id token shape without inventing an audience", async () => {
-    const claims = await verifyWorkosAccessToken(await token(), verification());
+    const claims = await verifyAccessAccessToken(await token(), verification());
 
     expect(claims).toEqual({
-      workosUserId: "user_staff_1",
-      workosSessionId: "session_staff_1",
+      accessUserId: "user_staff_1",
+      accessSessionId: "session_staff_1",
       tokenId: "token_staff_1",
       clientId,
       organizationId,
@@ -100,20 +100,20 @@ describe("verifyWorkosAccessToken", () => {
     ["non-string permission", { permissions: ["content:publish", 7] }],
   ])("rejects %s claims with one safe error", async (_case, patch) => {
     await expect(
-      verifyWorkosAccessToken(await token(patch), verification()),
-    ).rejects.toThrow("WORKOS_TOKEN_INVALID");
+      verifyAccessAccessToken(await token(patch), verification()),
+    ).rejects.toThrow("REMOVED_TOKEN_INVALID");
   });
 
   it.each(["malformed", "a.b.c"])(
     "normalizes a %s token without reflecting it",
     async (value) => {
       await expect(
-        verifyWorkosAccessToken(value, verification()),
-      ).rejects.toThrow("WORKOS_TOKEN_INVALID");
+        verifyAccessAccessToken(value, verification()),
+      ).rejects.toThrow("REMOVED_TOKEN_INVALID");
       try {
-        await verifyWorkosAccessToken(value, verification());
+        await verifyAccessAccessToken(value, verification());
       } catch (error) {
-        expect(String(error)).toBe("Error: WORKOS_TOKEN_INVALID");
+        expect(String(error)).toBe("Error: REMOVED_TOKEN_INVALID");
         expect(String(error)).not.toContain(value);
       }
     },
@@ -123,11 +123,11 @@ describe("verifyWorkosAccessToken", () => {
     const signed = await token();
     const [, payload, signature] = signed.split(".");
     const header = Buffer.from(
-      JSON.stringify({ alg: "HS256", kid: "workos-test-key" }),
+      JSON.stringify({ alg: "HS256", kid: "access-test-key" }),
     ).toString("base64url");
     const confused = `${header}.${payload}.${signature}`;
     await expect(
-      verifyWorkosAccessToken(confused, verification()),
-    ).rejects.toThrow("WORKOS_TOKEN_INVALID");
+      verifyAccessAccessToken(confused, verification()),
+    ).rejects.toThrow("REMOVED_TOKEN_INVALID");
   });
 });

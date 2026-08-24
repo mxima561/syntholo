@@ -3,7 +3,7 @@ import {
   ContentMediaAssetSchema,
   ContentMediaTrackSchema,
   MuxWebhookEventSchema,
-} from "./media.js";
+} from "./media";
 
 describe("content media contracts", () => {
   it("accepts only a signed Mux asset projection without provider payload fields", () => {

@@ -25,7 +25,7 @@ export interface StaffTokenBundle {
 export interface StaffTokenBinding {
   sessionHash: Buffer;
   staffIdentityId: string;
-  workosSessionId: string;
+  accessSessionId: string;
 }
 
 export interface StaffSessionKeyRing {
@@ -70,7 +70,7 @@ function bindingAad(binding: StaffTokenBinding): Buffer {
   if (
     binding.sessionHash.length !== 32 ||
     binding.staffIdentityId.length === 0 ||
-    binding.workosSessionId.length === 0
+    binding.accessSessionId.length === 0
   ) {
     throw new Error("STAFF_SESSION_BINDING_INVALID");
   }
@@ -79,7 +79,7 @@ function bindingAad(binding: StaffTokenBinding): Buffer {
       "syntholo-staff-session-v1",
       binding.sessionHash.toString("base64url"),
       binding.staffIdentityId,
-      binding.workosSessionId,
+      binding.accessSessionId,
     ]),
   );
 }

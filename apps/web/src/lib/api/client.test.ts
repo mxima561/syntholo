@@ -3,6 +3,7 @@ import {
   createMemberApiClient,
   createStaffApiClient,
   createServerStaffApiClient,
+  createPublicApiClient,
 } from "./client.js";
 import { parseWebApiConfig } from "./config.js";
 
@@ -20,6 +21,26 @@ describe("web API boundary", () => {
       cache: "no-store",
       credentials: "omit",
       headers: { authorization: "Bearer clerk-session-token" },
+    });
+  });
+
+
+  it("uses a relative public request with omitted credentials", async () => {
+    const fetcher = vi.fn(async () => new Response(null, { status: 204 }));
+    const client = createPublicApiClient({ fetch: fetcher });
+
+    await client("/v1/waitlist", {
+      method: "POST",
+      body: "{}",
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(fetcher).toHaveBeenCalledWith("/v1/waitlist", {
+      body: "{}",
+      cache: "no-store",
+      credentials: "omit",
+      headers: { "content-type": "application/json" },
+      method: "POST",
     });
   });
 
@@ -134,6 +155,27 @@ describe("web API boundary", () => {
     );
   });
 
+  it("allows loopback http origins in APP_MODE=production for local staff sessions", () => {
+    expect(
+      parseWebApiConfig({
+        APP_MODE: "production",
+        WEB_ORIGIN: "http://localhost:3000",
+        API_UPSTREAM_ORIGIN: "http://localhost:4000",
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_live_test",
+      }),
+    ).toEqual({
+      mode: "production",
+      webOrigin: "http://localhost:3000",
+      apiUpstreamOrigin: "http://localhost:4000",
+      clerkPublishableKey: "pk_live_test",
+      staffCookieName: "syntholo_local_staff_session",
+      rewrite: {
+        source: "/v1/:path*",
+        destination: "http://localhost:4000/v1/:path*",
+      },
+    });
+  });
+
   it("never falls back to demo configuration in a production Node build", () => {
     expect(() =>
       parseWebApiConfig({ NODE_ENV: "production" }),
@@ -143,7 +185,7 @@ describe("web API boundary", () => {
   it.each([
     "DATABASE_URL",
     "CLERK_SECRET_KEY",
-    "WORKOS_API_KEY",
+    "REMOVED_API_KEY",
     "STRIPE_SECRET_KEY",
     "STRIPE_API_RESTRICTED_KEY",
     "STRIPE_WORKER_READ_RESTRICTED_KEY",

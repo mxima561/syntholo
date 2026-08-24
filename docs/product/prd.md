@@ -133,7 +133,7 @@ Send scorecard reports, receipts, account claims, invites, security alerts, sess
 - API, worker, and cron services on Railway.
 - Neon PostgreSQL in a U.S. primary region with pooled connections and tested point-in-time recovery.
 - Clerk for customer owners and teammates, including magic links, social sign-in, and Circle OAuth SSO.
-- WorkOS for coach/admin identity and RBAC, with mandatory MFA for administrators.
+- Cloudflare Access for coach/admin identity and RBAC, with mandatory MFA for administrators.
 - A central entitlement authority for all access decisions.
 - Mux signed video.
 - Stripe Checkout/Billing.

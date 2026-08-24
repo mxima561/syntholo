@@ -98,3 +98,17 @@ export function createServerStaffApiClient(input: {
     });
   };
 }
+
+export function createPublicApiClient(input: { fetch?: Fetch } = {}) {
+  return async (path: string, init: RequestInit = {}): Promise<Response> => {
+    canonicalPath(path);
+    return (input.fetch ?? fetch)(path, {
+      ...init,
+      cache: "no-store",
+      credentials: "omit",
+      ...(init.headers === undefined
+        ? {}
+        : { headers: Object.fromEntries(new Headers(init.headers)) }),
+    });
+  };
+}

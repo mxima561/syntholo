@@ -1,3 +1,4 @@
-export * from "./blocks.js";
-export * from "./courses.js";
-export * from "./media.js";
+export * from "./blocks";
+export * from "./courses";
+export * from "./media";
+export * from "./authoring";

@@ -1182,7 +1182,7 @@ describe("PostgreSQL account role boundary", () => {
         permissions: ["foundation:write"],
         role: "admin",
         staffId: "20000000-0000-4000-8000-000000000096",
-        workosUserId: "staff_a",
+        accessUserId: "staff_a",
       },
       clock: { now: () => occurredAt },
       correlationId: "20000000-0000-4000-8000-000000000097",
@@ -1929,12 +1929,12 @@ describe("PostgreSQL account role boundary", () => {
       const afterUpgrade = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterUpgrade.rows[0]?.count).toBe("14");
+      expect(afterUpgrade.rows[0]?.count).toBe("16");
       await migrateDatabase(upgradeDb);
       const afterRerun = await upgradeDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(afterRerun.rows[0]?.count).toBe("14");
+      expect(afterRerun.rows[0]?.count).toBe("16");
       const normalized = await upgradeDb.pool.query(
         `select
           (select bool_and(actor_id is not null and correlation_id is not null)
@@ -1989,7 +1989,7 @@ describe("PostgreSQL account role boundary", () => {
       const freshJournal = await freshDb.pool.query<{ count: string }>(
         "select count(*)::text as count from drizzle.__drizzle_migrations",
       );
-      expect(freshJournal.rows[0]?.count).toBe("14");
+      expect(freshJournal.rows[0]?.count).toBe("16");
     } finally {
       await Promise.allSettled([
         upgradeDb?.close(),

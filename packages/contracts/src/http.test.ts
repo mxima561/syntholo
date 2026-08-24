@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { ApiErrorSchema } from "./http.js";
-import { HealthResponseSchema } from "./health.js";
+import { ApiErrorSchema } from "./http";
+import { HealthResponseSchema } from "./health";
 
 describe("ApiErrorSchema", () => {
   it("requires a safe code, UUID correlation id, and message", () => {

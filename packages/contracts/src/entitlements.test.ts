@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   MemberAccessQuerySchema,
   MemberAccessResponseSchema,
-} from "./entitlements.js";
+} from "./entitlements";
 
 const response = {
   accountId: "10000000-0000-4000-8000-000000000001",

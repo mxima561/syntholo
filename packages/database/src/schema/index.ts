@@ -35,3 +35,4 @@ export * from "./learning.js";
 export * from "./implementation.js";
 export * from "./certificates.js";
 export * from "./commerce.js";
+export { waitlistSignups } from "./waitlist.js";

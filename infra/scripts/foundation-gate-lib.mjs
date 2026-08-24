@@ -28,7 +28,7 @@ export const FOUNDATION_CHECK_CATALOG = Object.freeze([
 
 const launchOnlyChecks = new Set(["ancestry", "proxy"]);
 
-const forbiddenEnvironmentKey = /^(?:(?:DATABASE_(?:DIRECT_|POOLED_)?URL|TEST_DATABASE_URL|(?:MEMBER|STAFF|SYSTEM|WORKER)_DATABASE_URL|WORKOS_.+|STRIPE_.+|MUX_(?:TOKEN|SIGNING).+|RESEND_(?:API|SECRET).+|BLOB_(?:READ_WRITE|WRITE).+|HIGHLEVEL_.+)|.*(?:SECRET(?:_KEY)?|API_KEY|PRIVATE_KEY|WRITE_TOKEN))$/u;
+const forbiddenEnvironmentKey = /^(?:(?:DATABASE_(?:DIRECT_|POOLED_)?URL|TEST_DATABASE_URL|(?:MEMBER|STAFF|SYSTEM|WORKER)_DATABASE_URL|REMOVED_.+|STRIPE_.+|MUX_(?:TOKEN|SIGNING).+|RESEND_(?:API|SECRET).+|BLOB_(?:READ_WRITE|WRITE).+|HIGHLEVEL_.+)|.*(?:SECRET(?:_KEY)?|API_KEY|PRIVATE_KEY|WRITE_TOKEN))$/u;
 const forbiddenUrl = /https?:\/\/(?:[^/]*\.)?(?:leadconnectorhq\.com|gohighlevel\.com)\/(?:api|v\d+|locations|contacts|oauth|sso|token)(?:[/?"'`]|$)/iu;
 const globallyForbiddenPackages = new Set([
   "mongodb",
@@ -38,8 +38,8 @@ const webForbiddenServerPackages = new Set([
   "@clerk/nextjs",
   "@mux/mux-node",
   "@vercel/blob",
-  "@workos-inc/authkit-nextjs",
-  "@workos-inc/node",
+  "removed",
+  "removed",
   "resend",
   "stripe",
 ]);

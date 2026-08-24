@@ -14,6 +14,10 @@ import { memberLessonPlaybackRoutes } from "../routes/member/lesson-playback.js"
 import { memberProgressRoutes } from "../routes/member/progress.js";
 import { memberImplementationRoutes } from "../routes/member/implementation.js";
 import { staffContentRoutes } from "../routes/staff/content.js";
+import { staffContentAuthoringRoutes } from "../routes/staff/content-authoring.js";
+import { staffMediaUploadsRoutes } from "../routes/staff/media-uploads.js";
+import { staffLearningAdminRoutes } from "../routes/staff/learning-admin.js";
+import { staffAccountsRoutes } from "../routes/staff/accounts.js";
 import { memberCertificateRoutes } from "../routes/member/certificates.js";
 import { staffCertificateRoutes } from "../routes/staff/certificates.js";
 
@@ -60,6 +64,30 @@ export const authRoutes: FastifyPluginAsync<AuthRouteDependencies> = async (
     await app.register(staffCertificateRoutes, {
       staff: dependencies.staff,
       certificates: dependencies.staff.certificates,
+    });
+  }
+  if (dependencies.staff.contentAuthoring !== undefined) {
+    await app.register(staffContentAuthoringRoutes, {
+      staff: dependencies.staff,
+      contentAuthoring: dependencies.staff.contentAuthoring,
+    });
+  }
+  if (dependencies.staff.mediaUploads !== undefined) {
+    await app.register(staffMediaUploadsRoutes, {
+      staff: dependencies.staff,
+      mediaUploads: dependencies.staff.mediaUploads,
+    });
+  }
+  if (dependencies.staff.learningAdmin !== undefined) {
+    await app.register(staffLearningAdminRoutes, {
+      staff: dependencies.staff,
+      learningAdmin: dependencies.staff.learningAdmin,
+    });
+  }
+  if (dependencies.staff.accounts !== undefined) {
+    await app.register(staffAccountsRoutes, {
+      staff: dependencies.staff,
+      accounts: dependencies.staff.accounts,
     });
   }
 

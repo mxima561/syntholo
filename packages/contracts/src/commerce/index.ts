@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AccountNameSchema, UtcMillisecondInstantSchema } from "../member-dashboard.js";
+import { AccountNameSchema, UtcMillisecondInstantSchema } from "../member-dashboard";
 
 const OpaqueIdentifierSchema = z.string()
   .min(1)

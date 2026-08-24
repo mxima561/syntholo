@@ -174,6 +174,8 @@ describe("foundation migration", () => {
         { created_at: "1786856400000", hash: "dabb54d9842c3e06c67e1ef5b17f42312011ffb133275b4dd346afd2465939a9" },
         { created_at: "1786942800000", hash: "878a759f41c44e0cbb9cf7492889bdf4d6f0ab087f0e9d7b26865f988fbe1bd9" },
         { created_at: "1787029200000", hash: "4bc124a641e6912d84fc6675133476f92e52e8fa89151079d05433d31deba8d4" },
+        { created_at: "1787115600000", hash: "46184aca0892173b5bd2267d263e51fbc0bff7bd01dc1fe9fb2de1b6ae51e44e" },
+        { created_at: "1787202000000", hash: "500d340145b6a179e407a260ecaf89311bb90cf3165b741077882bbed7c8896b" },
       ]);
       expect(trapState.rows[0]).toEqual({ accounts: null, journal: null });
 
@@ -297,7 +299,7 @@ describe("foundation migration", () => {
         boundary: true,
         canonical: true,
         constraint_validated: true,
-        journal_count: 14,
+        journal_count: 16,
         member_execute: true,
         public_execute: false,
         staff_execute: false,
@@ -435,7 +437,7 @@ describe("foundation migration", () => {
       "select schema_version, migration_count, migration_hashes, required_objects, runtime_role, capability from public.syntholo_runtime_readiness()",
     );
 
-    expect(journal.rows).toEqual([{ count: 14 }]);
+    expect(journal.rows).toEqual([{ count: 16 }]);
     expect(result.rows).toEqual([{
       capability: "syntholo_migrator",
       migration_count: 7,
@@ -714,7 +716,7 @@ describe("foundation migration", () => {
         (provider, provider_user_id, role)
        values ($1, $2, $3)
        returning permissions`,
-      ["workos", "staff_empty_permissions", "admin"],
+      ["access", "staff_empty_permissions", "admin"],
     );
     const populated = await harness.database.pool.query<{ permissions: string[] }>(
       `insert into staff_identities
@@ -722,7 +724,7 @@ describe("foundation migration", () => {
        values ($1, $2, $3, $4::text[])
        returning permissions`,
       [
-        "workos",
+        "access",
         "staff_string_permissions",
         "admin",
         ["content:publish", "support:assign"],
@@ -743,7 +745,7 @@ describe("foundation migration", () => {
           (provider, provider_user_id, role, permissions)
          values ($1, $2, $3, $4::text[])`,
         [
-          "workos",
+          "access",
           "staff_invalid_permissions",
           "admin",
           ["content:publish", null],

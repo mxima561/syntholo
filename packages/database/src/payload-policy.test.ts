@@ -42,7 +42,7 @@ describe("persisted payload policy", () => {
     ["Slack credential prefix", { reference: joined("xo", "xb-", "opaque-placeholder") }],
     ["AWS credential prefix", { reference: joined("AK", "IA", "OPAQUEPLACEHOLDER") }],
     ["Task6 session identifier", { reference: joined("session_", "staff_", "opaque") }],
-    ["WorkOS identifier", { reference: joined("work", "os_", "opaque") }],
+    ["Cloudflare Access identifier", { reference: joined("work", "os_", "opaque") }],
     ["Clerk identifier", { reference: joined("cl", "erk_", "opaque") }],
     ["high entropy opaque value", { reference: "A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8S9t0U1v2W3x4" }],
     ["embedded GitHub credential prefix", { reference: joined("ref:g", "hp_", "A".repeat(36)) }],

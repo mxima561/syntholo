@@ -15,7 +15,8 @@ export function ScorecardClient() {
   const question = scorecardQuestions[currentIndex];
   const result = calculateScore(answers);
 
-  function chooseAnswer(value: number) {
+  function chooseAnswer(value: number, target?: HTMLButtonElement) {
+    target?.blur();
     setAnswers((current) => ({ ...current, [question.id]: value }));
     if (currentIndex === scorecardQuestions.length - 1) {
       setStage("preview");
@@ -107,8 +108,8 @@ export function ScorecardClient() {
             <button
               aria-pressed={answers[question.id] === option.value}
               className={`answer-option ${answers[question.id] === option.value ? "selected" : ""}`}
-              key={option.value}
-              onClick={() => chooseAnswer(option.value)}
+              key={`${question.id}-${option.value}`}
+              onClick={(event) => chooseAnswer(option.value, event.currentTarget)}
               type="button"
             >
               <span>{option.value}</span><strong>{option.label}</strong>

@@ -12,6 +12,10 @@ import {
   MemberLearningRepository,
   StaffIdentityRepository,
   StaffContentCommandRepository,
+  StaffContentAuthoringRepository,
+  StaffLearningAdminRepository,
+  StaffAccountsRepository,
+  WaitlistRepository,
   StaffCertificatesRepository,
   StaffLoginAttemptRepository,
   StaffSessionRepository,
@@ -19,12 +23,13 @@ import {
 } from "@syntholo/database";
 import {
   createClerkSessionAuthenticator,
+  createMuxAssetManagementClient,
   createMuxPlaybackSigner,
   createPrivateCertificateBlobStore,
-  createRemoteWorkosJwks,
+  createRemoteAccessJwks,
   createStripeAdapter,
-  createWorkosStaffClient,
-  verifyWorkosAccessToken,
+  createAccessStaffClient,
+  verifyAccessAccessToken,
 } from "@syntholo/integrations";
 import type { FastifyInstance } from "fastify";
 import { buildApp, type ApiDependencies } from "./app.js";
@@ -78,9 +83,13 @@ async function productionDependencies(config: ApiConfig): Promise<{
       assertDatabaseCapability(staffDatabase, "syntholo_staff_api"),
       attestSystemDatabase(systemDatabase),
     ]);
-    const workosJwks = createRemoteWorkosJwks(new URL(config.workosJwksUrl));
+    const accessJwks = createRemoteAccessJwks(new URL(config.accessJwksUrl));
     const sessions = new StaffSessionRepository(staffDatabase);
     const content = new StaffContentCommandRepository(staffDatabase);
+    const contentAuthoring = new StaffContentAuthoringRepository(staffDatabase);
+    const learningAdmin = new StaffLearningAdminRepository(staffDatabase);
+    const staffAccounts = new StaffAccountsRepository(staffDatabase);
+    const waitlist = new WaitlistRepository(systemDatabase);
     const certificateBlob = config.certificateBlob === undefined
       ? undefined
       : createPrivateCertificateBlobStore(config.certificateBlob);
@@ -88,6 +97,15 @@ async function productionDependencies(config: ApiConfig): Promise<{
       ? await createMuxPlaybackSigner({
           keyId: config.mux.signingKeyId,
           privateKey: config.mux.signingPrivateKey,
+        })
+      : undefined;
+    const muxUploadClient = config.mux.kind === "configured"
+      && config.mux.uploadTokenId !== undefined
+      && config.mux.uploadTokenSecret !== undefined
+      ? createMuxAssetManagementClient({
+          environmentId: config.mux.environmentId,
+          tokenId: config.mux.uploadTokenId,
+          tokenSecret: config.mux.uploadTokenSecret,
         })
       : undefined;
     const stripeConfig = config.stripe.kind === "configured" ? config.stripe : undefined;
@@ -128,6 +146,10 @@ async function productionDependencies(config: ApiConfig): Promise<{
               ),
             },
           ],
+        },
+        waitlist: {
+          webOrigin: config.webOrigin,
+          subscribe: (input) => waitlist.subscribe(input),
         },
         auth: {
           kind: "enabled",
@@ -171,8 +193,8 @@ async function productionDependencies(config: ApiConfig): Promise<{
               config: {
                 environment: config.environment,
                 webOrigin: config.webOrigin,
-                clientId: config.workosClientId,
-                organizationId: config.workosOrganizationId,
+                clientId: config.accessClientId,
+                organizationId: config.accessOrganizationId,
                 callbackUrl: `${config.webOrigin}/v1/staff/auth/callback`,
                 defaultReturnTo: "/admin",
                 allowedReturnToPrefixes: ["/admin", "/coach"],
@@ -189,22 +211,22 @@ async function productionDependencies(config: ApiConfig): Promise<{
               identities: new StaffIdentityRepository(staffDatabase),
               tokens: {
                 verify: async (token) => {
-                  const claims = await verifyWorkosAccessToken(token, {
-                    jwks: workosJwks,
-                    issuer: config.workosIssuer,
-                    clientId: config.workosClientId,
-                    organizationId: config.workosOrganizationId,
+                  const claims = await verifyAccessAccessToken(token, {
+                    jwks: accessJwks,
+                    issuer: config.accessIssuer,
+                    clientId: config.accessClientId,
+                    organizationId: config.accessOrganizationId,
                     allowedRoles: ["coach", "admin"],
                   });
                   if (claims.role !== "coach" && claims.role !== "admin") {
-                    throw new Error("WORKOS_TOKEN_INVALID");
+                    throw new Error("REMOVED_TOKEN_INVALID");
                   }
                   return { ...claims, role: claims.role };
                 },
               },
-              workos: createWorkosStaffClient({
-                apiKey: config.workosApiKey,
-                clientId: config.workosClientId,
+              access: createAccessStaffClient({
+                apiKey: config.accessApiKey,
+                clientId: config.accessClientId,
               }),
               sleep: (milliseconds) =>
                 new Promise((resolve) => setTimeout(resolve, milliseconds)),
@@ -213,6 +235,62 @@ async function productionDependencies(config: ApiConfig): Promise<{
                 materializePreview: ({ actor, ...input }) => content.createPreview({ actorId: actor.actorId, ...input }),
                 publishCourse: ({ actor, ...input }) => content.publishCourse({ actorId: actor.actorId, ...input }),
                 publishLesson: ({ actor, ...input }) => content.publishLesson({ actorId: actor.actorId, ...input }),
+              },
+              contentAuthoring: {
+                listCourses: ({ actor, ...input }) => contentAuthoring.listCourses({ actorId: actor.actorId, ...input }),
+                createCourseDraft: ({ actor, ...input }) => contentAuthoring.createCourseDraft({ actorId: actor.actorId, ...input }),
+                upsertStageDraft: ({ actor, ...input }) => contentAuthoring.upsertStageDraft({ actorId: actor.actorId, ...input }),
+                upsertLessonDraft: ({ actor, ...input }) => contentAuthoring.upsertLessonDraft({ actorId: actor.actorId, ...input }),
+                recordLessonReview: ({ actor, ...input }) => contentAuthoring.recordLessonReview({ actorId: actor.actorId, ...input }),
+                updateCourseDraft: ({ actor, ...input }) => contentAuthoring.updateCourseDraft({ actorId: actor.actorId, ...input }),
+                getCourseDraftTree: ({ actor, ...input }) => contentAuthoring.getCourseDraftTree({ actorId: actor.actorId, ...input }),
+              },
+              ...(muxUploadClient !== undefined && config.mux.kind === "configured" ? {
+                mediaUploads: {
+                  createUpload: async ({ lessonId }: { lessonId: string }) => {
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 10_000);
+                    try {
+                      // lessonId isn't sent to Mux: the direct-upload URL isn't scoped
+                      // to a lesson, the browser/finalize call re-associates it after.
+                      void lessonId;
+                      return await muxUploadClient.createDirectUpload(
+                        { corsOrigin: config.webOrigin },
+                        controller.signal,
+                      );
+                    } finally {
+                      clearTimeout(timeout);
+                    }
+                  },
+                  finalizeUpload: async ({ actor, correlationId, lessonId, uploadId, expectedRevision }) => {
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 10_000);
+                    let upload: Awaited<ReturnType<typeof muxUploadClient.retrieveUpload>>;
+                    try {
+                      upload = await muxUploadClient.retrieveUpload(uploadId, controller.signal);
+                    } finally {
+                      clearTimeout(timeout);
+                    }
+                    if (upload.status === "errored" || upload.status === "cancelled") {
+                      throw new Error("MUX_UPLOAD_FAILED");
+                    }
+                    if (upload.status !== "asset_created" || upload.assetId === null) {
+                      throw new Error("MUX_UPLOAD_NOT_READY");
+                    }
+                    return contentAuthoring.attachLessonMedia({
+                      actorId: actor.actorId, correlationId, lessonId, expectedRevision,
+                      environmentId: config.mux.kind === "configured" ? config.mux.environmentId : "",
+                      providerAssetId: upload.assetId,
+                      idempotencyKey: `mux-upload:${uploadId}`,
+                    });
+                  },
+                },
+              } : {}),
+              learningAdmin: {
+                grantEnrollment: ({ actor, ...input }) => learningAdmin.grantEnrollment({ actorId: actor.actorId, ...input }),
+              },
+              accounts: {
+                list: ({ actor, ...input }) => staffAccounts.listAccounts({ actorId: actor.actorId, ...input }),
               },
               ...(certificateBlob === undefined ? {} : {
                 certificates: new StaffCertificatesRepository(staffDatabase),

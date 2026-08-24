@@ -15,11 +15,11 @@ function baseEnvironment(): Record<string, string | undefined> {
     CLERK_SECRET_KEY: "sk_clerk_test",
     CLERK_PUBLISHABLE_KEY: "pk_clerk_test",
     CLERK_AUDIENCE: "syntholo-member-api",
-    WORKOS_API_KEY: "sk_workos_test",
-    WORKOS_CLIENT_ID: "client_staff",
-    WORKOS_ORGANIZATION_ID: "org_staff",
-    WORKOS_ISSUER: "https://api.workos.test",
-    WORKOS_JWKS_URL: "https://api.workos.test/sso/jwks/client_staff",
+    REMOVED_API_KEY: "sk_removed_test",
+    REMOVED_CLIENT_ID: "client_staff",
+    REMOVED_ORGANIZATION_ID: "org_staff",
+    REMOVED_ISSUER: "https://api.access.test",
+    REMOVED_JWKS_URL: "https://api.access.test/sso/jwks/client_staff",
     STAFF_SESSION_ENCRYPTION_KEYS: `1:${Buffer.alloc(32, 5).toString("base64url")}`,
     IMPLEMENTATION_CURSOR_SECRET: "implementation-cursor-secret-at-least-32-bytes",
   };
@@ -31,10 +31,10 @@ describe("diagnoseApiConfig", () => {
   });
 
   it("names a missing variable without inventing others", () => {
-    const environment = { ...baseEnvironment(), WORKOS_API_KEY: undefined };
+    const environment = { ...baseEnvironment(), REMOVED_API_KEY: undefined };
 
     expect(diagnoseApiConfig(environment, releaseSha)).toEqual([
-      "MISSING:WORKOS_API_KEY",
+      "MISSING:REMOVED_API_KEY",
     ]);
   });
 

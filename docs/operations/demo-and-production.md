@@ -23,7 +23,7 @@ deployed proxy evidence, branch protection, common Git ancestry, and named
 operational owners.
 
 The web service accepts only canonical web/API origins, the Clerk publishable
-key, and optional public PostHog settings. It rejects database URLs and WorkOS,
+key, and optional public PostHog settings. It rejects database URLs and Cloudflare Access,
 Stripe server, Mux signing, Resend, Blob write, and HighLevel credentials even
 when a forbidden value is blank. HighLevel remains an isolated external
 customer login destination; Syntholo has no credential, API client, SSO, mirror,

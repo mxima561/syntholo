@@ -248,7 +248,7 @@ tests, then closed without weakening a production boundary:
 - Production dependency policy is enforced over reachable source and built
   entries, TypeScript path aliases, dynamic imports, workspace exports, and
   lockfile production closures. MongoDB and HighLevel remain globally denied.
-  Privileged Clerk/WorkOS server adapters and Stripe/Resend/Mux/Blob server
+  Privileged Clerk/Cloudflare Access server adapters and Stripe/Resend/Mux/Blob server
   adapters are denied in the web boundary while remaining permitted for API
   services where appropriate; public browser SDKs and ordinary external-link
   copy remain permitted.
@@ -680,7 +680,7 @@ origin `https://app.syntholo.com` before the embedded-auth follow-up release.
 - Vercel serves the canonical hostname with valid DNS/TLS and permanently
   redirects the old `syntholo.vercel.app` alias while preserving path and query.
   Production `WEB_ORIGIN` and `APP_URL` are canonical, and the web environment
-  contains no WorkOS API key, Clerk secret, database URL, or backend Clerk key.
+  contains no Cloudflare Access API key, Clerk secret, database URL, or backend Clerk key.
 - Railway API uses the same canonical `WEB_ORIGIN`. Its readiness endpoint and
   the Vercel web health endpoint both reported the exact accepted SHA. The
   cutover API deployment was
@@ -690,7 +690,7 @@ origin `https://app.syntholo.com` before the embedded-auth follow-up release.
   secondary DKIM, and mail CNAMEs. The production JWKS at
   `clerk.app.syntholo.com` returned one key. Clerk did not return a required
   Account Portal CNAME, so launch does not infer or depend on one.
-- WorkOS has one production callback at
+- Cloudflare Access has one production callback at
   `https://app.syntholo.com/v1/staff/auth/callback`; its application homepage
   and initiate-login URI use the same canonical host. A new non-revealable
   production key is stored only in Railway API.
@@ -716,7 +716,7 @@ All five providers reported the exact commit and a successful terminal state.
 Live `/api/health` and `/v1/health/ready` reported that SHA; both database
 dependencies were healthy; unauthenticated member access returned the typed
 401; the old alias returned a path/query-preserving 308; Clerk JWKS returned
-one key; and WorkOS returned a 302 with the exact canonical callback. A real
+one key; and Cloudflare Access returned a 302 with the exact canonical callback. A real
 browser rendered the two embedded Clerk forms and proved their reciprocal links
 remain on `https://app.syntholo.com/sign-in` and
 `https://app.syntholo.com/sign-up`.

@@ -26,8 +26,8 @@ export const staffSessions = pgTable(
         onDelete: "restrict",
         onUpdate: "restrict",
       }),
-    workosUserId: text("workos_user_id").notNull(),
-    workosSessionId: text("workos_session_id").notNull().unique(),
+    accessUserId: text("removed_user_id").notNull(),
+    accessSessionId: text("removed_session_id").notNull().unique(),
     organizationId: text("organization_id").notNull(),
     providerRoles: text("provider_roles").array().notNull(),
     providerPermissions: text("provider_permissions")

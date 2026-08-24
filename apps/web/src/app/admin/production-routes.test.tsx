@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AdminSectionPage from "./[section]/page";
 import AdminContentPage from "./content/page";
 import AdminCertificatesPage from "./certificates/page";
+import AdminCustomersPage from "./customers/page";
 import AdminOverviewPage from "./page";
 import AdminProvisioningPage from "./provisioning/page";
 import AdminLayout from "./layout";
@@ -16,7 +17,7 @@ const redirect = vi.hoisted(() => vi.fn((location: string): never => {
 const staffActor = {
   kind: "staff",
   actorId: "10000000-0000-4000-8000-000000000001",
-  workosUserId: "user_workos_1",
+  accessUserId: "user_removed_1",
   staffId: "20000000-0000-4000-8000-000000000002",
   role: "admin",
   permissions: ["operations:read"],
@@ -35,7 +36,8 @@ const routes: readonly [string, () => ReactNode | Promise<ReactNode>][] = [
   ["/admin/content", () => AdminContentPage()],
   ["/admin/certificates", () => AdminCertificatesPage()],
   ["/admin/provisioning", () => AdminProvisioningPage()],
-  ["/admin/customers", () => AdminSectionPage({ params: Promise.resolve({ section: "customers" }) })],
+  ["/admin/customers", () => AdminCustomersPage()],
+  ["/admin/support", () => AdminSectionPage({ params: Promise.resolve({ section: "support" }) })],
 ];
 
 describe("production admin routes", () => {
@@ -87,7 +89,7 @@ describe("production admin routes", () => {
       .not.toBeInTheDocument();
   });
 
-  it("renders forbidden instead of redirecting a WorkOS coach", async () => {
+  it("renders forbidden instead of redirecting a Cloudflare Access coach", async () => {
     cookies.mockResolvedValue({ getAll: () => [{ value: "x".repeat(43) }] });
     vi.stubGlobal("fetch", vi.fn(async () => new Response(
       JSON.stringify({ ...staffActor, role: "coach" }),

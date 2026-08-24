@@ -17,7 +17,7 @@ export default function ClaimPage() {
         claim. When enrollment opens, your claim link is emailed to the address
         you use at checkout and is valid for seven days.
       </p>
-      <Link className="button button-dark button-medium" href="/pricing">
+      <Link className="button button-dark button-medium" href="/">
         View program options
       </Link>
     </main>

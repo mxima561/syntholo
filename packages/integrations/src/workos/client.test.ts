@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const workos = vi.hoisted(() => ({
+const access = vi.hoisted(() => ({
   generate: vi.fn(),
   getAuthorizationUrl: vi.fn(),
   authenticateWithCode: vi.fn(),
@@ -8,32 +8,32 @@ const workos = vi.hoisted(() => ({
   revokeSession: vi.fn(),
 }));
 
-vi.mock("@workos-inc/node", () => ({
-  WorkOS: class {
-    readonly pkce = { generate: workos.generate };
+vi.mock("removed", () => ({
+  Cloudflare Access: class {
+    readonly pkce = { generate: access.generate };
     readonly userManagement = {
-      getAuthorizationUrl: workos.getAuthorizationUrl,
-      authenticateWithCode: workos.authenticateWithCode,
-      authenticateWithRefreshToken: workos.authenticateWithRefreshToken,
-      revokeSession: workos.revokeSession,
+      getAuthorizationUrl: access.getAuthorizationUrl,
+      authenticateWithCode: access.authenticateWithCode,
+      authenticateWithRefreshToken: access.authenticateWithRefreshToken,
+      revokeSession: access.revokeSession,
     };
   },
 }));
 
-import { createWorkosStaffClient } from "./client.js";
+import { createAccessStaffClient } from "./client.js";
 
-describe("createWorkosStaffClient", () => {
+describe("createAccessStaffClient", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("persists the verifier for the exact state and S256 challenge sent to WorkOS", async () => {
-    workos.generate.mockResolvedValue({
+  it("persists the verifier for the exact state and S256 challenge sent to Cloudflare Access", async () => {
+    access.generate.mockResolvedValue({
       codeVerifier: "locally-persisted-verifier",
       codeChallenge: "derived-s256-challenge",
     });
-    workos.getAuthorizationUrl.mockReturnValue(
-      "https://api.workos.test/authorize?state=state-from-attempt",
+    access.getAuthorizationUrl.mockReturnValue(
+      "https://api.access.test/authorize?state=state-from-attempt",
     );
-    const client = createWorkosStaffClient({
+    const client = createAccessStaffClient({
       apiKey: "sk_test_local",
       clientId: "client_staff",
     });
@@ -47,10 +47,10 @@ describe("createWorkosStaffClient", () => {
         maxAge: 0,
       }),
     ).resolves.toEqual({
-      url: "https://api.workos.test/authorize?state=state-from-attempt",
+      url: "https://api.access.test/authorize?state=state-from-attempt",
       codeVerifier: "locally-persisted-verifier",
     });
-    expect(workos.getAuthorizationUrl).toHaveBeenCalledWith({
+    expect(access.getAuthorizationUrl).toHaveBeenCalledWith({
       provider: "authkit",
       clientId: "client_staff",
       organizationId: "org_staff",
@@ -63,16 +63,16 @@ describe("createWorkosStaffClient", () => {
   });
 
   it("maps code, refresh, and revocation through the current SDK shapes", async () => {
-    workos.authenticateWithCode.mockResolvedValue({
+    access.authenticateWithCode.mockResolvedValue({
       accessToken: "access-1",
       refreshToken: "refresh-1",
     });
-    workos.authenticateWithRefreshToken.mockResolvedValue({
+    access.authenticateWithRefreshToken.mockResolvedValue({
       accessToken: "access-2",
       refreshToken: "refresh-2",
     });
-    workos.revokeSession.mockResolvedValue(undefined);
-    const client = createWorkosStaffClient({ apiKey: "sk_test", clientId: "client_staff" });
+    access.revokeSession.mockResolvedValue(undefined);
+    const client = createAccessStaffClient({ apiKey: "sk_test", clientId: "client_staff" });
 
     await expect(
       client.authenticateWithCode({

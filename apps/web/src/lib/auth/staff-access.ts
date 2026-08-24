@@ -8,7 +8,7 @@ import { parseWebApiConfig } from "@/lib/api/config";
 const StaffActorSchema = z.object({
   kind: z.literal("staff"),
   actorId: z.string().min(1),
-  workosUserId: z.string().min(1),
+  accessUserId: z.string().min(1),
   staffId: z.string().min(1),
   role: z.enum(["coach", "admin"]),
   permissions: z.array(z.string()),

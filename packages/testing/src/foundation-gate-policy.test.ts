@@ -109,7 +109,7 @@ describe("production dependency policy", () => {
         dependencies: { resend: "1.0.0" },
         exports: { ".": "./src/index.ts" },
       }),
-      "packages/private/src/dynamic.ts": "export { default } from '@workos-inc/node'",
+      "packages/private/src/dynamic.ts": "export { default } from 'removed'",
       "packages/private/src/index.ts": "export { default } from './static.js'",
       "packages/private/src/static.ts": "export { default } from 'stripe'",
       "package-lock.json": JSON.stringify({
@@ -118,7 +118,7 @@ describe("production dependency policy", () => {
           "apps/web": { dependencies: { "@syntholo/private": "0.1.0" } },
           "node_modules/@clerk/backend": { version: "1.0.0" },
           "node_modules/@syntholo/private": { link: true, resolved: "packages/private" },
-          "node_modules/@workos-inc/node": { version: "1.0.0" },
+          "node_modules/removed": { version: "1.0.0" },
           "node_modules/resend": { version: "1.0.0" },
           "node_modules/stripe": { version: "1.0.0" },
           "packages/private": {
@@ -144,7 +144,7 @@ describe("production dependency policy", () => {
     expect(productionDependencyPolicyPass(graph)).toBe(false);
     expect(graph.policyViolations).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: "built", service: "web", value: "@clerk/backend" }),
-      expect.objectContaining({ kind: "import", service: "web", value: "@workos-inc/node" }),
+      expect.objectContaining({ kind: "import", service: "web", value: "removed" }),
       expect.objectContaining({ kind: "import", service: "web", value: "stripe" }),
       expect.objectContaining({ kind: "lockfile", service: "web", value: "resend" }),
       expect.objectContaining({ kind: "environment", service: "web", value: "STRIPE_API_RESTRICTED_KEY" }),
@@ -188,7 +188,7 @@ describe("production dependency policy", () => {
           "@clerk/backend": "1.0.0",
           "@mux/mux-node": "1.0.0",
           "@vercel/blob": "1.0.0",
-          "@workos-inc/node": "1.0.0",
+          "removed": "1.0.0",
           resend: "1.0.0",
           stripe: "1.0.0",
         },
@@ -196,7 +196,7 @@ describe("production dependency policy", () => {
       }),
       "packages/integrations/src/index.ts": [
         "export * from '@clerk/backend'",
-        "export * from '@workos-inc/node'",
+        "export * from 'removed'",
         "export * from 'stripe'",
         "export * from 'resend'",
         "export * from '@mux/mux-node'",
@@ -211,7 +211,7 @@ describe("production dependency policy", () => {
           "packages/integrations": {
             dependencies: {
               "@clerk/backend": "1.0.0", "@mux/mux-node": "1.0.0", "@vercel/blob": "1.0.0",
-              "@workos-inc/node": "1.0.0", resend: "1.0.0", stripe: "1.0.0",
+              "removed": "1.0.0", resend: "1.0.0", stripe: "1.0.0",
             },
             name: "@syntholo/integrations",
           },
@@ -297,7 +297,7 @@ describe("production dependency policy", () => {
       "apps/web/src/app/page.ts": "import '@shared/server-adapter'",
       "apps/web/tsconfig.json": JSON.stringify({ extends: "../../tsconfig.base.json" }),
       "package.json": JSON.stringify({ workspaces: ["apps/*", "packages/*"] }),
-      "packages/shared/src/server-adapter.ts": "export { default } from '@workos-inc/node'",
+      "packages/shared/src/server-adapter.ts": "export { default } from 'removed'",
       "tsconfig.base.json": JSON.stringify({
         compilerOptions: {
           paths: { "@shared/*": ["packages/shared/src/*"] },

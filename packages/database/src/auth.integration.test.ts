@@ -86,20 +86,20 @@ describe("authentication migration and ACLs", () => {
       "staff_login_attempts",
       "staff_sessions",
     ]);
-    expect(journal.rows[0]?.count).toBe("14");
+    expect(journal.rows[0]?.count).toBe("16");
   });
 
   it("rejects malformed cryptographic field lengths", async () => {
     const staffIdentityId = "00000000-0000-4000-8000-000000000077";
     await harness.database.pool.query(
       `insert into staff_identities (id, provider_user_id, role)
-       values ($1, 'workos_malformed', 'admin')`,
+       values ($1, 'removed_malformed', 'admin')`,
       [staffIdentityId],
     );
     await expect(
       harness.database.pool.query(
         `insert into staff_sessions
-          (session_hash, staff_identity_id, workos_user_id, workos_session_id,
+          (session_hash, staff_identity_id, removed_user_id, removed_session_id,
            organization_id, provider_roles, token_ciphertext, token_iv,
            token_tag, key_version, access_token_expires_at, hard_expires_at,
            authenticated_at)
@@ -143,16 +143,16 @@ describe("authentication migration and ACLs", () => {
     const sessionHash = randomBytes(32);
     await harness.database.pool.query(
       `insert into staff_identities (id, provider_user_id, role)
-       values ($1, 'workos_acl', 'admin')`,
+       values ($1, 'removed_acl', 'admin')`,
       [staffIdentityId],
     );
     await harness.database.pool.query(
       `insert into staff_sessions
-        (session_hash, staff_identity_id, workos_user_id, workos_session_id,
+        (session_hash, staff_identity_id, removed_user_id, removed_session_id,
          organization_id, provider_roles, token_ciphertext, token_iv,
          token_tag, key_version, access_token_expires_at, hard_expires_at,
          authenticated_at)
-       values ($1,$2,'workos_acl','session_acl','org_acl',array['admin'],$3,$4,$5,
+       values ($1,$2,'removed_acl','session_acl','org_acl',array['admin'],$3,$4,$5,
                1,now()+interval '5 minutes',now()+interval '1 hour',now())`,
       [sessionHash, staffIdentityId, randomBytes(64), randomBytes(12), randomBytes(16)],
     );
@@ -164,11 +164,11 @@ describe("authentication migration and ACLs", () => {
           [sessionHash],
         ),
       ).rejects.toMatchObject({ code: "42501" });
-      const revoked = await client.query<{ workos_session_id: string }>(
+      const revoked = await client.query<{ removed_session_id: string }>(
         "select * from staff_revoke_session($1)",
         [sessionHash],
       );
-      expect(revoked.rows).toEqual([{ workos_session_id: "session_acl" }]);
+      expect(revoked.rows).toEqual([{ removed_session_id: "session_acl" }]);
     } finally {
       client.release();
     }
@@ -185,23 +185,23 @@ describe("authentication migration and ACLs", () => {
     const newHash = randomBytes(32);
     await harness.database.pool.query(
       `insert into staff_identities (id, provider_user_id, role)
-       values ($1, 'workos_rotate', 'admin')`,
+       values ($1, 'removed_rotate', 'admin')`,
       [staffIdentityId],
     );
     await harness.database.pool.query(
       `insert into staff_sessions
-        (session_hash, staff_identity_id, workos_user_id, workos_session_id,
+        (session_hash, staff_identity_id, removed_user_id, removed_session_id,
          organization_id, provider_roles, token_ciphertext, token_iv,
          token_tag, key_version, access_token_expires_at, hard_expires_at,
          authenticated_at)
-       values ($1,$2,'workos_rotate','session_old','org_rotate',array['admin'],$3,$4,$5,
+       values ($1,$2,'removed_rotate','session_old','org_rotate',array['admin'],$3,$4,$5,
                1,now()+interval '5 minutes',now()+interval '1 hour',now())`,
       [oldHash, staffIdentityId, randomBytes(64), randomBytes(12), randomBytes(16)],
     );
     const rotate = async (prior: Buffer, hash: Buffer, hardExpiry: string, sid = "session_new") => {
       const result = await harness.database.pool.query<{ staff_rotate_session: boolean }>(
         `select staff_rotate_session(
-          $1,$2,$3,'workos_rotate',$4,'org_rotate',array['admin'],array[]::text[],
+          $1,$2,$3,'removed_rotate',$4,'org_rotate',array['admin'],array[]::text[],
           $5,$6,$7,1,now()+interval '5 minutes',${hardExpiry},now())`,
         [prior, hash, staffIdentityId, sid, randomBytes(64), randomBytes(12), randomBytes(16)],
       );
@@ -211,14 +211,14 @@ describe("authentication migration and ACLs", () => {
     try {
       const sameHash = await client.query<{ staff_rotate_session: boolean }>(
         `select staff_rotate_session(
-          $1,$1,$2,'workos_rotate','session_old','org_rotate',array['admin'],array[]::text[],
+          $1,$1,$2,'removed_rotate','session_old','org_rotate',array['admin'],array[]::text[],
           $3,$4,$5,1,now()+interval '5 minutes',now()+interval '8 hours',now())`,
         [oldHash, staffIdentityId, randomBytes(64), randomBytes(12), randomBytes(16)],
       );
       expect(sameHash.rows[0]?.staff_rotate_session).toBe(false);
       const excessive = await client.query<{ staff_rotate_session: boolean }>(
         `select staff_rotate_session(
-          $1,$2,$3,'workos_rotate','session_new','org_rotate',array['admin'],array[]::text[],
+          $1,$2,$3,'removed_rotate','session_new','org_rotate',array['admin'],array[]::text[],
           $4,$5,$6,1,now()+interval '5 minutes',now()+interval '1 year',now())`,
         [oldHash, newHash, staffIdentityId, randomBytes(64), randomBytes(12), randomBytes(16)],
       );
@@ -230,17 +230,17 @@ describe("authentication migration and ACLs", () => {
     const row = await harness.database.pool.query<{
       current_hash: boolean;
       previous_hash: boolean;
-      workos_session_id: string;
+      removed_session_id: string;
     }>(
       `select session_hash=$1 as current_hash, previous_session_hash=$2 as previous_hash,
-              workos_session_id
+              removed_session_id
        from staff_sessions where staff_identity_id=$3`,
       [newHash, oldHash, staffIdentityId],
     );
     expect(row.rows[0]).toEqual({
       current_hash: true,
       previous_hash: true,
-      workos_session_id: "session_new",
+      removed_session_id: "session_new",
     });
   });
 
@@ -251,16 +251,16 @@ describe("authentication migration and ACLs", () => {
     const slowHash = randomBytes(32);
     await harness.database.pool.query(
       `insert into staff_identities (id, provider_user_id, role)
-       values ($1, 'workos_refresh', 'admin')`,
+       values ($1, 'removed_refresh', 'admin')`,
       [staffIdentityId],
     );
     const insert = (hash: Buffer, sid: string) =>
       harness.database.pool.query(
         `insert into staff_sessions
-          (session_hash,staff_identity_id,workos_user_id,workos_session_id,
+          (session_hash,staff_identity_id,removed_user_id,removed_session_id,
            organization_id,provider_roles,token_ciphertext,token_iv,token_tag,
            key_version,access_token_expires_at,hard_expires_at,authenticated_at)
-         values ($1,$2,'workos_refresh',$3,'org_refresh',array['admin'],$4,$5,$6,
+         values ($1,$2,'removed_refresh',$3,'org_refresh',array['admin'],$4,$5,$6,
                  1,now()+interval '5 minutes',now()+interval '1 hour',now())`,
         [hash, staffIdentityId, sid, randomBytes(64), randomBytes(12), randomBytes(16)],
       );
@@ -672,7 +672,7 @@ describe("authentication migration and ACLs", () => {
     const staffIdentityId = "00000000-0000-4000-8000-000000000080";
     await harness.database.pool.query(
       `insert into staff_identities (id, provider_user_id, role)
-       values ($1, 'workos_cleanup', 'coach')`,
+       values ($1, 'removed_cleanup', 'coach')`,
       [staffIdentityId],
     );
     const insertAttempt = async (state: Buffer, expires: string, consumed: string) =>
@@ -691,10 +691,10 @@ describe("authentication migration and ACLs", () => {
     const insertSession = async (hash: Buffer, sid: string, hardExpiry: string, revoked: string) =>
       harness.database.pool.query(
         `insert into staff_sessions
-          (session_hash,staff_identity_id,workos_user_id,workos_session_id,organization_id,
+          (session_hash,staff_identity_id,removed_user_id,removed_session_id,organization_id,
            provider_roles,token_ciphertext,token_iv,token_tag,key_version,
            access_token_expires_at,hard_expires_at,authenticated_at,created_at,revoked_at)
-         values ($1,$2,'workos_cleanup',$3,'org_cleanup',array['coach'],$4,$5,$6,1,
+         values ($1,$2,'removed_cleanup',$3,'org_cleanup',array['coach'],$4,$5,$6,1,
                  now()+interval '5 minutes',${hardExpiry},now()-interval '3 hours',
                  now()-interval '4 hours',${revoked})`,
         [hash, staffIdentityId, sid, randomBytes(64), randomBytes(12), randomBytes(16)],

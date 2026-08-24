@@ -94,7 +94,7 @@ describe("database transactions", () => {
         permissions: ["foundation:write"],
         role: "admin",
         staffId: "10000000-0000-4000-8000-000000000097",
-        workosUserId: "staff_test",
+        accessUserId: "staff_test",
       },
       clock: { now: () => new Date("2026-08-13T16:00:00.000Z") },
       correlationId: "10000000-0000-4000-8000-000000000099",
@@ -146,7 +146,7 @@ describe("database transactions", () => {
         permissions: ["foundation:write"],
         role: "admin",
         staffId: "10000000-0000-4000-8000-000000000097",
-        workosUserId: "staff_test",
+        accessUserId: "staff_test",
       },
       clock: { now: () => new Date("2026-08-13T16:00:00.000Z") },
       correlationId: "10000000-0000-4000-8000-000000000099",
@@ -267,7 +267,7 @@ describe("database transactions", () => {
       permissions: ["foundation:write"],
       role: "admin" as const,
       staffId: "10000000-0000-4000-8000-000000000097",
-      workosUserId: "staff_test",
+      accessUserId: "staff_test",
     };
     const clock = { now: () => new Date("2026-08-13T16:00:00.000Z") };
     const unitOfWork = createUnitOfWork(harness.database, {

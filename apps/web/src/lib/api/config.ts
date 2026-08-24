@@ -1,10 +1,18 @@
 import { z } from "zod";
 
+function isLoopbackHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
 function exactOrigin(value: string, secure: boolean): string {
   const url = new URL(value);
+  // A deployed origin is never loopback, so exempting it here only affects
+  // local dev against a real backend — it does not weaken the https
+  // requirement for any origin that could actually be in production.
+  const requiresHttps = secure && !isLoopbackHost(url.hostname);
   if (
-    (secure && url.protocol !== "https:") ||
-    (!secure && url.protocol !== "http:" && url.protocol !== "https:") ||
+    (requiresHttps && url.protocol !== "https:") ||
+    (!requiresHttps && url.protocol !== "http:" && url.protocol !== "https:") ||
     url.username !== "" ||
     url.password !== "" ||
     url.pathname !== "/" ||
@@ -32,7 +40,7 @@ const allowedKeys = [
   "WEB_ORIGIN",
 ] as const;
 
-const forbiddenKey = /^(?:(?:DATABASE_(?:DIRECT_|POOLED_)?URL|TEST_DATABASE_URL|(?:MEMBER|STAFF|SYSTEM|WORKER)_DATABASE_URL|WORKOS_.+|STRIPE_.+|MUX_(?:TOKEN|SIGNING).+|RESEND_(?:API|SECRET).+|BLOB_(?:READ_WRITE|WRITE).+|HIGHLEVEL_.+)|.*(?:SECRET(?:_KEY)?|API_KEY|PRIVATE_KEY|WRITE_TOKEN))$/u;
+const forbiddenKey = /^(?:(?:DATABASE_(?:DIRECT_|POOLED_)?URL|TEST_DATABASE_URL|(?:MEMBER|STAFF|SYSTEM|WORKER)_DATABASE_URL|REMOVED_.+|STRIPE_.+|MUX_(?:TOKEN|SIGNING).+|RESEND_(?:API|SECRET).+|BLOB_(?:READ_WRITE|WRITE).+|HIGHLEVEL_.+)|.*(?:SECRET(?:_KEY)?|API_KEY|PRIVATE_KEY|WRITE_TOKEN))$/u;
 
 export function parseWebApiConfig(environment: Record<string, string | undefined>) {
   try {
@@ -72,12 +80,21 @@ export function parseWebApiConfig(environment: Record<string, string | undefined
       production,
     );
     if (webOrigin === apiUpstreamOrigin) throw new Error("origins must differ");
+    // The API only ever issues a __Host- cookie when it considers itself
+    // secure (staging/production NODE_ENV — see staff.ts isSecureEnvironment),
+    // which never happens for a loopback deployment. Deciding the expected
+    // cookie name from `production` alone (ignoring loopback) makes local
+    // dev against a real backend permanently unable to match the cookie the
+    // API actually sets, since __Host- cookies cannot be stored over http at
+    // all. A real deployed webOrigin is never loopback, so this doesn't
+    // change behavior for any origin that could actually be in production.
+    const secureCookies = production && !isLoopbackHost(new URL(webOrigin).hostname);
     return Object.freeze({
       mode: parsed.APP_MODE,
       webOrigin,
       apiUpstreamOrigin,
       clerkPublishableKey: parsed.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY,
-      staffCookieName: production
+      staffCookieName: secureCookies
         ? "__Host-syntholo_staff_session"
         : "syntholo_local_staff_session",
       rewrite: {

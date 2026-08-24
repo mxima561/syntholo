@@ -11,7 +11,7 @@
 
 This addendum turns the current polished, deterministic demo into a production system. It defines the approved backend-first architecture, account and entitlement boundaries, critical user flows, operating safeguards, deployment topology, launch gates, and acquisition measurement.
 
-Where this addendum conflicts with the original PRD or runbook, this addendum controls. In particular, it replaces the original single-provider WorkOS customer identity model, MongoDB application datastore, in-app community implementation, flat integration diagram, and certificate exclusion. The existing visual design and deterministic demo remain the reference experience while production modules are built behind stable contracts.
+Where this addendum conflicts with the original PRD or runbook, this addendum controls. In particular, it replaces the original single-provider Cloudflare Access customer identity model, MongoDB application datastore, in-app community implementation, flat integration diagram, and certificate exclusion. The existing visual design and deterministic demo remain the reference experience while production modules are built behind stable contracts.
 
 ## 2. Approved launch model
 
@@ -62,18 +62,18 @@ The system has four explicit application surfaces:
 |---|---|---|---|
 | Public | Visitors and applicants | Anonymous, then Clerk at claim/sign-in | Marketing, scorecard, Pilot application, pricing, checkout entry, legal pages. |
 | Member | Customer owner and up to two teammates | Clerk | Academy, progress, shared outputs, support, sessions, Circle handoff, settings, billing status, Business OS status. |
-| Coach | Human coaching staff | WorkOS | Assigned queue, SLA state, account context, artifact review, session attendance, and community moderation escalation. |
-| Admin | Authorized operations staff | WorkOS with mandatory MFA | Applications, cohorts, content, commerce, entitlements, users, sessions, coaches, audit, and Business OS provisioning. |
+| Coach | Human coaching staff | Cloudflare Access | Assigned queue, SLA state, account context, artifact review, session attendance, and community moderation escalation. |
+| Admin | Authorized operations staff | Cloudflare Access with mandatory MFA | Applications, cohorts, content, commerce, entitlements, users, sessions, coaches, audit, and Business OS provisioning. |
 
-Clerk handles member magic links, Google/Microsoft or other approved social sign-in, account claim, and consumer sessions. WorkOS handles staff identity, staff RBAC, audit-relevant identity events, and future workforce SSO. The providers are deliberately not unified.
+Clerk handles member magic links, Google/Microsoft or other approved social sign-in, account claim, and consumer sessions. Cloudflare Access handles staff identity, staff RBAC, audit-relevant identity events, and future workforce SSO. The providers are deliberately not unified.
 
-The API accepts separate issuer and audience configurations for Clerk member tokens and WorkOS staff sessions. Member middleware cannot authorize coach/admin routes, and staff middleware cannot silently act as a member. If a person has both relationships, the identities and sessions remain separate. Every authenticated request resolves an immutable internal actor, account or staff scope, role, and effective authorization before reaching a repository.
+The API accepts separate issuer and audience configurations for Clerk member tokens and Cloudflare Access staff sessions. Member middleware cannot authorize coach/admin routes, and staff middleware cannot silently act as a member. If a person has both relationships, the identities and sessions remain separate. Every authenticated request resolves an immutable internal actor, account or staff scope, role, and effective authorization before reaching a repository.
 
 Customer-owned records are scoped by immutable `accountId`. Staff access is role-checked and audited. Coaches cannot access commerce, refunds, entitlements, staff administration, or unrestricted customer exports. Admin actions that change roles, access, money, content publication, moderation, or activation require recent authentication and record actor, reason, and timestamp.
 
 ## 5. API and module boundaries
 
-The production API is the sole business-write authority. The web interface contains no database credentials, Stripe secret, WorkOS secret, Circle admin token, HighLevel credential, Mux secret, Resend key, Blob write token, or staff-only business logic.
+The production API is the sole business-write authority. The web interface contains no database credentials, Stripe secret, Cloudflare Access secret, Circle admin token, HighLevel credential, Mux secret, Resend key, Blob write token, or staff-only business logic.
 
 The API exposes separately protected public, member, staff, and webhook routes. Requests and responses use schemas from `packages/contracts`; malformed requests fail before domain mutation. The API returns stable error codes, a customer-safe message, and a correlation ID. Internal stack traces, provider payloads, and secrets never reach the browser.
 
@@ -167,7 +167,7 @@ Certificate issuance depends only on lesson-completion state. Purchase tier, sup
 ### Flow 2 — Guided Pilot application and private checkout
 
 1. A visitor completes the native Pilot application with business fit, goals, readiness, availability, and campaign attribution.
-2. A WorkOS-authenticated admin reviews the application, requests information, approves, or declines with an audited decision.
+2. A Access-authenticated admin reviews the application, requests information, approves, or declines with an audited decision.
 3. Approval requires a cohort assignment and available capacity.
 4. The worker emails an expiring private $750 Stripe Checkout link with the seven-day refund disclosure and cohort terms.
 5. Signed, idempotent payment fulfillment creates the Pilot purchase, three-seat capacity with zero occupied rows, lifetime Academy access, 12 months support/community, cohort enrollment, account claim, and notifications. Owner claim later activates slot one; invitations reserve the remaining slots.
@@ -183,7 +183,7 @@ Certificate issuance depends only on lesson-completion state. Purchase tier, sup
 
 ### Flow 4 — Lesson publishing and certificate issuance
 
-1. A WorkOS admin drafts structured lesson content, selects its course/stage/order/release rule, and adds action, resources, and required disclosures.
+1. A Cloudflare Access admin drafts structured lesson content, selects its course/stage/order/release rule, and adds action, resources, and required disclosures.
 2. Mux processing reaches ready state; captions and transcript are attached.
 3. Publication validation requires title, summary, ready video, captions, transcript, duration, action, resources, accessibility review, and required commercial disclosure.
 4. Admin preview and publication create an immutable lesson version and audit event. Published versions with progress are archived or superseded, not edited in place.
@@ -203,7 +203,7 @@ Certificate issuance depends only on lesson-completion state. Purchase tier, sup
 
 1. A customer request or signed Stripe event opens a commerce case for refund, cancellation, failed invoice, or dispute.
 2. The API claims the provider/event ID before mutation.
-3. A WorkOS admin reviews policy, payment facts, timeline, and prior actions when a human decision is required.
+3. A Cloudflare Access admin reviews policy, payment facts, timeline, and prior actions when a human decision is required.
 4. Stripe performs the refund, schedules cancellation, retries a failed invoice, or reports dispute status.
 5. The entitlement authority recomputes only the grants sourced from that transaction.
 6. The worker sends an exact access-impact notice; every request, decision, provider action, grant transition, and delivery is audited.
@@ -297,7 +297,7 @@ Future automation must preserve separate authentication and avoid customer-data 
 | API, worker, cron | Railway | Persistent API and worker services plus scheduled jobs; independently deployable and horizontally scalable. |
 | Relational data | Neon PostgreSQL | Separate U.S. staging and production projects, pooled connections, restore window, and tested point-in-time recovery. |
 | Member identity | Clerk | Consumer sign-in, claim, social/magic-link identity, sessions, and Circle OAuth provider. |
-| Staff identity | WorkOS | Coach/admin sign-in, RBAC context, and mandatory admin MFA. |
+| Staff identity | Cloudflare Access | Coach/admin sign-in, RBAC context, and mandatory admin MFA. |
 | Payments | Stripe | Checkout, Billing, customer portal, refunds, disputes, invoices, and signed webhooks. |
 | Video | Mux | Signed playback, processing state, thumbnails, captions, and transcript association. |
 | Email | Resend | Transactional messages only through durable jobs. |
@@ -313,7 +313,7 @@ The provider choices are based on current official capabilities: [Vercel Functio
 
 ## 14. Security, privacy, and file handling
 
-- Verify Clerk, WorkOS, Stripe, and other provider signatures against raw inputs and expected audience/issuer.
+- Verify Clerk, Cloudflare Access, Stripe, and other provider signatures against raw inputs and expected audience/issuer.
 - Require recent authentication for ownership transfer, seat replacement, refund approval, role changes, exports, and destructive administration.
 - Rate-limit scorecard report generation, applications, claim attempts, invitations, support writes, and checkout creation by appropriate identity and network signals.
 - Use secure, HTTP-only, same-site cookies where sessions are cookie-backed; allow only explicit production/staging origins; protect state-changing browser requests against CSRF.
@@ -330,7 +330,7 @@ The provider choices are based on current official capabilities: [Vercel Functio
 Failures are isolated by domain:
 
 - **PostgreSQL unavailable:** enter an explicit read-only/degraded state; do not write into demo data. Preserve safe client drafts locally only when they are clearly labeled unsynced.
-- **Clerk or WorkOS unavailable:** retain public cached content; do not bypass authorization. Show provider-specific recovery guidance.
+- **Clerk or Cloudflare Access unavailable:** retain public cached content; do not bypass authorization. Show provider-specific recovery guidance.
 - **Stripe unavailable or webhook delayed:** preserve checkout state, claim each webhook once, expose fulfillment status, and retry from durable receipts.
 - **Mux unavailable:** show transcript, summary, action, and resources so the lesson remains useful; retry playback state separately.
 - **Resend unavailable:** preserve notification jobs; prioritize account, security, money, coach, and session messages.
@@ -370,7 +370,7 @@ Paid campaign spend scales only after attribution completeness, checkout-to-clai
 ### Gate 1 — Foundation
 
 - Monorepo structure and independent deployments work.
-- Clerk member identity and WorkOS staff identity are separately verified.
+- Clerk member identity and Cloudflare Access staff identity are separately verified.
 - PostgreSQL schema, migrations, scoped repositories, audit, outbox/jobs, and health reporting exist.
 - The entitlement authority and its hard invariants pass unit, integration, and property/state-transition tests.
 - Cross-account and cross-role authorization tests demonstrate denial, not only happy-path access.
@@ -429,7 +429,7 @@ Rollback triggers include any cross-account data exposure, unauthorized staff ac
 - Final legal review and operating company details.
 - Stripe products/prices, customer portal, webhook endpoints, tax/refund decisions, and low-value production test method.
 - Clerk production identity configuration and Circle OAuth application.
-- WorkOS staff directory, staff roles, and mandatory admin MFA.
+- Cloudflare Access staff directory, staff roles, and mandatory admin MFA.
 - Circle Business plan or higher, production spaces/access groups, community rules, and moderation process.
 - Two trained coaches, U.S. business calendar, availability rotation, escalation owner, and four Pilot Zoom sessions.
 - HighLevel agency/SaaS account, approved reusable snapshot, separate-login handoff, seven-check runbook, and customer export/cancellation process.

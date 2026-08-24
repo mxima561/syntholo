@@ -118,6 +118,9 @@
   .member-sidebar nav, .member-sidebar .nav-group:first-child { height: 100%; display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; }
   .production-member-sidebar nav, .production-member-sidebar .nav-group:first-child { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .member-sidebar .nav-group a { min-height: 44px; }
+  .production-member-shell .member-menu-button { display: inline-flex; }
+  .production-member-shell .production-member-sidebar { display: none; }
+  .production-member-shell .member-drawer-close { display: inline-flex; }
   .member-topbar { height: 57px; padding-inline: 16px; }
   .member-topbar > div:first-child strong, .member-topbar > div:first-child small { display: none; }
   .mobile-brand { display: block; font: 750 14px var(--font-heading); }

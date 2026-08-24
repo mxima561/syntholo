@@ -55,7 +55,7 @@ Deploy in this order:
 
 The production canonical origin is `https://app.syntholo.com`. Vercel serves
 the web application and rewrites relative `/v1/**` requests to Railway; the
-browser never receives the Railway origin as its API base URL. WorkOS uses
+browser never receives the Railway origin as its API base URL. Cloudflare Access uses
 `https://app.syntholo.com/v1/staff/auth/callback`, and its application homepage
 and initiate-login URI use the same host. Clerk uses DNS mode at
 `clerk.app.syntholo.com`, while the embedded `/sign-in` and `/sign-up` routes

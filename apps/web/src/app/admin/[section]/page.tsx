@@ -4,7 +4,6 @@ import { AdminSurfaceUnavailable } from "@/components/admin-surface-unavailable"
 import { requireAdminAccess } from "@/lib/auth/staff-access";
 
 const sections = {
-  customers: "Customers",
   support: "Support queue",
   community: "Community reports",
   commerce: "Commerce",

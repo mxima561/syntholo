@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Establish the production monorepo, typed API and worker runtimes, PostgreSQL/RLS data boundary, separate Clerk and WorkOS identity paths, durable audit/outbox primitives, and central entitlement authority without regressing the approved demo UI.
+**Goal:** Establish the production monorepo, typed API and worker runtimes, PostgreSQL/RLS data boundary, separate Clerk and Cloudflare Access identity paths, durable audit/outbox primitives, and central entitlement authority without regressing the approved demo UI.
 
 **Architecture:** Move the current Next.js app intact into `apps/web`, add a Fastify API and PostgreSQL job worker, and create framework-independent shared packages. Requests resolve a typed actor before use cases run; use cases mutate through scoped repositories; each transaction writes audit and outbox records; the entitlement evaluator is the only access authority.
 
-**Tech Stack:** npm workspaces, Next.js 16.3, React 19.2, TypeScript 5.9, Fastify 5, Zod 4, Drizzle ORM, `pg`, Neon PostgreSQL, Clerk Backend SDK, WorkOS AuthKit/JWT, `jose`, Vitest, Playwright, and GitHub Actions.
+**Tech Stack:** npm workspaces, Next.js 16.3, React 19.2, TypeScript 5.9, Fastify 5, Zod 4, Drizzle ORM, `pg`, Neon PostgreSQL, Clerk Backend SDK, Clerk / Cloudflare Access/JWT, `jose`, Vitest, Playwright, and GitHub Actions.
 
 ## Global Constraints
 
@@ -34,7 +34,7 @@
 - `packages/database/src/{client,schema,unit-of-work}.ts` — database primitives.
 - `packages/database/src/repositories/{audit,outbox,entitlements}.ts` — foundation repositories.
 - `packages/database/drizzle/**` — versioned SQL migrations including roles and RLS.
-- `packages/integrations/src/{clerk,workos}/**` — provider adapters.
+- `packages/integrations/src/{clerk,access}/**` — provider adapters.
 - `packages/testing/src/**` — actors, database setup, and Fastify helpers.
 - `.github/workflows/ci.yml`, `infra/railway/**` — foundation CI and service processes.
 
@@ -452,11 +452,11 @@ git add apps/api apps/worker package.json package-lock.json
 git commit -m "feat: add API and worker runtimes"
 ```
 
-### Task 6: Implement separate Clerk member and WorkOS staff authentication
+### Task 6: Implement separate Clerk member and Cloudflare Access staff authentication
 
 **Files:**
 - Create: `packages/integrations/src/clerk/client.ts`
-- Create: `packages/integrations/src/workos/jwt.ts`
+- Create: `packages/integrations/src/access/jwt.ts`
 - Create: `packages/database/src/schema/staff-sessions.ts`
 - Create: `packages/database/src/repositories/staff-sessions.ts`
 - Create: `packages/database/drizzle/0003_staff_sessions.sql`
@@ -467,16 +467,16 @@ git commit -m "feat: add API and worker runtimes"
 - Create: `apps/web/src/lib/api/{client,member-token,staff-session}.ts`
 - Create: `apps/web/src/app/sign-in/[[...sign-in]]/page.tsx`
 - Create: `apps/web/src/app/sign-up/[[...sign-up]]/page.tsx`
-- Delete: `apps/web/src/lib/integrations/workos.ts`
+- Delete: `apps/web/src/lib/integrations/access.ts`
 - Modify: `apps/web/package.json`
 - Modify: `apps/web/src/app/layout.tsx`
 - Modify: `apps/web/src/app/admin/layout.tsx`
 
 **Interfaces:**
 - Consumes Clerk `authenticateRequest(request, { authorizedParties, audience })` and maps only verified `userId` to `MemberActor` through the database.
-- Consumes WorkOS access JWT through `jose.jwtVerify` with configured JWKS and issuer; validates documented `client_id` exactly without inventing an OAuth audience, plus organization, session, singleton role, permissions, `iat`, and `auth_time`.
-- Produces API-owned `GET /v1/staff/auth/sign-in`, `GET /v1/staff/auth/callback`, and `POST /v1/staff/auth/sign-out` behind the canonical origin's external `/v1` rewrite. The API exchanges the WorkOS code, stores encrypted access/refresh tokens in `staff_sessions`, and sets only a hashed-lookup opaque ID in a production host-only `__Host-syntholo_staff_session` cookie (`Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, no `Domain`). Local development uses a distinct unprefixed non-Secure cookie.
-- `staff_sessions` stores SHA-256 session lookup, AES-256-GCM token ciphertext/IV/tag, key version, expiry, revocation time, WorkOS session ID, and staff ID. `STAFF_SESSION_ENCRYPTION_KEYS` exists only in the API secret store; sign-out revokes the row and WorkOS session.
+- Consumes Cloudflare Access access JWT through `jose.jwtVerify` with configured JWKS and issuer; validates documented `client_id` exactly without inventing an OAuth audience, plus organization, session, singleton role, permissions, `iat`, and `auth_time`.
+- Produces API-owned `GET /v1/staff/auth/sign-in`, `GET /v1/staff/auth/callback`, and `POST /v1/staff/auth/sign-out` behind the canonical origin's external `/v1` rewrite. The API exchanges the Cloudflare Access code, stores encrypted access/refresh tokens in `staff_sessions`, and sets only a hashed-lookup opaque ID in a production host-only `__Host-syntholo_staff_session` cookie (`Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/`, no `Domain`). Local development uses a distinct unprefixed non-Secure cookie.
+- `staff_sessions` stores SHA-256 session lookup, AES-256-GCM token ciphertext/IV/tag, key version, expiry, revocation time, Cloudflare Access session ID, and staff ID. `STAFF_SESSION_ENCRYPTION_KEYS` exists only in the API secret store; sign-out revokes the row and Cloudflare Access session.
 - Produces hooks `requireMember`, `requireCoach`, `requireAdmin`, and `requireRecentAuth(actor, maxAgeSeconds)`.
 
 - [ ] **Step 1: Write the issuer-confusion tests**
@@ -484,7 +484,7 @@ git commit -m "feat: add API and worker runtimes"
 ```ts
 it.each([
   ["Clerk token", clerkToken(), "/v1/staff/whoami"],
-  ["WorkOS token", workosToken({ role: "admin" }), "/v1/member/whoami"],
+  ["Cloudflare Access token", accessToken({ role: "admin" }), "/v1/member/whoami"],
 ])("rejects %s on the wrong surface", async (_label, token, url) => {
   const response = await app.inject({ url, headers: { authorization: `Bearer ${token}` } });
   expect(response.statusCode).toBe(401);
@@ -499,7 +499,7 @@ Expected: routes or verifiers do not exist.
 
 - [ ] **Step 3: Implement provider adapters and actor lookup**
 
-Use Clerk's official backend verification with bearer-only `session_token`, explicit authorized parties and audience. Verify WorkOS JWT signature, `iss`, documented `client_id`, organization, `auth_time`, expiration, and exact role/permissions. Do not require an undocumented WorkOS `aud`. Never accept provider claims as internal `accountId` or `staffId`; resolve the internal mapping from PostgreSQL.
+Use Clerk's official backend verification with bearer-only `session_token`, explicit authorized parties and audience. Verify Cloudflare Access JWT signature, `iss`, documented `client_id`, organization, `auth_time`, expiration, and exact role/permissions. Do not require an undocumented Cloudflare Access `aud`. Never accept provider claims as internal `accountId` or `staffId`; resolve the internal mapping from PostgreSQL.
 
 ```ts
 export async function verifyMember(request: Request, deps: MemberAuthDependencies): Promise<MemberActor> {
@@ -514,14 +514,14 @@ export async function verifyMember(request: Request, deps: MemberAuthDependencie
 export async function verifyStaff(token: string, deps: StaffAuthDependencies): Promise<StaffActor> {
   const { payload } = await jwtVerify(token, deps.jwks, { issuer: deps.issuer });
   if (payload.client_id !== deps.clientId) throw new AppError("UNAUTHENTICATED", 401, "Sign in required");
-  return deps.identities.findStaffActorByWorkosUserId(String(payload.sub), payload.role, payload.permissions);
+  return deps.identities.findStaffActorByAccessUserId(String(payload.sub), payload.role, payload.permissions);
 }
 ```
 
 ```ts
-export async function workosCallback(request: FastifyRequest, reply: FastifyReply, deps: WorkosAuthDependencies) {
+export async function accessCallback(request: FastifyRequest, reply: FastifyReply, deps: AccessAuthDependencies) {
   const loginAttempt = await deps.loginState.consumeAndVerify(callbackState(request), request.cookies.staff_login_state);
-  const tokens = await deps.workos.authenticateWithCode({
+  const tokens = await deps.access.authenticateWithCode({
     code: callbackCode(request), clientId: deps.clientId, codeVerifier: loginAttempt.codeVerifier,
   });
   const session = await deps.staffSessions.createEncrypted(tokens, deps.clock.now());
@@ -532,12 +532,12 @@ export async function workosCallback(request: FastifyRequest, reply: FastifyRepl
 }
 ```
 
-Remove `@workos-inc/authkit-nextjs` and the web WorkOS integration stub; install the official WorkOS Node SDK in `@syntholo/integrations`. The web's staff client sends relative same-origin requests and never reads the cookie/token.
+Remove `removed` and the web Cloudflare Access integration stub; install the official Cloudflare Access Node SDK in `@syntholo/integrations`. The web's staff client sends relative same-origin requests and never reads the cookie/token.
 
 ```bash
-npm uninstall @workos-inc/authkit-nextjs -w @syntholo/web
+npm uninstall removed -w @syntholo/web
 npm install @clerk/nextjs -w @syntholo/web
-npm install @clerk/backend @workos-inc/node jose -w @syntholo/integrations
+npm install @clerk/backend removed jose -w @syntholo/integrations
 ```
 
 - [ ] **Step 4: Add authorization and recent-auth tests**

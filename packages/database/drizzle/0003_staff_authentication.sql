@@ -2,8 +2,8 @@ CREATE TABLE "staff_sessions" (
   "session_hash" bytea PRIMARY KEY NOT NULL,
   "previous_session_hash" bytea,
   "staff_identity_id" uuid NOT NULL,
-  "workos_user_id" text NOT NULL,
-  "workos_session_id" text NOT NULL,
+  "removed_user_id" text NOT NULL,
+  "removed_session_id" text NOT NULL,
   "organization_id" text NOT NULL,
   "provider_roles" text[] NOT NULL,
   "provider_permissions" text[] DEFAULT ARRAY[]::text[] NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE "staff_sessions" (
   "revoked_at" timestamp with time zone,
   "created_at" timestamp with time zone DEFAULT now() NOT NULL,
   "updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-  CONSTRAINT "staff_sessions_workos_session_id_unique" UNIQUE("workos_session_id"),
+  CONSTRAINT "staff_sessions_removed_session_id_unique" UNIQUE("removed_session_id"),
   CONSTRAINT "staff_sessions_staff_identity_id_staff_identities_id_fk"
     FOREIGN KEY ("staff_identity_id") REFERENCES "public"."staff_identities"("id")
     ON DELETE restrict ON UPDATE restrict,
@@ -180,7 +180,7 @@ BEGIN
 
   UPDATE public.staff_sessions SET
     previous_session_hash = session_hash, session_hash = p_hash,
-    workos_session_id = p_sid,
+    removed_session_id = p_sid,
     provider_roles = p_roles, provider_permissions = p_permissions,
     token_ciphertext = p_ciphertext, token_iv = p_iv, token_tag = p_tag,
     key_version = p_key, access_token_expires_at = p_access_exp,
@@ -188,18 +188,18 @@ BEGIN
     refresh_version = refresh_version + 1, refresh_lease_id = NULL,
     refresh_lease_expires_at = NULL, updated_at = statement_timestamp()
   WHERE ((p_prior IS NOT NULL AND session_hash = p_prior)
-      OR (p_prior IS NULL AND workos_session_id = p_sid))
+      OR (p_prior IS NULL AND removed_session_id = p_sid))
     AND p_hash <> session_hash
     AND revoked_at IS NULL
     AND hard_expires_at > statement_timestamp()
     AND refresh_lease_id IS NULL
-    AND staff_identity_id = p_staff AND workos_user_id = p_user
+    AND staff_identity_id = p_staff AND removed_user_id = p_user
     AND organization_id = p_org
-    AND (p_prior IS NOT NULL OR workos_session_id = p_sid);
+    AND (p_prior IS NOT NULL OR removed_session_id = p_sid);
   IF FOUND THEN RETURN true; END IF;
   IF p_prior IS NOT NULL THEN RETURN false; END IF;
   INSERT INTO public.staff_sessions (
-    session_hash, staff_identity_id, workos_user_id, workos_session_id,
+    session_hash, staff_identity_id, removed_user_id, removed_session_id,
     organization_id, provider_roles, provider_permissions, token_ciphertext,
     token_iv, token_tag, key_version, access_token_expires_at,
     hard_expires_at, authenticated_at)
@@ -280,14 +280,14 @@ AS $function$
 $function$;
 --> statement-breakpoint
 CREATE FUNCTION public.staff_revoke_session(p_hash bytea)
-RETURNS TABLE(workos_session_id text)
+RETURNS TABLE(removed_session_id text)
 LANGUAGE sql VOLATILE SECURITY DEFINER
 SET search_path = pg_catalog, public
 AS $function$
   UPDATE public.staff_sessions SET revoked_at=coalesce(revoked_at, statement_timestamp()),
     refresh_lease_id=NULL, refresh_lease_expires_at=NULL, updated_at=statement_timestamp()
   WHERE session_hash=p_hash OR previous_session_hash=p_hash
-  RETURNING staff_sessions.workos_session_id
+  RETURNING staff_sessions.removed_session_id
 $function$;
 --> statement-breakpoint
 REVOKE ALL ON FUNCTION public.staff_consume_login_attempt(bytea, bytea) FROM PUBLIC;

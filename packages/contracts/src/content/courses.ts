@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LessonBlocksSchema, ReleaseRuleSchema, TranscriptSchema } from "./blocks.js";
+import { LessonBlocksSchema, ReleaseRuleSchema, TranscriptSchema } from "./blocks";
 
 const SlugSchema = z.string().trim().min(1).max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u);
 const TitleSchema = z.string().trim().min(1).max(255);

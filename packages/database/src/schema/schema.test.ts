@@ -329,8 +329,8 @@ const expectedColumns = {
     "session_hash",
     "previous_session_hash",
     "staff_identity_id",
-    "workos_user_id",
-    "workos_session_id",
+    "removed_user_id",
+    "removed_session_id",
     "organization_id",
     "provider_roles",
     "provider_permissions",
@@ -367,7 +367,7 @@ describe("foundation Drizzle schema", () => {
       Object.hasOwn(expectedColumns, tableName)
     ));
 
-    expect(actual).toHaveLength(98);
+    expect(actual).toHaveLength(99);
     expect(foundationAndAuthentication).toEqual(Object.entries(expectedColumns));
   });
 });

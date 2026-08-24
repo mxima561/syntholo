@@ -33,7 +33,7 @@ describe("actor factories", () => {
     expect(staffActor()).toEqual({
       kind: "staff",
       actorId: "actor_staff",
-      workosUserId: "workos_user_staff",
+      accessUserId: "removed_user_staff",
       staffId: "staff_1",
       role: "coach",
       permissions: ["content:publish"],
