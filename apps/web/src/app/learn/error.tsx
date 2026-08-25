@@ -2,11 +2,11 @@
 
 import { AcademyUnavailable } from "@/components/academy-unavailable";
 
-export default function ErrorPage({
+export default function LearnErrorPage({
   retry,
   reset,
 }: {
-  error?: Error & { digest?: string };
+  error: Error & { digest?: string };
   retry?: () => void;
   reset?: () => void;
 }) {

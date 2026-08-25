@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { SYNTHETIC_FIXTURE } from "./data";
 import { getDashboard, getLesson, getMemberCourse } from "./repository";
+
+describe("synthetic fixtures", () => {
+  it("marks Northstar data as test-only", () => {
+    expect(SYNTHETIC_FIXTURE).toBe(true);
+  });
+});
 
 describe("demo repository", () => {
   it("returns organization-scoped dashboard data for the signed-in owner", () => {

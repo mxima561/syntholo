@@ -11,6 +11,9 @@ import type {
   SupportThread,
 } from "@/lib/domain/types";
 
+/** Test-only Northstar fixtures. Do not import from production pages, layouts, or accounts. */
+export const SYNTHETIC_FIXTURE = true;
+
 export const demoOrganization: Organization = {
   id: "org-northstar",
   name: "Northstar Advisory",

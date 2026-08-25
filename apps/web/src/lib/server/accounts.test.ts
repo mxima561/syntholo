@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { canUseDemoStudent, isClerkConfigured } from "./accounts";
 
@@ -32,5 +33,14 @@ describe("student identity gates", () => {
     vi.stubEnv("CLERK_SECRET_KEY", "");
     vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "");
     expect(canUseDemoStudent()).toBe(false);
+  });
+
+  it("keeps the demo student out of the default server module graph", () => {
+    const source = readFileSync("src/lib/server/accounts.ts", "utf8");
+    expect(source).not.toContain("maria@northstar");
+    expect(source).not.toContain("DEMO_STUDENT");
+    expect(source).not.toContain("@/lib/demo/data");
+    expect(source).not.toContain("@/lib/demo/repository");
+    expect(source).toContain('await import("@/lib/demo/student")');
   });
 });

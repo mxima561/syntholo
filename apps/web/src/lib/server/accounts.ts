@@ -12,6 +12,7 @@ import {
 } from "@syntholo/db";
 import type { EffectiveAccess } from "@syntholo/domain";
 import { getReadyDb } from "@/lib/db/client";
+import { asAcademyUnavailable, isAcademyUnavailableError } from "@/lib/db/unavailable";
 
 export type AccountRole = "student";
 export type MembershipRole = "owner" | "teammate";
@@ -31,13 +32,6 @@ export type Account = {
   role: AccountRole;
   initials: string;
 };
-
-const DEMO_STUDENT = {
-  clerkId: "demo:maria",
-  email: "maria@northstar.example",
-  firstName: "Maria",
-  lastName: "Chen",
-} as const;
 
 export function isClerkConfigured(): boolean {
   return Boolean(
@@ -79,38 +73,36 @@ async function toAccount(row: Record<string, unknown>): Promise<Account> {
   };
 }
 
-async function upsertAccount(input: {
+export async function upsertAccount(input: {
   clerkId: string;
   email: string;
   firstName: string;
   lastName: string;
 }): Promise<Account> {
-  const db = await getReadyDb();
-  const email = input.email.toLowerCase();
+  try {
+    const db = await getReadyDb();
+    const email = input.email.toLowerCase();
 
-  const [row] = await db`
-    INSERT INTO app_users (clerk_id, email, first_name, last_name, role)
-    VALUES (${input.clerkId}, ${email}, ${input.firstName}, ${input.lastName}, 'student')
-    ON CONFLICT (email) DO UPDATE SET
-      clerk_id = EXCLUDED.clerk_id,
-      first_name = CASE WHEN app_users.first_name = '' THEN EXCLUDED.first_name ELSE app_users.first_name END,
-      last_name = CASE WHEN app_users.last_name = '' THEN EXCLUDED.last_name ELSE app_users.last_name END,
-      last_seen_at = now()
-    RETURNING id, public_id, email, first_name, last_name, business_name, job_title, timezone, role
-  `;
-  const account = await toAccount(row);
-  if (!row.public_id) {
-    await db`UPDATE app_users SET public_id = ${account.publicId} WHERE id = ${account.id} AND public_id IS NULL`;
+    const [row] = await db`
+      INSERT INTO app_users (clerk_id, email, first_name, last_name, role)
+      VALUES (${input.clerkId}, ${email}, ${input.firstName}, ${input.lastName}, 'student')
+      ON CONFLICT (email) DO UPDATE SET
+        clerk_id = EXCLUDED.clerk_id,
+        first_name = CASE WHEN app_users.first_name = '' THEN EXCLUDED.first_name ELSE app_users.first_name END,
+        last_name = CASE WHEN app_users.last_name = '' THEN EXCLUDED.last_name ELSE app_users.last_name END,
+        last_seen_at = now()
+      RETURNING id, public_id, email, first_name, last_name, business_name, job_title, timezone, role
+    `;
+    const account = await toAccount(row);
+    if (!row.public_id) {
+      await db`UPDATE app_users SET public_id = ${account.publicId} WHERE id = ${account.id} AND public_id IS NULL`;
+    }
+    const displayName = `${account.firstName} ${account.lastName}`.trim() || account.email;
+    await ensureStudentWorkspace({ userId: account.id, displayName });
+    return account;
+  } catch (error) {
+    throw asAcademyUnavailable(error);
   }
-  const displayName = `${account.firstName} ${account.lastName}`.trim() || account.email;
-  await ensureStudentWorkspace({ userId: account.id, displayName });
-  return account;
-}
-
-async function ensureDemoStudent(): Promise<Account> {
-  const account = await upsertAccount(DEMO_STUDENT);
-  await ensureDemoAcademyGrants(account.accountId, account.id);
-  return account;
 }
 
 /**
@@ -134,7 +126,8 @@ export const getCurrentAccount = cache(async (): Promise<Account | null> => {
       firstName: user.firstName?.trim() || "",
       lastName: user.lastName?.trim() || "",
     });
-  } catch {
+  } catch (error) {
+    if (isAcademyUnavailableError(error)) throw error;
     return null;
   }
 });
@@ -143,10 +136,11 @@ export async function requireStudentAccount(): Promise<Account> {
   const account = await getCurrentAccount();
   if (account) return account;
   if (canUseDemoStudent()) {
+    const { ensureDemoStudent } = await import("@/lib/demo/student");
     try {
       return await ensureDemoStudent();
-    } catch {
-      redirect("/signin");
+    } catch (error) {
+      throw asAcademyUnavailable(error);
     }
   }
   redirect("/signin");
@@ -154,11 +148,15 @@ export async function requireStudentAccount(): Promise<Account> {
 
 export const getAccountAccess = cache(async (): Promise<{ account: Account; access: EffectiveAccess }> => {
   const account = await requireStudentAccount();
-  if (canUseDemoStudent()) {
-    await ensureDemoAcademyGrants(account.accountId, account.id);
+  try {
+    if (canUseDemoStudent()) {
+      await ensureDemoAcademyGrants(account.accountId, account.id);
+    }
+    const access = await loadEffectiveAccess(account.accountId);
+    return { account, access };
+  } catch (error) {
+    throw asAcademyUnavailable(error);
   }
-  const access = await loadEffectiveAccess(account.accountId);
-  return { account, access };
 });
 
 /** Signed-in student with an active academy grant. Unpaid members go to pricing. */
