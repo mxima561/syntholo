@@ -6,6 +6,8 @@ import { getCurrentAccount } from "@/lib/server/accounts";
 import { getRuntimeEnv } from "@/lib/config/env";
 import { isOfferId, offers } from "@/lib/domain/offers";
 import { getStripeClient } from "@/lib/integrations/stripe";
+import { resolveCheckoutOffer } from "@/lib/commerce/checkout-state";
+import { loadCheckoutContext } from "@/lib/server/checkout";
 
 function text(formData: FormData, key: string): string {
   const value = formData.get(key);
@@ -25,9 +27,16 @@ export async function startCheckoutAction(formData: FormData) {
     redirect(`/checkout/${offerId}?error=email`);
   }
 
-  // Demo fallback keeps the preview journey usable before Stripe keys exist.
+  const resolved = resolveCheckoutOffer(offerId, await loadCheckoutContext(account), process.env);
+  if (!resolved) {
+    redirect("/pricing");
+  }
+  if (!resolved.allowed && resolved.reasonCode) {
+    redirect(`/checkout/${offerId}?error=${resolved.reasonCode}`);
+  }
+
   if (!getRuntimeEnv().stripe) {
-    redirect(`/claim?offer=${offerId}`);
+    redirect(`/checkout/${offerId}?error=stripe`);
   }
 
   const appUrl = getRuntimeEnv().appUrl.replace(/\/$/, "");
@@ -46,7 +55,7 @@ export async function startCheckoutAction(formData: FormData) {
     ],
     customer_email: email,
     client_reference_id: account?.id,
-    metadata: { offer: offer.id },
+    metadata: { offer: offer.id, offerCode: resolved.offer.code },
     success_url: `${appUrl}/claim?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${appUrl}/pricing`,
   });
@@ -54,6 +63,5 @@ export async function startCheckoutAction(formData: FormData) {
   if (!session.url) {
     redirect(`/checkout/${offerId}?error=stripe`);
   }
-  // Stripe-hosted checkout lives outside the app's route types.
   redirect(session.url as Route);
 }

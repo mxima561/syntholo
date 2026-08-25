@@ -13,6 +13,7 @@
   "dependencies": {
     "stripe": "^18.5.0",
     "@syntholo/db": "*",
+    "@syntholo/domain": "*",
     "@syntholo/contracts": "*",
     "fastify": "^5.12.1"
   },

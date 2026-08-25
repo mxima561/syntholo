@@ -12,6 +12,8 @@
     "./identity": "./src/identity.ts",
     "./next-action": "./src/next-action.ts",
     "./offers": "./src/offers.ts",
+    "./commerce": "./src/commerce/index.ts",
+    "./content": "./src/content/index.ts",
     "./types": "./src/types.ts"
   },
   "scripts": {
@@ -19,6 +21,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
+    "@types/node": "^24.7.2",
     "typescript": "^5.9.3",
     "vitest": "4.1.10"
   }
