@@ -178,10 +178,6 @@ const schemaStatements = [
       CHECK (status IN ('draft', 'published', 'archived'));
   EXCEPTION WHEN duplicate_object THEN NULL;
   END $$`,
-  `ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES app_users(id)`,
-  `UPDATE artifacts SET created_by_user_id = user_id WHERE created_by_user_id IS NULL`,
-  `ALTER TABLE workflows ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES app_users(id)`,
-  `UPDATE workflows SET created_by_user_id = user_id WHERE created_by_user_id IS NULL`,
   `CREATE TABLE IF NOT EXISTS lesson_progress (
     user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
     lesson_id TEXT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
@@ -315,6 +311,10 @@ const schemaStatements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
+  `ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES app_users(id)`,
+  `UPDATE artifacts SET created_by_user_id = user_id WHERE created_by_user_id IS NULL`,
+  `ALTER TABLE workflows ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES app_users(id)`,
+  `UPDATE workflows SET created_by_user_id = user_id WHERE created_by_user_id IS NULL`,
   `CREATE TABLE IF NOT EXISTS live_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
@@ -466,6 +466,10 @@ export async function getReadyDb(): Promise<DatabaseClient> {
     await bootstrapAccountModel(db);
     const { bootstrapOutboxModel } = await import("./outbox");
     await bootstrapOutboxModel(db);
+    const { bootstrapScorecardModel } = await import("./scorecards");
+    await bootstrapScorecardModel(db);
+    const { bootstrapPilotApplicationModel } = await import("./applications");
+    await bootstrapPilotApplicationModel(db);
   })().catch((error) => {
     readyPromise = undefined;
     throw error;

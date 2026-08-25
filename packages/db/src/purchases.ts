@@ -149,6 +149,8 @@ export async function fulfillCheckout(input: {
     }
     if (userId && accountId) {
       await applyOfferGrants(db, { accountId, userId, offerId: offer.id, purchaseId });
+      const { attachScorecardsForVerifiedEmail } = await import("./scorecards");
+      await attachScorecardsForVerifiedEmail(email, accountId, db);
     }
 
     await writeActivityEvent({

@@ -1,4 +1,44 @@
+export {
+  academyCurriculumOverrideEnabled,
+  assertCheckoutAuthorized,
+  capabilitiesCreatedBy,
+  CHECKOUT_ERROR_COPY,
+  CheckoutAuthorizationError,
+  checkoutErrorCopy,
+  evaluateOfferAvailability,
+  guestAccess,
+  isAcademyOffer,
+  isOfferCode,
+  isOperatorClubOffer,
+  listPublicOffers,
+  offerFromSlug,
+  offersByCode,
+  toPublicOfferDisplay,
+} from "./commerce";
+export type {
+  CheckoutEnv,
+  OfferAvailability,
+  OfferCode as CommerceOfferCode,
+  Offer as CommerceOffer,
+  OfferContext,
+  PilotAuthorization,
+} from "./commerce";
 export { academyCourse, allLessons } from "./course";
+export {
+  evaluateContentReadiness,
+  formatContentGateReport,
+  isHumanApprovalCurrent,
+  REQUIRED_ACADEMY_LESSONS,
+  snapshotFromAcademyCourse,
+  currentAcademyLaunchReadiness,
+  toContentLaunchReadiness,
+  validateLessonForPublication,
+} from "./content";
+export type { ContentLaunchReadiness, ContentReadinessReport, PublishedCourseSnapshot } from "./content";
+export { ApplicationTransitionError, transitionApplication, APPLICATION_STATUSES } from "./applications/review";
+export type { ApplicationStatus } from "./applications/review";
+export { normalizeAttribution } from "./commerce";
+export type { Attribution, AttributionTouch } from "./commerce";
 export type { DomainEvent, DomainEventName } from "./events";
 export { nextAttempt } from "./jobs";
 export {

@@ -631,30 +631,9 @@ export async function saveScorecard(input: {
   band: string;
   answers: Record<string, number>;
   marketingConsent: boolean;
-}): Promise<string> {
-  const db = await getReadyDb();
-  const [row] = await db`
-    INSERT INTO scorecard_submissions (
-      user_id, email, first_name, business_name, country, overall_score, band, answers_json, marketing_consent
-    )
-    VALUES (
-      ${input.userId ?? null}, ${input.email.toLowerCase()}, ${input.firstName}, ${input.businessName},
-      ${input.country}, ${input.overallScore}, ${input.band}, ${JSON.stringify(input.answers)}::jsonb,
-      ${input.marketingConsent}
-    )
-    RETURNING id
-  `;
-  await writeActivityEvent({
-    actorKind: input.userId ? "student" : "system",
-    actorId: input.userId ?? null,
-    actorLabel: `${input.firstName} <${input.email}>`,
-    action: "scorecard_submitted",
-    targetType: "scorecard",
-    targetId: String(row.id),
-    summary: `${input.firstName} submitted a readiness scorecard (${input.band}, ${input.overallScore})`,
-    metadata: { band: input.band, overallScore: input.overallScore, businessName: input.businessName },
-  });
-  return String(row.id);
+}) {
+  const { persistScorecardLead } = await import("./scorecards");
+  return persistScorecardLead(input);
 }
 
 export async function listScorecards(limit = 50): Promise<ScorecardSubmission[]> {

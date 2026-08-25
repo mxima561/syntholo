@@ -10,13 +10,14 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: "@", replacement: fileURLToPath(new URL("./src", import.meta.url)) },
-    { find: "@syntholo/auth/config", replacement: fileURLToPath(new URL("../../packages/auth/src/config.ts", import.meta.url)) },
-    { find: "@syntholo/auth/server", replacement: fileURLToPath(new URL("../../packages/auth/src/server.ts", import.meta.url)) },
-    { find: "@syntholo/auth/client", replacement: fileURLToPath(new URL("../../packages/auth/src/client.ts", import.meta.url)) },
-    { find: "@syntholo/auth/neon", replacement: fileURLToPath(new URL("../../packages/auth/src/neon.ts", import.meta.url)) },
-    { find: "@syntholo/db", replacement: fileURLToPath(new URL("../../packages/db/src", import.meta.url)) },
-    { find: "@syntholo/domain", replacement: fileURLToPath(new URL("../../packages/domain/src", import.meta.url)) },
-    { find: "@syntholo/contracts", replacement: fileURLToPath(new URL("../../packages/contracts/src", import.meta.url)) },
+      { find: "next/headers", replacement: fileURLToPath(new URL("../../node_modules/next/headers.js", import.meta.url)) },
+      { find: "@syntholo/auth/config", replacement: fileURLToPath(new URL("../../packages/auth/src/config.ts", import.meta.url)) },
+      { find: "@syntholo/auth/server", replacement: fileURLToPath(new URL("../../packages/auth/src/server.ts", import.meta.url)) },
+      { find: "@syntholo/auth/client", replacement: fileURLToPath(new URL("../../packages/auth/src/client.ts", import.meta.url)) },
+      { find: "@syntholo/auth/neon", replacement: fileURLToPath(new URL("../../packages/auth/src/neon.ts", import.meta.url)) },
+      { find: "@syntholo/db", replacement: fileURLToPath(new URL("../../packages/db/src", import.meta.url)) },
+      { find: "@syntholo/domain", replacement: fileURLToPath(new URL("../../packages/domain/src", import.meta.url)) },
+      { find: "@syntholo/contracts", replacement: fileURLToPath(new URL("../../packages/contracts/src", import.meta.url)) },
     ],
   },
 });

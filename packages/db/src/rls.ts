@@ -252,6 +252,9 @@ export const CATALOG_RLS_SQL = `
   ALTER TABLE courses FORCE ROW LEVEL SECURITY;
   DROP POLICY IF EXISTS courses_select ON courses;
   DROP POLICY IF EXISTS courses_write ON courses;
+  DROP POLICY IF EXISTS courses_insert ON courses;
+  DROP POLICY IF EXISTS courses_update ON courses;
+  DROP POLICY IF EXISTS courses_delete ON courses;
   CREATE POLICY courses_select ON courses FOR SELECT USING (
     app.is_privileged_actor()
     OR status = 'published'

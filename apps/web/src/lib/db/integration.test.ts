@@ -1,6 +1,12 @@
 import postgres from "postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { DatabaseClient } from "@/lib/db/client";
+
+vi.mock("@/lib/data-api/customer", () => ({
+  dataApiSetLessonProgress: async () => false,
+  dataApiUpdateProfile: async () => false,
+  getCustomerDataClient: async () => null,
+}));
 
 const TEST_DATABASE_URL = "postgresql://syntholo@localhost:54329/syntholo_test";
 

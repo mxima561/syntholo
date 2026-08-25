@@ -1,6 +1,16 @@
-import { describe, expect, it } from "vitest";
-import { staffHasCapability } from "./staff";
+import { describe, expect, it, vi } from "vitest";
 import type { StaffRole } from "@syntholo/db";
+import { staffHasCapability } from "./staff";
+
+vi.mock("next/headers", () => ({
+  headers: async () => new Headers(),
+  cookies: async () => ({ get: () => undefined }),
+}));
+
+vi.mock("@syntholo/auth/server", () => ({
+  getNeonAuthUser: vi.fn(),
+  getNeonAuth: vi.fn(() => null),
+}));
 
 describe("staffHasCapability", () => {
   it("super_admin has billing/content/support/staff", () => {

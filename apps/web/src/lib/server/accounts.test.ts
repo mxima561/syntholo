@@ -3,6 +3,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { isNeonAuthConfigured } from "@syntholo/auth/config";
 import { canUseDemoStudent } from "./accounts";
 
+vi.mock("@syntholo/auth/server", () => ({
+  getNeonAuthUser: vi.fn(),
+  getNeonAuth: vi.fn(() => null),
+}));
+
+vi.mock("next/headers", () => ({
+  headers: async () => new Headers(),
+  cookies: async () => ({ get: () => undefined }),
+}));
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
