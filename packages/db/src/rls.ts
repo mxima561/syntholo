@@ -32,7 +32,7 @@ export const RLS_HELPER_SQL = [
        END IF;
      EXCEPTION
        WHEN undefined_function THEN NULL;
-       WHEN undefined_schema THEN NULL;
+       WHEN SQLSTATE '3F000' THEN NULL;
      END;
 
      claims := current_setting('request.jwt.claims', true);

@@ -1,6 +1,8 @@
 .DS_Store
 .env
 .env.local
+.neon
+.vercel
 .next/
 node_modules/
 coverage/
@@ -11,3 +13,4 @@ work/
 .superpowers/
 .worktrees/
 graphify-out/
+.env*
