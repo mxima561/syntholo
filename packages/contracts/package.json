@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./health": "./src/health.ts",
-    "./http": "./src/http.ts"
+    "./http": "./src/http.ts",
+    "./content/readiness": "./src/content/readiness.ts",
+    "./commerce/offers": "./src/commerce/offers.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

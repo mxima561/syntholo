@@ -9,16 +9,19 @@ import { fulfillCheckout } from "@/lib/server/purchases";
 export const dynamic = "force-dynamic";
 
 type ClaimState = {
-  mode: "paid" | "demo" | "pending" | "error" | "mismatch";
+  mode: "paid" | "missing" | "pending" | "error" | "mismatch";
   offerName: string;
   detail?: string;
   checkoutEmail?: string;
 };
 
-async function resolveClaim(sessionId: string | undefined, legacyOffer: string | undefined): Promise<ClaimState> {
+async function resolveClaim(sessionId: string | undefined): Promise<ClaimState> {
   if (!sessionId) {
-    const demoOffer = legacyOffer && isOfferId(legacyOffer) ? offers[legacyOffer] : null;
-    return { mode: "demo", offerName: demoOffer?.name ?? "Syntholo Academy" };
+    return {
+      mode: "missing",
+      offerName: "Your order",
+      detail: "A completed checkout session is required to claim access. This page does not grant Academy access.",
+    };
   }
 
   if (!getRuntimeEnv().stripe) {
@@ -58,25 +61,25 @@ async function resolveClaim(sessionId: string | undefined, legacyOffer: string |
 }
 
 export default async function ClaimPage({ searchParams }: { searchParams: Promise<{ session_id?: string; offer?: string }> }) {
-  const { session_id, offer } = await searchParams;
-  const state = await resolveClaim(session_id, offer);
+  const { session_id } = await searchParams;
+  const state = await resolveClaim(session_id);
   const account = await getCurrentAccount();
   const mismatch = state.mode === "paid" && account && state.checkoutEmail && account.email !== state.checkoutEmail;
-  const href = mismatch ? "/signin" : state.mode === "paid" || state.mode === "demo" ? (account ? "/learn" : "/signin") : "/pricing";
-  const cta = mismatch ? "Use the checkout email" : state.mode === "paid" ? (account ? "Open your academy" : "Sign in to claim") : "Continue";
+  const href = mismatch ? "/signin" : state.mode === "paid" ? (account ? "/learn" : "/signin") : "/pricing";
+  const cta = mismatch ? "Use the checkout email" : state.mode === "paid" ? (account ? "Open your academy" : "Sign in to claim") : "See pricing";
 
   return (
     <main className="claim-page">
       <section className="claim-card">
         <span className="success-icon"><CheckCircle2 aria-hidden size={25} /></span>
         <span className="micro-label">
-          {state.mode === "paid" ? "PAYMENT CONFIRMED" : state.mode === "demo" ? "DEMO PURCHASE CONFIRMED" : state.mode === "pending" ? "PAYMENT PENDING" : "CHECKOUT ISSUE"}
+          {state.mode === "paid" ? "PAYMENT CONFIRMED" : state.mode === "pending" ? "PAYMENT PENDING" : state.mode === "missing" ? "CHECKOUT REQUIRED" : "CHECKOUT ISSUE"}
         </span>
         <h1>
           {state.mode === "paid"
             ? `${state.offerName} access is active.`
-            : state.mode === "demo"
-              ? "Demo purchase confirmed."
+            : state.mode === "missing"
+              ? "A checkout session is required."
               : state.mode === "pending"
                 ? "Payment not finished yet."
                 : "We could not confirm this payment."}
@@ -91,7 +94,6 @@ export default async function ClaimPage({ searchParams }: { searchParams: Promis
         <Button href={href} size="large">
           {cta} <ArrowRight aria-hidden size={16} />
         </Button>
-        {state.mode === "demo" ? <p className="privacy-note">Preview mode: no charge was made. Configure Stripe test keys to enable real checkout.</p> : null}
       </section>
     </main>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { handleStripeWebhook, MemoryWebhookReceiptStore } from "./route";
+import { handleStripeWebhook, MemoryWebhookReceiptStore } from "@syntholo/contracts";
 
 describe("handleStripeWebhook", () => {
   it("rejects a missing signature", async () => {

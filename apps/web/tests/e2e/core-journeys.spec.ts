@@ -62,7 +62,7 @@ test("public student path stays on the marketing origin", async ({ page }) => {
     ["/", /put ai to work across your business/i],
     ["/pricing", /start with the academy/i],
     ["/checkout/operator-club", /operator club/i],
-    ["/claim", /demo purchase confirmed/i],
+    ["/claim", /a checkout session is required/i],
     ["/signin", /sign-in needs clerk/i],
     ["/privacy", /privacy at syntholo/i],
     ["/terms", /terms of service/i],
