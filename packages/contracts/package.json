@@ -8,7 +8,10 @@
     "./health": "./src/health.ts",
     "./http": "./src/http.ts",
     "./content/readiness": "./src/content/readiness.ts",
-    "./commerce/offers": "./src/commerce/offers.ts"
+    "./commerce/offers": "./src/commerce/offers.ts",
+    "./commerce/attribution": "./src/commerce/attribution.ts",
+    "./commerce/scorecards": "./src/commerce/scorecards.ts",
+    "./commerce/applications": "./src/commerce/applications.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

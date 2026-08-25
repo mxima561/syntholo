@@ -405,6 +405,10 @@ export async function getReadyDb(): Promise<DatabaseClient> {
     await bootstrapAccountModel(db);
     const { bootstrapOutboxModel } = await import("./outbox");
     await bootstrapOutboxModel(db);
+    const { bootstrapScorecardModel } = await import("./scorecards");
+    await bootstrapScorecardModel(db);
+    const { bootstrapPilotApplicationModel } = await import("./applications");
+    await bootstrapPilotApplicationModel(db);
   })().catch((error) => {
     readyPromise = undefined;
     throw error;

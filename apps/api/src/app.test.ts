@@ -88,4 +88,43 @@ describe("api health", () => {
     expect(response.json().error.code).toBe("CURRICULUM_GATE_BLOCKED");
     await app.close();
   });
+
+  it("rejects a scorecard without an explicit marketing-consent decision", async () => {
+    const app = buildApi();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/public/scorecards",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify({
+        firstName: "Maria",
+        email: "maria@example.com",
+        businessName: "Northstar",
+        country: "United States",
+        overallScore: 50,
+        band: "Building",
+        answers: { q1: 2 },
+      }),
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_INPUT");
+    await app.close();
+  });
+
+  it("rejects a Pilot application that skips required fields", async () => {
+    const app = buildApi();
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/public/pilot-applications",
+      headers: { "content-type": "application/json" },
+      payload: JSON.stringify({
+        firstName: "Maria",
+        email: "maria@example.com",
+        marketingConsent: true,
+        goals: "x".repeat(5_001),
+      }),
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error.code).toBe("INVALID_INPUT");
+    await app.close();
+  });
 });

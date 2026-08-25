@@ -35,6 +35,10 @@ export {
   validateLessonForPublication,
 } from "./content";
 export type { ContentLaunchReadiness, ContentReadinessReport, PublishedCourseSnapshot } from "./content";
+export { ApplicationTransitionError, transitionApplication, APPLICATION_STATUSES } from "./applications/review";
+export type { ApplicationStatus } from "./applications/review";
+export { normalizeAttribution } from "./commerce";
+export type { Attribution, AttributionTouch } from "./commerce";
 export type { DomainEvent, DomainEventName } from "./events";
 export { nextAttempt } from "./jobs";
 export {

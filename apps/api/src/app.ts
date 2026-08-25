@@ -1,5 +1,5 @@
 import Fastify from "fastify";
-import { CreateCheckoutInputSchema, handleStripeWebhook, healthPayload } from "@syntholo/contracts";
+import { CreateCheckoutInputSchema, handleStripeWebhook, healthPayload, PilotApplicationInputSchema, ScorecardLeadInputSchema } from "@syntholo/contracts";
 import {
   CheckoutAuthorizationError,
   guestAccess,
@@ -72,6 +72,64 @@ export function buildApi() {
 
   app.get("/v1/public/offers", async () => {
     return { offers: listPublicOffers(publicOfferContext()) };
+  });
+
+  app.post("/v1/public/scorecards", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers);
+    const body = parseJsonObject(request.body);
+    if (!body) return reply.code(400).send(apiError("INVALID_JSON", correlationId));
+    const parsed = ScorecardLeadInputSchema.safeParse(body);
+    if (!parsed.success) return reply.code(400).send(apiError("INVALID_INPUT", correlationId));
+    try {
+      const { persistScorecardLead } = await import("@syntholo/db");
+      const saved = await persistScorecardLead(parsed.data);
+      return {
+        ok: true,
+        reportToken: saved.reportToken,
+        expiresAt: saved.expiresAt.toISOString(),
+        report: { overallScore: parsed.data.overallScore, band: parsed.data.band },
+      };
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("DATABASE_URL")) {
+        return reply.code(503).send(apiError("ACADEMY_UNAVAILABLE", correlationId, "Academy is temporarily unavailable."));
+      }
+      throw error;
+    }
+  });
+
+  app.get("/v1/public/scorecards/:reportToken", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers);
+    const reportToken = (request.params as { reportToken?: string }).reportToken ?? "";
+    if (!reportToken) return reply.code(400).send(apiError("INVALID_INPUT", correlationId));
+    try {
+      const { getPublicScorecardReport } = await import("@syntholo/db");
+      const report = await getPublicScorecardReport(reportToken);
+      if (!report) return reply.code(404).send(apiError("REPORT_NOT_FOUND", correlationId, "This report link is missing or has expired."));
+      return { ok: true, report };
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("DATABASE_URL")) {
+        return reply.code(503).send(apiError("ACADEMY_UNAVAILABLE", correlationId, "Academy is temporarily unavailable."));
+      }
+      throw error;
+    }
+  });
+
+  app.post("/v1/public/pilot-applications", async (request, reply) => {
+    const correlationId = correlationIdFrom(request.headers);
+    const body = parseJsonObject(request.body);
+    if (!body) return reply.code(400).send(apiError("INVALID_JSON", correlationId));
+    const parsed = PilotApplicationInputSchema.safeParse(body);
+    if (!parsed.success) return reply.code(400).send(apiError("INVALID_INPUT", correlationId));
+    try {
+      const { submitPilotApplication } = await import("@syntholo/db");
+      const saved = await submitPilotApplication(parsed.data);
+      return { ok: true, id: saved.id, status: saved.status };
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("DATABASE_URL")) {
+        return reply.code(503).send(apiError("ACADEMY_UNAVAILABLE", correlationId, "Academy is temporarily unavailable."));
+      }
+      throw error;
+    }
   });
 
   app.post("/v1/public/checkout", async (request, reply) => {

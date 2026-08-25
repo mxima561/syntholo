@@ -130,4 +130,8 @@ export type {
   WorkflowRecord,
   WorkflowStatus,
 } from "./school";
+export { persistScorecardLead, getPublicScorecardReport, attachScorecardsForVerifiedEmail } from "./scorecards";
+export type { PersistedScorecard, PublicScorecardReport } from "./scorecards";
+export { submitPilotApplication, reviewPilotApplication } from "./applications";
+export type { PilotApplicationRecord } from "./applications";
 export { DEFAULT_SOFTWARE_CHECKLIST, ARTIFACT_STARTERS, upcomingOfficeHours } from "./catalog";

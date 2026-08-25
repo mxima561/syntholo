@@ -15,7 +15,7 @@ export async function submitScorecardAction(input: {
   if (!input.firstName.trim() || !input.email.trim() || !input.businessName.trim() || !input.country.trim()) {
     return { ok: false as const };
   }
-  await saveScorecard({
+  const saved = await saveScorecard({
     email: input.email.trim(),
     firstName: input.firstName.trim(),
     businessName: input.businessName.trim(),
@@ -23,7 +23,7 @@ export async function submitScorecardAction(input: {
     overallScore: input.overallScore,
     band: input.band,
     answers: input.answers,
-    marketingConsent: input.marketingConsent,
+    marketingConsent: input.marketingConsent === true,
   });
-  return { ok: true as const };
+  return { ok: true as const, reportToken: saved.reportToken, expiresAt: saved.expiresAt.toISOString() };
 }

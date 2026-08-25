@@ -15,6 +15,7 @@ export function ScorecardClient() {
   const [stage, setStage] = useState<AssessmentStage>("questions");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [reportToken, setReportToken] = useState<string | null>(null);
   const question = scorecardQuestions[currentIndex];
   const result = calculateScore(answers);
 
@@ -60,6 +61,11 @@ export function ScorecardClient() {
           <div><span className="micro-label light">RECOMMENDED NEXT STEP</span><h2>Install your AI operating rhythm in 30 days.</h2></div>
           <Button href="/pricing" size="large" variant="secondary">See the academy <ArrowRight aria-hidden size={17} /></Button>
         </div>
+        {reportToken ? (
+          <p className="privacy-note">
+            Keep this 30-day report link: <a href={`/scorecard/r/${reportToken}`}>Open saved report</a>
+          </p>
+        ) : null}
       </section>
     );
   }
@@ -92,6 +98,7 @@ export function ScorecardClient() {
                 setError("Enter your name, work email, business, and country to save the report.");
                 return;
               }
+              setReportToken(saved.reportToken);
               setStage("report");
             });
           }}

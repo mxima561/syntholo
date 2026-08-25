@@ -8,6 +8,8 @@ export {
   checkoutErrorCopy,
 } from "./checkout";
 export type { CheckoutEnv, CheckoutErrorCode, PilotAuthorization, PilotAuthorizationStatus } from "./checkout";
+export { normalizeAttribution } from "./attribution";
+export type { Attribution, AttributionTouch } from "./attribution";
 export {
   ACADEMY_OFFER_CODES,
   capabilitiesCreatedBy,
