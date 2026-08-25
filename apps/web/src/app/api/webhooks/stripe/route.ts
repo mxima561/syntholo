@@ -4,8 +4,6 @@ import { dispatchStripeEvent, PgWebhookReceiptStore } from "@syntholo/db";
 import { getRuntimeEnv } from "@/lib/config/env";
 import { getStripeClient } from "@/lib/integrations/stripe";
 
-export { handleStripeWebhook, MemoryWebhookReceiptStore };
-
 const runtimeReceipts = new MemoryWebhookReceiptStore();
 const postgresReceipts = new PgWebhookReceiptStore();
 
