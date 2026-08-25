@@ -1,3 +1,5 @@
+import type { EffectiveAccess } from "@syntholo/domain";
+import { loadEffectiveAccess } from "./access";
 import { ensureAccountForUser } from "./accounts";
 import { refundGrantsForPurchase, revokeEntitlementGrants, upsertEntitlementGrant } from "./entitlements";
 import { withStaffScope } from "./scope";
@@ -104,8 +106,8 @@ export async function listPaidPurchases(limit = 50): Promise<PurchaseSnapshot[]>
   });
 }
 
-export async function grantCourseEntitlement(userId: string, courseId: string): Promise<void> {
-  await withStaffScope(async (db) => {
+export async function grantCourseEntitlement(userId: string, courseId: string): Promise<EffectiveAccess> {
+  return withStaffScope(async (db) => {
     const membership = await ensureAccountForUser(userId, {}, db);
     await db`
       INSERT INTO enrollments (account_id, user_id, course_id)
@@ -116,14 +118,16 @@ export async function grantCourseEntitlement(userId: string, courseId: string): 
       { accountId: membership.accountId, userId, capability: "academy_course", source: "admin" },
       db,
     );
+    return loadEffectiveAccess(membership.accountId, new Date(), db);
   });
 }
 
-export async function revokeCourseEntitlement(userId: string, courseId: string): Promise<void> {
-  await withStaffScope(async (db) => {
+export async function revokeCourseEntitlement(userId: string, courseId: string): Promise<EffectiveAccess> {
+  return withStaffScope(async (db) => {
     const membership = await ensureAccountForUser(userId, {}, db);
     await db`DELETE FROM enrollments WHERE user_id = ${userId} AND course_id = ${courseId}`;
     await revokeEntitlementGrants(membership.accountId, "academy_course", db);
+    return loadEffectiveAccess(membership.accountId, new Date(), db);
   });
 }
 

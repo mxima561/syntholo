@@ -9,6 +9,14 @@ export function buildApi() {
   });
   app.get("/health", async () => healthPayload("api"));
 
+  app.get("/v1/member/access", async (request, reply) => {
+    const query = request.query as Record<string, unknown> | undefined;
+    if (query && Object.prototype.hasOwnProperty.call(query, "accountId")) {
+      return reply.code(400).send({ ok: false, error: "accountId is not accepted on this route." });
+    }
+    return reply.code(401).send({ ok: false, error: "Member authentication is required." });
+  });
+
   app.post("/webhooks/stripe", async (request, reply) => {
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET?.trim();
     const stripeSecret = process.env.STRIPE_SECRET_KEY?.trim();

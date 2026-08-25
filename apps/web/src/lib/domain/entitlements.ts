@@ -1,1 +1,1 @@
-export { canAccess } from "@syntholo/domain/entitlements";
+export { canAccess, evaluateEntitlements } from "@syntholo/domain/entitlements";

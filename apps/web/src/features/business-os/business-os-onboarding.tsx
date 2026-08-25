@@ -20,7 +20,15 @@ export type OnboardingAccount = {
   checklist: Array<{ id: string; label: string; complete: boolean }>;
 };
 
-export function BusinessOsOnboarding({ initialAccount }: { initialAccount: OnboardingAccount }) {
+export function BusinessOsOnboarding({
+  initialAccount,
+  canActivate = true,
+  lockedMessage,
+}: {
+  initialAccount: OnboardingAccount;
+  canActivate?: boolean;
+  lockedMessage?: string;
+}) {
   const [account, setAccount] = useState(initialAccount);
   const [pending, startTransition] = useTransition();
   const percent = useMemo(() => Math.round((account.checklist.filter((item) => item.complete).length / Math.max(account.checklist.length, 1)) * 100), [account.checklist]);
@@ -97,6 +105,16 @@ export function BusinessOsOnboarding({ initialAccount }: { initialAccount: Onboa
         <div className="partner-disclosure"><ShieldCheck size={16} /><p><strong>Clear relationship:</strong> Syntholo provides the configuration and support. The underlying software platform is HighLevel. The $199 monthly subscription renews until canceled.</p></div>
       </section>
       <aside className="onboarding-panel">
+        {!canActivate ? (
+          <>
+            <div className="onboarding-head">
+              <span className="micro-label">Activation</span>
+              <h2>Business OS is not active on this account.</h2>
+              <p>{lockedMessage ?? "Academy access does not include Business OS activation."}</p>
+            </div>
+          </>
+        ) : (
+          <>
         <div className="onboarding-head">
           <span className="micro-label">Setup questionnaire</span>
           <h2>Tell us how your business works.</h2>
@@ -113,6 +131,8 @@ export function BusinessOsOnboarding({ initialAccount }: { initialAccount: Onboa
         ))}</div>
         <Button disabled={pending || percent < 100} onClick={submit} variant="milestone">Submit for provisioning <ArrowRight size={14} /></Button>
         <small className="onboarding-note">Missing access or third-party verification pauses the five-business-day clock.</small>
+          </>
+        )}
       </aside>
     </div>
   );

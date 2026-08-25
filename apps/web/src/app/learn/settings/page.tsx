@@ -1,4 +1,4 @@
-import { requireStudentAccount } from "@/lib/server/accounts";
+import { requireAcademyAccess } from "@/lib/server/accounts";
 import { getPrimaryCourse } from "@/lib/server/courses";
 import { getCertificate, listPendingInvitations, listSeatMembers } from "@syntholo/db";
 import { remainingAcademySeats } from "@syntholo/domain";
@@ -12,7 +12,7 @@ import type { Route } from "next";
 export const dynamic = "force-dynamic";
 
 export default async function SettingsPage() {
-  const account = await requireStudentAccount();
+  const { account, access } = await requireAcademyAccess();
   const course = await getPrimaryCourse();
   const [purchases, certificate, members, invites] = await Promise.all([
     getPurchasesForUser(account.id),
@@ -20,8 +20,9 @@ export default async function SettingsPage() {
     listSeatMembers(account.accountId),
     listPendingInvitations(account.accountId),
   ]);
-  const occupied = members.length + invites.length;
+  const occupied = access.reservedSeats;
   const remaining = remainingAcademySeats(occupied);
+  const seatChangesHeld = access.holds.includes("seat_changes");
 
   return (
     <div className="member-page simple-page">
@@ -36,7 +37,12 @@ export default async function SettingsPage() {
         <section>
           <span className="micro-label">Access</span>
           <h2>Academy access</h2>
-          <p>Enrolled in {course?.title ?? "the academy"}. Lifetime course access.</p>
+          <p>
+            {access.capabilities.academy_course
+              ? "Lifetime course access is active on this account."
+              : "Academy access is not active."}
+            {access.capabilities.support ? " Support is included." : " The support window is not active."}
+          </p>
           {certificate ? <p><Link href={"/learn/certificate" as Route}>Certificate issued {certificate.issuedAt.toLocaleDateString("en-US")}</Link></p> : null}
         </section>
         <section className="settings-span">
@@ -67,7 +73,7 @@ export default async function SettingsPage() {
                   {member.firstName} {member.lastName} · {member.email} · {member.role}
                   {member.id === account.membershipId ? " (you)" : ""}
                 </span>
-                {account.membershipRole === "owner" && member.id !== account.membershipId ? (
+                {account.membershipRole === "owner" && member.id !== account.membershipId && !seatChangesHeld ? (
                   <form action={revokeMembershipAction}>
                     <input type="hidden" name="membershipId" value={member.id} />
                     <Button size="small" type="submit" variant="secondary">Remove</Button>
@@ -78,7 +84,7 @@ export default async function SettingsPage() {
             {invites.map((invite) => (
               <li key={invite.id}>
                 <span>{invite.email} · pending invite</span>
-                {account.membershipRole === "owner" ? (
+                {account.membershipRole === "owner" && !seatChangesHeld ? (
                   <form action={revokeInvitationAction}>
                     <input type="hidden" name="invitationId" value={invite.id} />
                     <Button size="small" type="submit" variant="secondary">Revoke</Button>
@@ -87,7 +93,8 @@ export default async function SettingsPage() {
               </li>
             ))}
           </ul>
-          {account.membershipRole === "owner" && remaining > 0 ? <InviteTeammateForm /> : null}
+          {seatChangesHeld ? <p>Seat changes are on hold for this account.</p> : null}
+          {account.membershipRole === "owner" && remaining > 0 && !seatChangesHeld ? <InviteTeammateForm /> : null}
         </section>
         <section>
           <span className="micro-label">Purchases</span>

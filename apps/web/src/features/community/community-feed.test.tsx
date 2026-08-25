@@ -56,4 +56,16 @@ describe("CommunityFeed", () => {
     expect(toggleLikeAction).toHaveBeenCalledWith("post-1");
     expect(await screen.findByText("4")).toBeInTheDocument();
   });
+
+  it("hides the composer when community write is not included", () => {
+    render(
+      <CommunityFeed
+        canWrite={false}
+        identity={{ name: "Test Owner", initials: "TO", business: "Test Co" }}
+        initialPosts={seedPosts}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: /share an update/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/community posting is not included/i)).toBeInTheDocument();
+  });
 });

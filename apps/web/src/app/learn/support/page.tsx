@@ -1,11 +1,11 @@
 import { SupportInbox } from "@/features/support/support-inbox";
-import { requireStudentAccount } from "@/lib/server/accounts";
+import { requireAcademyAccess } from "@/lib/server/accounts";
 import { getThreadMessages, listThreadsForUser } from "@/lib/server/support";
 
 export const dynamic = "force-dynamic";
 
 export default async function SupportPage() {
-  const account = await requireStudentAccount();
+  const { account, access } = await requireAcademyAccess();
   const summaries = await listThreadsForUser(account.id);
   const threadsWithMessages = await Promise.all(
     summaries.map(async (summary) => ({
@@ -38,6 +38,7 @@ export default async function SupportPage() {
         </div>
       </section>
       <SupportInbox
+        canWrite={access.capabilities.support}
         identity={{
           name: `${account.firstName} ${account.lastName}`.trim() || account.email,
           initials: account.initials,

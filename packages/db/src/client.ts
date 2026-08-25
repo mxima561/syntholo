@@ -79,7 +79,10 @@ const schemaStatements = [
    ON CONFLICT (email) DO NOTHING`,
   `UPDATE app_users SET role = 'student' WHERE role IS DISTINCT FROM 'student'`,
   `ALTER TABLE app_users DROP CONSTRAINT IF EXISTS app_users_role_check`,
-  `ALTER TABLE app_users ADD CONSTRAINT app_users_role_check CHECK (role IN ('student'))`,
+  `DO $$ BEGIN
+    ALTER TABLE app_users ADD CONSTRAINT app_users_role_check CHECK (role IN ('student'));
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$`,
   `CREATE TABLE IF NOT EXISTS courses (
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
@@ -406,4 +409,12 @@ export async function getReadyDb(): Promise<DatabaseClient> {
   });
   await readyPromise;
   return db;
+}
+
+export async function closeDb() {
+  if (!client) return;
+  const current = client;
+  client = undefined;
+  readyPromise = undefined;
+  await current.end({ timeout: 1 }).catch(() => undefined);
 }

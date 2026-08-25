@@ -21,7 +21,8 @@ import {
   type WorkflowEngine,
   type WorkflowStatus,
 } from "@syntholo/db";
-import { requireAcademyAccount, type Account } from "@/lib/server/accounts";
+import { assertCapability, assertHoldClear, type GrantCapability } from "@syntholo/domain";
+import { requireAcademyAccess, type Account } from "@/lib/server/accounts";
 import { getRuntimeEnv } from "@/lib/config/env";
 import {
   setLessonProgress,
@@ -30,6 +31,12 @@ import {
 } from "@/lib/server/courses";
 import { createCommunityPost, toggleCommunityReaction } from "@/lib/server/community";
 import { createSupportThread, addCustomerReply } from "@/lib/server/support";
+
+async function requireMemberAction(capability?: GrantCapability) {
+  const { account, access } = await requireAcademyAccess();
+  if (capability) assertCapability(access, capability);
+  return { account, access };
+}
 
 async function logStudent(
   account: Account,
@@ -57,7 +64,7 @@ function displayName(account: Account) {
 }
 
 export async function setLessonCompleteAction(lessonId: string, complete: boolean) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction();
   const course = await getPrimaryCourse();
   if (course) await ensureEnrollment(account.id, course.id);
   await setLessonProgress(account.id, lessonId, complete);
@@ -80,7 +87,7 @@ export async function setLessonCompleteAction(lessonId: string, complete: boolea
 }
 
 export async function createPostAction(formData: FormData) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction("circle_write");
   const title = String(formData.get("title") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
   const space = String(formData.get("space") ?? "Implementation Wins").trim() || "Implementation Wins";
@@ -99,7 +106,7 @@ export async function createPostAction(formData: FormData) {
 }
 
 export async function toggleLikeAction(postId: string) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction("circle_write");
   const result = await toggleCommunityReaction(postId, account.id);
   await logStudent(account, result.liked ? "community_like" : "community_unlike", "community_post", postId, `${displayName(account)} ${result.liked ? "liked" : "unliked"} a post`);
   revalidatePath("/learn/community");
@@ -107,7 +114,7 @@ export async function toggleLikeAction(postId: string) {
 }
 
 export async function commentOnPostAction(formData: FormData) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction("circle_write");
   const postId = String(formData.get("postId") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
   if (!postId || !body) return;
@@ -123,7 +130,7 @@ export async function commentOnPostAction(formData: FormData) {
 }
 
 export async function reportPostAction(postId: string) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction("circle_write");
   await reportCommunityPost(postId, account.id, "reported_by_member");
   await logStudent(account, "community_report", "community_post", postId, `${displayName(account)} reported a post`);
   revalidatePath("/learn/community");
@@ -131,7 +138,7 @@ export async function reportPostAction(postId: string) {
 }
 
 export async function createThreadAction(formData: FormData) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction("support");
   const subject = String(formData.get("subject") ?? "").trim();
   const body = String(formData.get("message") ?? "").trim();
   if (!subject || !body) return;
@@ -146,7 +153,7 @@ export async function createThreadAction(formData: FormData) {
 }
 
 export async function replyToThreadAction(formData: FormData) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction("support");
   const threadId = String(formData.get("threadId") ?? "").trim();
   const body = String(formData.get("body") ?? "").trim();
   if (!threadId || !body) return;
@@ -161,7 +168,7 @@ export async function replyToThreadAction(formData: FormData) {
 }
 
 export async function saveArtifactAction(formData: FormData) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction();
   const artifactId = String(formData.get("artifactId") ?? "").trim();
   const body = String(formData.get("body") ?? "");
   const finalize = String(formData.get("finalize") ?? "") === "1";
@@ -186,7 +193,7 @@ export async function saveArtifactAction(formData: FormData) {
 }
 
 export async function requestArtifactReviewAction(formData: FormData) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction("support");
   const artifactId = String(formData.get("artifactId") ?? "").trim();
   const body = String(formData.get("body") ?? "");
   const question = String(formData.get("question") ?? "").trim() || "Please review this version.";
@@ -212,7 +219,7 @@ export async function requestArtifactReviewAction(formData: FormData) {
 }
 
 export async function createWorkflowAction(formData: FormData) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction();
   const name = String(formData.get("name") ?? "").trim();
   const engine = String(formData.get("engine") ?? "growth") as WorkflowEngine;
   if (!name) return;
@@ -227,7 +234,7 @@ export async function createWorkflowAction(formData: FormData) {
 }
 
 export async function saveWorkflowAction(formData: FormData) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction();
   const workflowId = String(formData.get("workflowId") ?? "").trim();
   if (!workflowId) return;
   const saved = await updateWorkflow({
@@ -248,7 +255,7 @@ export async function saveWorkflowAction(formData: FormData) {
 }
 
 export async function setWorkflowStatusAction(workflowId: string, status: WorkflowStatus) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction();
   const saved = await setWorkflowStatus({ workflowId, userId: account.id, status });
   if (saved) {
     await logStudent(account, "workflow_status", "workflow", saved.id, `${displayName(account)} moved ${saved.name} to ${status}`);
@@ -258,7 +265,7 @@ export async function setWorkflowStatusAction(workflowId: string, status: Workfl
 }
 
 export async function rsvpSessionAction(sessionId: string) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction();
   const created = await rsvpLiveSession(sessionId, account.id);
   if (created) {
     await logStudent(account, "session_rsvp", "live_session", sessionId, `${displayName(account)} reserved a live session seat`);
@@ -268,13 +275,15 @@ export async function rsvpSessionAction(sessionId: string) {
 }
 
 export async function toggleSoftwareItemAction(itemId: string) {
-  const account = await requireAcademyAccount();
+  const { account, access } = await requireMemberAction("business_os");
+  assertHoldClear(access, "business_os_activation");
   await toggleSoftwareChecklist(account.id, itemId);
   await logStudent(account, "business_os_checklist", "software_account", itemId, `${displayName(account)} updated Business OS setup: ${itemId}`);
 }
 
 export async function submitSoftwareAction() {
-  const account = await requireAcademyAccount();
+  const { account, access } = await requireMemberAction("business_os");
+  assertHoldClear(access, "business_os_activation");
   const result = await submitSoftwareProvisioning(account.id);
   if (result?.status === "provisioning") {
     await logStudent(account, "business_os_submitted", "software_account", result.id, `${displayName(account)} submitted Business OS for provisioning`);
@@ -284,7 +293,7 @@ export async function submitSoftwareAction() {
 }
 
 export async function updateProfileAction(formData: FormData) {
-  const account = await requireAcademyAccount();
+  const { account } = await requireMemberAction();
   const firstName = String(formData.get("firstName") ?? "").trim();
   const lastName = String(formData.get("lastName") ?? "").trim();
   if (!firstName) return;
@@ -303,13 +312,14 @@ export async function updateProfileAction(formData: FormData) {
 export type InviteState = { error?: string; inviteUrl?: string };
 
 export async function inviteTeammateAction(_prev: InviteState, formData: FormData): Promise<InviteState> {
-  const account = await requireAcademyAccount();
+  const { account, access } = await requireMemberAction();
   if (account.membershipRole !== "owner") {
     return { error: "Only the account owner can invite teammates." };
   }
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   if (!email) return { error: "Enter an email address." };
   try {
+    assertHoldClear(access, "seat_changes");
     const { token } = await inviteTeammate({
       accountId: account.accountId,
       email,
@@ -324,7 +334,8 @@ export async function inviteTeammateAction(_prev: InviteState, formData: FormDat
 }
 
 export async function revokeInvitationAction(formData: FormData) {
-  const account = await requireAcademyAccount();
+  const { account, access } = await requireMemberAction();
+  assertHoldClear(access, "seat_changes");
   if (account.membershipRole !== "owner") return;
   const invitationId = String(formData.get("invitationId") ?? "").trim();
   if (!invitationId) return;
@@ -333,7 +344,8 @@ export async function revokeInvitationAction(formData: FormData) {
 }
 
 export async function revokeMembershipAction(formData: FormData) {
-  const account = await requireAcademyAccount();
+  const { account, access } = await requireMemberAction();
+  assertHoldClear(access, "seat_changes");
   if (account.membershipRole !== "owner") return;
   const membershipId = String(formData.get("membershipId") ?? "").trim();
   if (!membershipId || membershipId === account.membershipId) return;

@@ -1,6 +1,30 @@
 export { academyCourse, allLessons } from "./course";
-export { canAccess, grantCapabilityToKind, grantsToEntitlements, hasCapability } from "./entitlements";
-export type { GrantCapability, GrantSource } from "./entitlements";
+export {
+  GRANT_CAPABILITIES,
+  HOLD_KINDS,
+  assertCapability,
+  assertHoldClear,
+  canAccess,
+  entitlementKindToCapability,
+  evaluateEntitlements,
+  grantCapabilityToKind,
+  grantsToEntitlements,
+  hasCapability,
+  holdsForOpenDispute,
+  reservedSeatsFromCount,
+} from "./entitlements";
+export type {
+  AccessExplanation,
+  AccountHold,
+  EffectiveAccess,
+  EntitlementEvaluationInput,
+  EntitlementGrant,
+  GrantCapability,
+  GrantSource,
+  GrantStatus,
+  HoldKind,
+  SeatReservation,
+} from "./entitlements";
 export type { MemberIdentity } from "./identity";
 export { getNextAction } from "./next-action";
 export type { NextActionInput } from "./next-action";

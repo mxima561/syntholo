@@ -1,4 +1,4 @@
-import { hasCapability, type GrantCapability, type GrantSource } from "@syntholo/domain";
+import type { GrantCapability, GrantSource } from "@syntholo/domain";
 import type { EntitlementStatus } from "@syntholo/domain/types";
 import type { DatabaseClient } from "./client";
 import { withAccountScope, withSystemScope, withUserAccountScope } from "./scope";
@@ -44,11 +44,6 @@ export async function listGrantsForAccount(accountId: string, db?: DatabaseClien
 
 export async function listGrantsForUser(userId: string): Promise<EntitlementGrantRecord[]> {
   return withUserAccountScope(userId, (db, membership) => listGrantsForAccount(membership.accountId, db));
-}
-
-export async function hasActiveCapability(accountId: string, capability: GrantCapability, now = new Date()) {
-  const grants = await listGrantsForAccount(accountId);
-  return hasCapability(capability, grants, now);
 }
 
 export async function upsertEntitlementGrant(

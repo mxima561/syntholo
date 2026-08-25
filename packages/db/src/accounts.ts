@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
-import { ACADEMY_SEAT_LIMIT, assertCanInviteAcademySeat } from "@syntholo/domain";
+import { ACADEMY_SEAT_LIMIT, assertCanInviteAcademySeat, assertHoldClear, evaluateEntitlements, reservedSeatsFromCount } from "@syntholo/domain";
 import { type DatabaseClient } from "./client";
+import { ENTITLEMENT_CONSTRAINT_SQL, HOLD_SCHEMA_SQL, listAccountHolds } from "./holds";
 import { withAccountScope, withSystemScope } from "./scope";
 
 export const ACCOUNT_SCHEMA_SQL = [
@@ -44,9 +45,10 @@ const CUSTOMER_TABLES = [
   "session_rsvps",
   "memberships",
   "invitations",
+  "account_holds",
 ] as const;
 
-const PRIVILEGED_WRITE_TABLES = new Set(["entitlement_grants", "purchases", "accounts"]);
+const PRIVILEGED_WRITE_TABLES = new Set(["entitlement_grants", "purchases", "accounts", "account_holds"]);
 
 export type MembershipRole = "owner" | "teammate";
 
@@ -131,7 +133,7 @@ export async function ensureAccountForUser(
 
 async function addAccountIdColumns(db: DatabaseClient) {
   for (const table of CUSTOMER_TABLES) {
-    if (table === "memberships" || table === "invitations") continue;
+    if (table === "memberships" || table === "invitations" || table === "account_holds") continue;
     await db.unsafe(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS account_id UUID REFERENCES accounts(id)`);
   }
 }
@@ -214,8 +216,26 @@ async function enableCustomerRls(db: DatabaseClient) {
   }
 }
 
+async function evaluateSeatAccess(accountId: string, db: DatabaseClient) {
+  const holds = await listAccountHolds(accountId, db);
+  const occupied = await occupiedSeatCount(accountId, db);
+  return evaluateEntitlements({
+    accountId,
+    now: new Date(),
+    grants: [],
+    holds,
+    seats: reservedSeatsFromCount(occupied),
+  });
+}
+
 export async function bootstrapAccountModel(db: DatabaseClient) {
   for (const statement of ACCOUNT_SCHEMA_SQL) {
+    await db.unsafe(statement);
+  }
+  for (const statement of HOLD_SCHEMA_SQL) {
+    await db.unsafe(statement);
+  }
+  for (const statement of ENTITLEMENT_CONSTRAINT_SQL) {
     await db.unsafe(statement);
   }
   await addAccountIdColumns(db);
@@ -292,8 +312,9 @@ export async function inviteTeammate(input: {
 }): Promise<{ token: string; invitation: InvitationRecord }> {
   const email = input.email.trim().toLowerCase();
   return withAccountScope(input.accountId, async (db) => {
-    const occupied = await occupiedSeatCount(input.accountId, db);
-    assertCanInviteAcademySeat(occupied);
+    const access = await evaluateSeatAccess(input.accountId, db);
+    assertHoldClear(access, "seat_changes");
+    assertCanInviteAcademySeat(access.reservedSeats);
     const [duplicate] = await db`
       SELECT id FROM invitations
       WHERE account_id = ${input.accountId} AND email = ${email} AND status = 'pending' AND expires_at > now()
@@ -321,6 +342,7 @@ export async function inviteTeammate(input: {
 
 export async function revokeInvitation(accountId: string, invitationId: string) {
   return withAccountScope(accountId, async (db) => {
+    assertHoldClear(await evaluateSeatAccess(accountId, db), "seat_changes");
     await db`
       UPDATE invitations SET status = 'revoked'
       WHERE id = ${invitationId} AND account_id = ${accountId} AND status = 'pending'
@@ -330,6 +352,7 @@ export async function revokeInvitation(accountId: string, invitationId: string) 
 
 export async function revokeMembership(accountId: string, membershipId: string) {
   return withAccountScope(accountId, async (db) => {
+    assertHoldClear(await evaluateSeatAccess(accountId, db), "seat_changes");
     const [target] = await db`
       SELECT id, role FROM memberships WHERE id = ${membershipId} AND account_id = ${accountId} AND status = 'active'
     `;

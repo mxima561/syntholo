@@ -28,7 +28,15 @@ function formatMessageDate(value: string) {
   return new Date(value).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
-export function SupportInbox({ threads, identity }: { threads: InboxThread[]; identity: MemberIdentity }) {
+export function SupportInbox({
+  threads,
+  identity,
+  canWrite = true,
+}: {
+  threads: InboxThread[];
+  identity: MemberIdentity;
+  canWrite?: boolean;
+}) {
   const [selectedId, setSelectedId] = useState(threads[0]?.id);
   const [creating, setCreating] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -56,7 +64,9 @@ export function SupportInbox({ threads, identity }: { threads: InboxThread[]; id
       <aside className="thread-list">
         <div className="thread-list-head">
           <div><span className="micro-label">Shared inbox</span><strong>{threads.length} conversations</strong></div>
-          <button aria-label="Start a new support conversation" onClick={() => setCreating(true)} type="button">＋</button>
+          {canWrite ? (
+            <button aria-label="Start a new support conversation" onClick={() => setCreating(true)} type="button">＋</button>
+          ) : null}
         </div>
         {threads.map((thread) => (
           <button className={thread.id === selected.id ? "active" : ""} key={thread.id} onClick={() => setSelectedId(thread.id)} type="button">
@@ -71,7 +81,7 @@ export function SupportInbox({ threads, identity }: { threads: InboxThread[]; id
       </aside>
 
       <section className="conversation-panel">
-        {creating ? (
+        {creating && canWrite ? (
           <form action={startThread} className="new-thread-form">
             <div className="admin-panel-head"><div><span className="micro-label">New conversation</span><h2>Ask your coach</h2></div><button aria-label="Close new conversation" onClick={() => setCreating(false)} type="button">✕</button></div>
             <label>Subject<input aria-label="Conversation subject" name="subject" placeholder="e.g. Review my lead-routing rules before launch" required /></label>
@@ -107,6 +117,7 @@ export function SupportInbox({ threads, identity }: { threads: InboxThread[]; id
                 <div className="reply-needed"><CheckCircle2 size={15} /> Your coach replied. The ball is in your court.</div>
               ) : null}
             </div>
+            {canWrite ? (
             <form action={sendReply} className="reply-composer">
               <input name="threadId" type="hidden" value={selected.id} />
               <label htmlFor="coach-reply">Reply to {selected.coachName.split(" ")[0]}</label>
@@ -116,6 +127,9 @@ export function SupportInbox({ threads, identity }: { threads: InboxThread[]; id
                 <Button disabled={pending} size="small" type="submit" variant="human">Send reply <Send size={14} /></Button>
               </div>
             </form>
+            ) : (
+              <p className="empty-note">Support replies are not included on this account.</p>
+            )}
           </>
         )}
       </section>

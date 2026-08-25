@@ -1,5 +1,7 @@
+import { assertCapability, assertHoldClear } from "@syntholo/domain";
 import { getReadyDb } from "./client";
 import { writeActivityEvent } from "./activity";
+import { loadEffectiveAccess } from "./access";
 import {
   ARTIFACT_STARTERS,
   DEFAULT_SOFTWARE_CHECKLIST,
@@ -464,6 +466,9 @@ export async function listSoftwareAccounts(): Promise<SoftwareAccountRecord[]> {
 
 export async function toggleSoftwareChecklist(userId: string, itemId: string): Promise<SoftwareAccountRecord | null> {
   return withUserAccountScope(userId, async (db, membership) => {
+    const access = await loadEffectiveAccess(membership.accountId, new Date(), db);
+    assertCapability(access, "business_os");
+    assertHoldClear(access, "business_os_activation");
     const [current] = await db`SELECT * FROM software_accounts WHERE account_id = ${membership.accountId}`;
     if (!current) return null;
     const account = mapSoftware(current);
@@ -482,6 +487,9 @@ export async function toggleSoftwareChecklist(userId: string, itemId: string): P
 
 export async function submitSoftwareProvisioning(userId: string): Promise<SoftwareAccountRecord | null> {
   return withUserAccountScope(userId, async (db, membership) => {
+    const access = await loadEffectiveAccess(membership.accountId, new Date(), db);
+    assertCapability(access, "business_os");
+    assertHoldClear(access, "business_os_activation");
     const [current] = await db`SELECT * FROM software_accounts WHERE account_id = ${membership.accountId}`;
     if (!current) return null;
     const account = mapSoftware(current);

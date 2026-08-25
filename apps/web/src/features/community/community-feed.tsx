@@ -36,7 +36,15 @@ function relativeDay(createdAt: string) {
   return new Intl.RelativeTimeFormat("en", { numeric: "auto" }).format(-days, "day");
 }
 
-export function CommunityFeed({ initialPosts, identity }: { initialPosts: FeedPost[]; identity: MemberIdentity }) {
+export function CommunityFeed({
+  initialPosts,
+  identity,
+  canWrite = true,
+}: {
+  initialPosts: FeedPost[];
+  identity: MemberIdentity;
+  canWrite?: boolean;
+}) {
   const [posts, setPosts] = useState(initialPosts);
   const [space, setSpace] = useState("All spaces");
   const [creating, setCreating] = useState(false);
@@ -74,8 +82,12 @@ export function CommunityFeed({ initialPosts, identity }: { initialPosts: FeedPo
     <div className="community-layout">
       <aside className="space-list"><span className="micro-label">Spaces</span>{spaces.map((item) => <button className={space === item ? "active" : ""} key={item} onClick={() => setSpace(item)} type="button"><span /> {item}</button>)}</aside>
       <section className="community-feed">
-        <button className="create-post-prompt" onClick={() => setCreating(true)} type="button"><span className="member-message-avatar">{identity.initials}</span><span>Share a decision, question, or implementation win…</span><i><Plus size={14} /> Share an update</i></button>
-        {creating ? (
+        {canWrite ? (
+          <button className="create-post-prompt" onClick={() => setCreating(true)} type="button"><span className="member-message-avatar">{identity.initials}</span><span>Share a decision, question, or implementation win…</span><i><Plus size={14} /> Share an update</i></button>
+        ) : (
+          <p className="empty-note">Community posting is not included on this account. You can still read the feed.</p>
+        )}
+        {creating && canWrite ? (
           <form action={publish} className="create-post-form">
             <div>
               <span className="micro-label">Posting as {identity.name}</span>
@@ -102,10 +114,10 @@ export function CommunityFeed({ initialPosts, identity }: { initialPosts: FeedPo
               <h2>{post.title}</h2>
               <p>{post.body}</p>
               <footer>
-                <button className={post.likedByViewer ? "liked" : ""} disabled={pending} onClick={() => like(post.id)} type="button"><Heart fill={post.likedByViewer ? "currentColor" : "none"} size={14} /> {post.reactionCount}</button>
+                <button className={post.likedByViewer ? "liked" : ""} disabled={pending || !canWrite} onClick={() => like(post.id)} type="button"><Heart fill={post.likedByViewer ? "currentColor" : "none"} size={14} /> {post.reactionCount}</button>
                 <button onClick={() => setOpenComments(openComments === post.id ? null : post.id)} type="button"><MessageCircle size={14} /> {post.commentCount} comments</button>
                 <time>{relativeDay(post.createdAt)}</time>
-                <button aria-label={`Report ${post.title}`} disabled={pending} onClick={() => { startTransition(() => { void reportPostAction(post.id); }); }} type="button"><Flag size={13} /></button>
+                <button aria-label={`Report ${post.title}`} disabled={pending || !canWrite} onClick={() => { startTransition(() => { void reportPostAction(post.id); }); }} type="button"><Flag size={13} /></button>
               </footer>
               {openComments === post.id ? (
                 <div className="comment-thread">
@@ -115,6 +127,7 @@ export function CommunityFeed({ initialPosts, identity }: { initialPosts: FeedPo
                       <div><strong>{comment.authorName}</strong><p>{comment.body}</p></div>
                     </article>
                   ))}
+                  {canWrite ? (
                   <form action={(formData) => startTransition(async () => {
                     await commentOnPostAction(formData);
                     const text = String(formData.get("body") ?? "").trim();
@@ -127,6 +140,7 @@ export function CommunityFeed({ initialPosts, identity }: { initialPosts: FeedPo
                     <label>Write a comment<input name="body" placeholder="Add a specific, useful comment" required /></label>
                     <Button disabled={pending} size="small" type="submit">Comment</Button>
                   </form>
+                  ) : null}
                 </div>
               ) : null}
             </article>

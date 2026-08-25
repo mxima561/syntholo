@@ -26,9 +26,8 @@ describe.skipIf(!canReachScratchDatabase)("account seats and RLS", () => {
 
   afterAll(async () => {
     if (!canReachScratchDatabase) return;
-    const { getDb } = await import("./client");
-    const db = getDb();
-    await db.end({ timeout: 1 }).catch(() => undefined);
+    const { closeDb } = await import("./client");
+    await closeDb();
   });
 
   async function createUser(email: string) {

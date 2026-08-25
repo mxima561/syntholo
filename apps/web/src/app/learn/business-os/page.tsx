@@ -1,11 +1,11 @@
 import { BusinessOsOnboarding } from "@/features/business-os/business-os-onboarding";
-import { requireStudentAccount } from "@/lib/server/accounts";
+import { requireAcademyAccess } from "@/lib/server/accounts";
 import { getSoftwareAccount } from "@syntholo/db";
 
 export const dynamic = "force-dynamic";
 
 export default async function BusinessOsPage() {
-  const account = await requireStudentAccount();
+  const { account, access } = await requireAcademyAccess();
   const software = await getSoftwareAccount(account.id);
   return (
     <div className="member-page business-os-page">
@@ -19,6 +19,12 @@ export default async function BusinessOsPage() {
       </section>
       {software ? (
         <BusinessOsOnboarding
+          canActivate={access.capabilities.business_os && !access.holds.includes("business_os_activation")}
+          lockedMessage={
+            !access.capabilities.business_os
+              ? "Business OS is a separate service. Academy access does not include activation."
+              : "Business OS activation is on hold for this account."
+          }
           initialAccount={{
             id: software.id,
             firstName: account.firstName,

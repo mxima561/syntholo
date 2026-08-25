@@ -1,4 +1,4 @@
-export { getDb, getReadyDb } from "./client";
+export { getDb, getReadyDb, closeDb } from "./client";
 export type { DatabaseClient } from "./client";
 export { withAccountScope, withStaffScope, withSystemScope, withUserAccountScope } from "./scope";
 export {
@@ -37,7 +37,6 @@ export {
 } from "./refunds";
 export {
   ensureDemoAcademyGrants,
-  hasActiveCapability,
   listGrantsForAccount,
   listGrantsForUser,
   refundGrantsForPurchase,
@@ -45,6 +44,8 @@ export {
   supportWindowEnd,
   upsertEntitlementGrant,
 } from "./entitlements";
+export { hasActiveCapability, loadEffectiveAccess } from "./access";
+export { clearAccountHold, listAccountHolds, setAccountHold } from "./holds";
 export type { EntitlementGrantRecord } from "./entitlements";
 export type { EnrollmentSnapshot, PurchaseSnapshot, RefundResult } from "./refunds";
 export { fulfillCheckout, getPurchasesForUser, revokeSubscription } from "./purchases";

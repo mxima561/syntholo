@@ -6,10 +6,11 @@ import {
   ensureAccountForUser,
   ensureDemoAcademyGrants,
   ensureStudentWorkspace,
-  hasActiveCapability,
+  loadEffectiveAccess,
   publicIdFromUuid,
   withSystemScope,
 } from "@syntholo/db";
+import type { EffectiveAccess } from "@syntholo/domain";
 import { getReadyDb } from "@/lib/db/client";
 
 export type AccountRole = "student";
@@ -151,15 +152,25 @@ export async function requireStudentAccount(): Promise<Account> {
   redirect("/signin");
 }
 
-/** Signed-in student with an active academy grant. Unpaid members go to pricing. */
-export async function requireAcademyAccount(): Promise<Account> {
+export const getAccountAccess = cache(async (): Promise<{ account: Account; access: EffectiveAccess }> => {
   const account = await requireStudentAccount();
   if (canUseDemoStudent()) {
     await ensureDemoAcademyGrants(account.accountId, account.id);
-    return account;
   }
-  if (await hasActiveCapability(account.accountId, "academy_course")) return account;
-  redirect("/pricing");
+  const access = await loadEffectiveAccess(account.accountId);
+  return { account, access };
+});
+
+/** Signed-in student with an active academy grant. Unpaid members go to pricing. */
+export async function requireAcademyAccess(): Promise<{ account: Account; access: EffectiveAccess }> {
+  const result = await getAccountAccess();
+  if (!result.access.capabilities.academy_course) redirect("/pricing");
+  return result;
+}
+
+export async function requireAcademyAccount(): Promise<Account> {
+  const { account } = await requireAcademyAccess();
+  return account;
 }
 
 /** Stable color seed for avatars so each account keeps a consistent look. */

@@ -1,12 +1,12 @@
 import { CommunityFeed } from "@/features/community/community-feed";
-import { requireStudentAccount } from "@/lib/server/accounts";
+import { requireAcademyAccess } from "@/lib/server/accounts";
 import { listCommunityPosts } from "@/lib/server/community";
 import { listCommentsForPosts } from "@syntholo/db";
 
 export const dynamic = "force-dynamic";
 
 export default async function CommunityPage() {
-  const account = await requireStudentAccount();
+  const { account, access } = await requireAcademyAccess();
   const posts = await listCommunityPosts(account.id);
   const comments = await listCommentsForPosts(posts.map((post) => post.id));
   const commentsByPost = new Map<string, typeof comments>();
@@ -26,6 +26,7 @@ export default async function CommunityPage() {
         </div>
       </section>
       <CommunityFeed
+        canWrite={access.capabilities.circle_write}
         identity={{
           name: `${account.firstName} ${account.lastName}`.trim() || account.email,
           initials: account.initials,
