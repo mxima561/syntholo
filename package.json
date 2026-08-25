@@ -21,8 +21,10 @@
     "start": "npm run start -w @syntholo/web",
     "lint": "npm run lint -w @syntholo/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test -w @syntholo/web && npm run test -w @syntholo/domain && npm run test -w @syntholo/db && npm run test -w @syntholo/admin && npm run test -w @syntholo/contracts && npm run test -w @syntholo/api && npm run test -w @syntholo/worker && npm run test:idp-clean",
+    "test": "npm run test -w @syntholo/web && npm run test -w @syntholo/domain && npm run test -w @syntholo/db && npm run test -w @syntholo/admin && npm run test -w @syntholo/contracts && npm run test -w @syntholo/api && npm run test -w @syntholo/worker && npm run test:idp-clean && npm run test:gate-foundation",
     "test:idp-clean": "node scripts/assert-idp-clean.mjs",
+    "test:gate-foundation": "GATE_FOUNDATION_QUICK=1 node --test scripts/gate-foundation.test.mjs",
+    "gate:foundation": "RELEASE_SHA=\"${RELEASE_SHA:-dev}\" node scripts/gate-foundation.mjs",
     "test:watch": "npm run test:watch -w @syntholo/web",
     "test:e2e": "npm run test:e2e -w @syntholo/web",
     "db:seed-staff": "npm run seed-staff -w @syntholo/db"
