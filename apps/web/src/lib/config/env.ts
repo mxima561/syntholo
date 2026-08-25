@@ -4,8 +4,11 @@ const rawSchema = z.object({
   APP_MODE: z.enum(["demo", "production"]).default("demo"),
   APP_URL: z.url().optional(),
   DATABASE_URL: z.string().min(1).optional(),
-  CLERK_SECRET_KEY: z.string().startsWith("sk_").optional(),
-  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: z.string().startsWith("pk_").optional(),
+  NEON_AUTH_BASE_URL: z.string().url().optional(),
+  NEON_AUTH_COOKIE_SECRET: z.string().min(32).optional(),
+  NEXT_PUBLIC_NEON_AUTH_URL: z.string().url().optional(),
+  NEXT_PUBLIC_NEON_DATA_API_URL: z.string().url().optional(),
+  NEXT_PUBLIC_NEON_AUTH_GOOGLE: z.enum(["true", "false"]).optional(),
   STRIPE_SECRET_KEY: z.string().startsWith("sk_").optional(),
   STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_").optional(),
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().startsWith("pk_").optional(),
@@ -20,7 +23,8 @@ const rawSchema = z.object({
 
 const groups = [
   ["Stripe", ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"]],
-  ["Clerk", ["CLERK_SECRET_KEY", "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"]],
+  ["Neon Auth", ["NEON_AUTH_BASE_URL", "NEON_AUTH_COOKIE_SECRET", "NEXT_PUBLIC_NEON_AUTH_URL"]],
+  ["Neon Data API", ["NEXT_PUBLIC_NEON_DATA_API_URL"]],
   ["Mux", ["MUX_TOKEN_ID", "MUX_TOKEN_SECRET"]],
   ["Resend", ["RESEND_API_KEY", "RESEND_FROM_EMAIL"]],
   ["PostHog", ["NEXT_PUBLIC_POSTHOG_KEY", "NEXT_PUBLIC_POSTHOG_HOST"]],
@@ -28,8 +32,10 @@ const groups = [
 
 const productionRequired = [
   "DATABASE_URL",
-  "CLERK_SECRET_KEY",
-  "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
+  "NEON_AUTH_BASE_URL",
+  "NEON_AUTH_COOKIE_SECRET",
+  "NEXT_PUBLIC_NEON_AUTH_URL",
+  "NEXT_PUBLIC_NEON_DATA_API_URL",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
 ] as const;
@@ -40,7 +46,7 @@ export function parseRuntimeEnv(input: Record<string, string | undefined>) {
   );
   const parsed = rawSchema.parse(normalized);
   for (const [label, keys] of groups) {
-    const present = keys.filter((key) => Boolean(parsed[key]));
+    const present = keys.filter((key) => Boolean(parsed[key as keyof typeof parsed]));
     if (present.length > 0 && present.length < keys.length) {
       throw new Error(`${label} configuration is partial. Configure ${keys.join(", ")} together.`);
     }
@@ -56,9 +62,14 @@ export function parseRuntimeEnv(input: Record<string, string | undefined>) {
     appUrl: parsed.APP_URL ?? "http://localhost:3000",
     vendorsConfigured: configuredCount === productionRequired.length,
     databaseUrl: parsed.DATABASE_URL,
-    clerk: parsed.CLERK_SECRET_KEY && parsed.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY
-      ? { secretKey: parsed.CLERK_SECRET_KEY, publishableKey: parsed.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }
-      : undefined,
+    neonAuth:
+      parsed.NEON_AUTH_BASE_URL && parsed.NEON_AUTH_COOKIE_SECRET && parsed.NEXT_PUBLIC_NEON_AUTH_URL
+        ? {
+            baseUrl: parsed.NEON_AUTH_BASE_URL,
+            publishableAuthUrl: parsed.NEXT_PUBLIC_NEON_AUTH_URL,
+            dataApiUrl: parsed.NEXT_PUBLIC_NEON_DATA_API_URL,
+          }
+        : undefined,
     stripe: parsed.STRIPE_SECRET_KEY && parsed.STRIPE_WEBHOOK_SECRET ? { secretKey: parsed.STRIPE_SECRET_KEY, webhookSecret: parsed.STRIPE_WEBHOOK_SECRET, publishableKey: parsed.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY } : undefined,
     mux: parsed.MUX_TOKEN_ID && parsed.MUX_TOKEN_SECRET ? { tokenId: parsed.MUX_TOKEN_ID, tokenSecret: parsed.MUX_TOKEN_SECRET } : undefined,
     resend: parsed.RESEND_API_KEY && parsed.RESEND_FROM_EMAIL ? { apiKey: parsed.RESEND_API_KEY, fromEmail: parsed.RESEND_FROM_EMAIL } : undefined,

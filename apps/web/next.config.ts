@@ -7,7 +7,7 @@ loadEnvConfig(path.resolve(import.meta.dirname, "../.."));
 const nextConfig: NextConfig = {
   typedRoutes: true,
   poweredByHeader: false,
-  transpilePackages: ["@syntholo/db", "@syntholo/domain", "@syntholo/contracts"],
+  transpilePackages: ["@syntholo/auth", "@syntholo/db", "@syntholo/domain", "@syntholo/contracts"],
 };
 
 export default nextConfig;

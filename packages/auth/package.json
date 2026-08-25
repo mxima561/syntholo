@@ -1,0 +1,25 @@
+{
+  "name": "@syntholo/auth",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./config": "./src/config.ts",
+    "./server": "./src/server.ts",
+    "./client": "./src/client.ts",
+    "./neon": "./src/neon.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@neondatabase/auth": "0.5.0-beta",
+    "@neondatabase/neon-js": "0.7.0-beta"
+  },
+  "peerDependencies": {
+    "next": ">=16"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

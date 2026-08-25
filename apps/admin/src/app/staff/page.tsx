@@ -15,7 +15,7 @@ export default async function StaffPage() {
         <div>
           <span className="micro-label">Internal access</span>
           <h1>Staff</h1>
-          <p>Only rows in this table can use the admin origin. There is no auto-provisioning from Cloudflare Access.</p>
+          <p>Cloudflare Access only decides who can reach this origin. Neon Auth identifies the person. Only rows here can use the admin console. There is no auto-provisioning from Access or from school membership.</p>
         </div>
       </section>
 
@@ -25,9 +25,10 @@ export default async function StaffPage() {
           <label>
             Role
             <select defaultValue="support" name="role">
+              <option value="super_admin">super_admin</option>
               <option value="admin">admin</option>
-              <option value="instructor">instructor</option>
               <option value="support">support</option>
+              <option value="finance">finance</option>
             </select>
           </label>
           <button className="button button-primary button-small" type="submit">Add staff</button>
@@ -45,9 +46,10 @@ export default async function StaffPage() {
             <form action={setStaffRoleAction}>
               <input name="staffId" type="hidden" value={member.id} />
               <select defaultValue={member.role} name="role">
+                <option value="super_admin">super_admin</option>
                 <option value="admin">admin</option>
-                <option value="instructor">instructor</option>
                 <option value="support">support</option>
+                <option value="finance">finance</option>
               </select>
               <button className="button button-secondary button-small" type="submit">Save role</button>
             </form>

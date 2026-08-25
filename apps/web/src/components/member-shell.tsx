@@ -69,7 +69,7 @@ export function MemberShell({ children, identity }: MemberShellProps) {
         </div>
         <div className="member-identity">
           <span>{identity.initials}</span>
-          <div><strong>{identity.name}</strong><small>{identity.authLabel ?? "Signed in with Clerk"}</small></div>
+          <div><strong>{identity.name}</strong><small>{identity.authLabel ?? "Signed in with Neon Auth"}</small></div>
           <form action="/signout" method="get">
             <button className="signout-link" type="submit">Sign out</button>
           </form>

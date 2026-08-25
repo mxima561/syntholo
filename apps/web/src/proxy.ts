@@ -1,27 +1,21 @@
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
+import { getNeonAuth } from "@syntholo/auth/server";
+import { isNeonAuthConfigured } from "@syntholo/auth/config";
 
-const clerkReady = Boolean(
-  process.env.CLERK_SECRET_KEY?.trim() && process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim(),
-);
+const isProtectedPath = (pathname: string) => pathname === "/learn" || pathname.startsWith("/learn/");
 
-const isProtectedRoute = createRouteMatcher(["/learn(.*)"]);
-
-const clerk = clerkReady
-  ? clerkMiddleware(async (auth, request) => {
-      if (isProtectedRoute(request)) await auth.protect();
-    })
-  : null;
-
-export default function proxy(...args: Parameters<NonNullable<typeof clerk>>) {
-  if (!clerk) return NextResponse.next();
-  return clerk(...args);
+export default async function proxy(request: Request) {
+  if (!isNeonAuthConfigured()) return NextResponse.next();
+  const auth = getNeonAuth();
+  if (!auth) return NextResponse.next();
+  const url = new URL(request.url);
+  if (!isProtectedPath(url.pathname)) return NextResponse.next();
+  return auth.middleware({ loginUrl: "/signin" })(request as never);
 }
 
 export const config = {
   matcher: [
     "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
     "/(api|trpc)(.*)",
-    "/__clerk/(.*)",
   ],
 };

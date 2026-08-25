@@ -3,19 +3,19 @@ import { staffHasCapability } from "./staff";
 import type { StaffRole } from "@syntholo/db";
 
 describe("staffHasCapability", () => {
-  it("admin has billing/content/support/staff", () => {
-    const role: StaffRole = "admin";
+  it("super_admin has billing/content/support/staff", () => {
+    const role: StaffRole = "super_admin";
     expect(staffHasCapability(role, "billing")).toBe(true);
     expect(staffHasCapability(role, "content")).toBe(true);
     expect(staffHasCapability(role, "support")).toBe(true);
     expect(staffHasCapability(role, "staff")).toBe(true);
   });
 
-  it("instructor has content only (not billing, support, staff)", () => {
-    const role: StaffRole = "instructor";
+  it("operational admin has content and support, not billing or staff", () => {
+    const role: StaffRole = "admin";
     expect(staffHasCapability(role, "content")).toBe(true);
+    expect(staffHasCapability(role, "support")).toBe(true);
     expect(staffHasCapability(role, "billing")).toBe(false);
-    expect(staffHasCapability(role, "support")).toBe(false);
     expect(staffHasCapability(role, "staff")).toBe(false);
   });
 
@@ -25,5 +25,12 @@ describe("staffHasCapability", () => {
     expect(staffHasCapability(role, "billing")).toBe(false);
     expect(staffHasCapability(role, "content")).toBe(false);
     expect(staffHasCapability(role, "staff")).toBe(false);
+  });
+
+  it("finance has billing only", () => {
+    const role: StaffRole = "finance";
+    expect(staffHasCapability(role, "billing")).toBe(true);
+    expect(staffHasCapability(role, "staff")).toBe(false);
+    expect(staffHasCapability(role, "content")).toBe(false);
   });
 });

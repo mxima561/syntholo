@@ -2,6 +2,15 @@ import { createHash, randomBytes } from "node:crypto";
 import { ACADEMY_SEAT_LIMIT, assertCanInviteAcademySeat, assertHoldClear, evaluateEntitlements, reservedSeatsFromCount } from "@syntholo/domain";
 import { type DatabaseClient } from "./client";
 import { ENTITLEMENT_CONSTRAINT_SQL, HOLD_SCHEMA_SQL, listAccountHolds } from "./holds";
+import { normalizeSchoolRole, type SchoolRole } from "./permissions";
+import {
+  APP_USERS_RLS_SQL,
+  CATALOG_RLS_SQL,
+  DATA_API_GRANT_SQL,
+  PRIVILEGED_TABLE_RLS_SQL,
+  RLS_HELPER_SQL,
+  rlsPoliciesSql,
+} from "./rls";
 import { withAccountScope, withSystemScope } from "./scope";
 
 export const ACCOUNT_SCHEMA_SQL = [
@@ -10,14 +19,29 @@ export const ACCOUNT_SCHEMA_SQL = [
     name TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
+  `ALTER TABLE accounts ADD COLUMN IF NOT EXISTS slug TEXT`,
+  `ALTER TABLE accounts ADD COLUMN IF NOT EXISTS logo_url TEXT`,
+  `ALTER TABLE accounts ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE accounts ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES app_users(id)`,
+  `ALTER TABLE accounts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+  `UPDATE accounts SET slug = 'acct-' || substr(replace(id::text, '-', ''), 1, 12) WHERE slug IS NULL OR slug = ''`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS accounts_slug_uidx ON accounts (slug) WHERE slug IS NOT NULL`,
   `CREATE TABLE IF NOT EXISTS memberships (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     account_id UUID NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
-    role TEXT NOT NULL CHECK (role IN ('owner', 'teammate')),
+    role TEXT NOT NULL CHECK (role IN ('owner', 'teammate', 'school_admin', 'teacher', 'student')),
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'removed')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
+  `ALTER TABLE memberships ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+  `ALTER TABLE memberships DROP CONSTRAINT IF EXISTS memberships_role_check`,
+  `UPDATE memberships SET role = 'student' WHERE role IN ('teammate', 'member', 'viewer')`,
+  `DO $$ BEGIN
+    ALTER TABLE memberships ADD CONSTRAINT memberships_role_check
+      CHECK (role IN ('owner', 'school_admin', 'teacher', 'student'));
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$`,
   `CREATE INDEX IF NOT EXISTS memberships_account_idx ON memberships (account_id) WHERE status = 'active'`,
   `CREATE TABLE IF NOT EXISTS invitations (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -50,7 +74,7 @@ const CUSTOMER_TABLES = [
 
 const PRIVILEGED_WRITE_TABLES = new Set(["entitlement_grants", "purchases", "accounts", "account_holds"]);
 
-export type MembershipRole = "owner" | "teammate";
+export type MembershipRole = SchoolRole;
 
 export type MembershipRecord = {
   id: string;
@@ -90,18 +114,41 @@ function mapMembership(row: Record<string, unknown>): MembershipRecord {
     id: String(row.id),
     accountId: String(row.account_id),
     userId: String(row.user_id),
-    role: row.role === "owner" ? "owner" : "teammate",
+    role: normalizeSchoolRole(row.role),
     status: row.status === "removed" ? "removed" : "active",
   };
 }
 
-export async function findMembershipByUserId(userId: string, db?: DatabaseClient): Promise<MembershipRecord | null> {
-  if (!db) return withSystemScope((sql) => findMembershipByUserId(userId, sql));
-  const [row] = await db`
+export async function listMembershipsForUser(userId: string, db?: DatabaseClient): Promise<MembershipRecord[]> {
+  if (!db) return withSystemScope((sql) => listMembershipsForUser(userId, sql));
+  const rows = await db`
     SELECT id, account_id, user_id, role, status
     FROM memberships WHERE user_id = ${userId} AND status = 'active'
+    ORDER BY created_at
   `;
-  return row ? mapMembership(row) : null;
+  return rows.map(mapMembership);
+}
+
+export async function findMembershipByUserId(userId: string, db?: DatabaseClient): Promise<MembershipRecord | null> {
+  if (!db) return withSystemScope((sql) => findMembershipByUserId(userId, sql));
+  const memberships = await listMembershipsForUser(userId, db);
+  if (memberships.length === 0) return null;
+  const [user] = await db`SELECT active_account_id FROM app_users WHERE id = ${userId}`;
+  const activeId = user?.active_account_id ? String(user.active_account_id) : "";
+  return memberships.find((row) => row.accountId === activeId) ?? memberships[0] ?? null;
+}
+
+export async function setActiveAccount(
+  userId: string,
+  accountId: string,
+  db?: DatabaseClient,
+): Promise<MembershipRecord> {
+  if (!db) return withSystemScope((sql) => setActiveAccount(userId, accountId, sql));
+  const memberships = await listMembershipsForUser(userId, db);
+  const membership = memberships.find((row) => row.accountId === accountId);
+  if (!membership) throw new Error("You are not a member of that academy account.");
+  await db`UPDATE app_users SET active_account_id = ${accountId}, updated_at = now() WHERE id = ${userId}`;
+  return membership;
 }
 
 export async function ensureAccountForUser(
@@ -119,15 +166,19 @@ export async function ensureAccountForUser(
     String(user?.business_name ?? "").trim() ||
     `${user?.first_name ?? ""} ${user?.last_name ?? ""}`.trim() ||
     String(user?.email ?? "Academy account");
+  const slug = `acct-${userId.replaceAll("-", "").slice(0, 12)}`;
 
   const [account] = await db`
-    INSERT INTO accounts (name) VALUES (${name}) RETURNING id
+    INSERT INTO accounts (name, slug, created_by_user_id)
+    VALUES (${name}, ${slug}, ${userId})
+    RETURNING id
   `;
   const [membership] = await db`
     INSERT INTO memberships (account_id, user_id, role, status)
     VALUES (${account.id}, ${userId}, 'owner', 'active')
     RETURNING id, account_id, user_id, role, status
   `;
+  await db`UPDATE app_users SET active_account_id = ${account.id}, updated_at = now() WHERE id = ${userId}`;
   return mapMembership(membership);
 }
 
@@ -183,37 +234,39 @@ async function applyUniqueIndexes(db: DatabaseClient) {
     ON software_accounts (account_id) WHERE account_id IS NOT NULL
   `);
   await db.unsafe(`ALTER TABLE memberships DROP CONSTRAINT IF EXISTS memberships_user_id_key`);
+  await db.unsafe(`DROP INDEX IF EXISTS memberships_active_user_uidx`);
   await db.unsafe(`
-    CREATE UNIQUE INDEX IF NOT EXISTS memberships_active_user_uidx
-    ON memberships (user_id) WHERE status = 'active'
+    CREATE UNIQUE INDEX IF NOT EXISTS memberships_account_user_uidx
+    ON memberships (account_id, user_id)
   `);
 }
 
-function rlsPoliciesSql(table: string, matchColumn: string, privilegedWrite: boolean) {
-  const bypass = `current_setting('app.actor_kind', true) IN ('staff', 'system')`;
-  const member = `${matchColumn}::text = NULLIF(current_setting('app.account_id', true), '')`;
-  const selectUsing = `(${bypass} OR ${member})`;
-  const writeCheck = privilegedWrite ? bypass : selectUsing;
-  return `
-    ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
-    ALTER TABLE ${table} FORCE ROW LEVEL SECURITY;
-    DROP POLICY IF EXISTS ${table}_isolation ON ${table};
-    DROP POLICY IF EXISTS ${table}_select ON ${table};
-    DROP POLICY IF EXISTS ${table}_insert ON ${table};
-    DROP POLICY IF EXISTS ${table}_update ON ${table};
-    DROP POLICY IF EXISTS ${table}_delete ON ${table};
-    CREATE POLICY ${table}_select ON ${table} FOR SELECT USING (${selectUsing});
-    CREATE POLICY ${table}_insert ON ${table} FOR INSERT WITH CHECK (${writeCheck});
-    CREATE POLICY ${table}_update ON ${table} FOR UPDATE USING (${writeCheck}) WITH CHECK (${writeCheck});
-    CREATE POLICY ${table}_delete ON ${table} FOR DELETE USING (${writeCheck});
-  `;
-}
-
 async function enableCustomerRls(db: DatabaseClient) {
+  for (const statement of RLS_HELPER_SQL) {
+    await db.unsafe(statement);
+  }
+  await db.unsafe(APP_USERS_RLS_SQL);
   await db.unsafe(rlsPoliciesSql("accounts", "id", true));
   for (const table of CUSTOMER_TABLES) {
     await db.unsafe(rlsPoliciesSql(table, "account_id", PRIVILEGED_WRITE_TABLES.has(table)));
   }
+  await db.unsafe(CATALOG_RLS_SQL);
+  await db.unsafe(PRIVILEGED_TABLE_RLS_SQL);
+  await db.unsafe(DATA_API_GRANT_SQL);
+  await db.unsafe(`
+    DO $$ BEGIN
+      ALTER TABLE courses
+        ADD CONSTRAINT courses_school_id_fkey FOREIGN KEY (school_id) REFERENCES accounts(id);
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `);
+  await db.unsafe(`
+    DO $$ BEGIN
+      ALTER TABLE app_users
+        ADD CONSTRAINT app_users_active_account_id_fkey FOREIGN KEY (active_account_id) REFERENCES accounts(id);
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$;
+  `);
 }
 
 async function evaluateSeatAccess(accountId: string, db: DatabaseClient) {
@@ -390,7 +443,6 @@ export async function getInvitationPreview(token: string): Promise<InvitationPre
 export async function acceptInvitation(token: string, userId: string): Promise<MembershipRecord> {
   const tokenHash = hashToken(token);
   return withSystemScope(async (db) => {
-    const existing = await findMembershipByUserId(userId, db);
     const [invite] = await db`
       SELECT id, account_id, email, status, expires_at
       FROM invitations WHERE token_hash = ${tokenHash}
@@ -399,25 +451,16 @@ export async function acceptInvitation(token: string, userId: string): Promise<M
       throw new Error("This invitation is not valid.");
     }
     const accountId = String(invite.account_id);
-    if (existing && existing.accountId !== accountId) {
-      const [memberCount] = await db`
-        SELECT COUNT(*)::int AS count FROM memberships
-        WHERE account_id = ${existing.accountId} AND status = 'active'
-      `;
-      const [pendingInvites] = await db`
-        SELECT COUNT(*)::int AS count FROM invitations
-        WHERE account_id = ${existing.accountId} AND status = 'pending' AND expires_at > now()
-      `;
-      const soloOwner =
-        existing.role === "owner" && Number(memberCount.count) === 1 && Number(pendingInvites.count) === 0;
-      if (!soloOwner) {
-        throw new Error("This student already belongs to another academy account.");
-      }
-      await db`UPDATE memberships SET status = 'removed' WHERE id = ${existing.id}`;
+    const [user] = await db`SELECT email FROM app_users WHERE id = ${userId}`;
+    if (user && String(user.email).toLowerCase() !== String(invite.email).toLowerCase()) {
+      throw new Error("Sign in with the invited email address to accept this seat.");
     }
-    if (existing && existing.accountId === accountId) {
+    const memberships = await listMembershipsForUser(userId, db);
+    const already = memberships.find((row) => row.accountId === accountId);
+    if (already) {
       await db`UPDATE invitations SET status = 'accepted' WHERE id = ${invite.id}`;
-      return existing;
+      await db`UPDATE app_users SET active_account_id = ${accountId}, updated_at = now() WHERE id = ${userId}`;
+      return already;
     }
     const occupied = await occupiedSeatCount(accountId, db);
     if (occupied > ACADEMY_SEAT_LIMIT) {
@@ -425,10 +468,12 @@ export async function acceptInvitation(token: string, userId: string): Promise<M
     }
     const [membership] = await db`
       INSERT INTO memberships (account_id, user_id, role, status)
-      VALUES (${accountId}, ${userId}, 'teammate', 'active')
+      VALUES (${accountId}, ${userId}, 'student', 'active')
+      ON CONFLICT (account_id, user_id) DO UPDATE SET status = 'active', role = EXCLUDED.role, updated_at = now()
       RETURNING id, account_id, user_id, role, status
     `;
     await db`UPDATE invitations SET status = 'accepted' WHERE id = ${invite.id}`;
+    await db`UPDATE app_users SET active_account_id = ${accountId}, updated_at = now() WHERE id = ${userId}`;
     return mapMembership(membership);
   });
 }

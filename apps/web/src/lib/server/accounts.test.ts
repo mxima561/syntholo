@@ -1,37 +1,38 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { canUseDemoStudent, isClerkConfigured } from "./accounts";
+import { isNeonAuthConfigured } from "@syntholo/auth/config";
+import { canUseDemoStudent } from "./accounts";
 
 afterEach(() => {
   vi.unstubAllEnvs();
 });
 
 describe("student identity gates", () => {
-  it("treats Clerk as unconfigured until both keys are present", () => {
-    vi.stubEnv("CLERK_SECRET_KEY", "");
-    vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "");
-    expect(isClerkConfigured()).toBe(false);
+  it("treats Neon Auth as unconfigured until base URL and cookie secret are present", () => {
+    vi.stubEnv("NEON_AUTH_BASE_URL", "");
+    vi.stubEnv("NEON_AUTH_COOKIE_SECRET", "");
+    expect(isNeonAuthConfigured()).toBe(false);
   });
 
-  it("uses the demo student only in demo mode without Clerk", () => {
+  it("uses the demo student only in demo mode without Neon Auth", () => {
     vi.stubEnv("APP_MODE", "demo");
-    vi.stubEnv("CLERK_SECRET_KEY", "");
-    vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "");
+    vi.stubEnv("NEON_AUTH_BASE_URL", "");
+    vi.stubEnv("NEON_AUTH_COOKIE_SECRET", "");
     expect(canUseDemoStudent()).toBe(true);
   });
 
-  it("does not use the demo student when Clerk is configured", () => {
+  it("does not use the demo student when Neon Auth is configured", () => {
     vi.stubEnv("APP_MODE", "demo");
-    vi.stubEnv("CLERK_SECRET_KEY", "sk_test_clerk");
-    vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "pk_test_clerk");
+    vi.stubEnv("NEON_AUTH_BASE_URL", "https://auth.neon.example/auth");
+    vi.stubEnv("NEON_AUTH_COOKIE_SECRET", "n".repeat(32));
     expect(canUseDemoStudent()).toBe(false);
   });
 
   it("does not use the demo student in NODE_ENV production", () => {
     vi.stubEnv("NODE_ENV", "production");
     vi.stubEnv("APP_MODE", "demo");
-    vi.stubEnv("CLERK_SECRET_KEY", "");
-    vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "");
+    vi.stubEnv("NEON_AUTH_BASE_URL", "");
+    vi.stubEnv("NEON_AUTH_COOKIE_SECRET", "");
     expect(canUseDemoStudent()).toBe(false);
   });
 

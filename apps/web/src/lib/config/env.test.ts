@@ -1,25 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { parseRuntimeEnv } from "./env";
 
+const neon = {
+  NEON_AUTH_BASE_URL: "https://auth.neon.example/auth",
+  NEON_AUTH_COOKIE_SECRET: "n".repeat(32),
+  NEXT_PUBLIC_NEON_AUTH_URL: "https://auth.neon.example/auth",
+  NEXT_PUBLIC_NEON_DATA_API_URL: "https://api.neon.example/rest/v1",
+};
+
 describe("parseRuntimeEnv", () => {
   it("allows demo mode without vendor credentials", () => {
     expect(parseRuntimeEnv({ APP_MODE: "demo" })).toMatchObject({ mode: "demo", vendorsConfigured: false });
   });
 
-  it("rejects a partial Clerk configuration", () => {
-    expect(() => parseRuntimeEnv({ APP_MODE: "demo", CLERK_SECRET_KEY: "sk_test_partial" })).toThrow(/clerk/i);
+  it("rejects a partial Neon Auth configuration", () => {
+    expect(() => parseRuntimeEnv({ APP_MODE: "demo", NEON_AUTH_BASE_URL: "https://auth.neon.example/auth" })).toThrow(/neon auth/i);
   });
 
   it("requires production keys when APP_MODE is production", () => {
     expect(() => parseRuntimeEnv({ APP_MODE: "production" })).toThrow(/production/i);
   });
 
-  it("allows production with DATABASE_URL, Clerk, and Stripe even without Mux or HighLevel", () => {
+  it("allows production with DATABASE_URL, Neon Auth, Data API, and Stripe even without Mux", () => {
     const env = parseRuntimeEnv({
       APP_MODE: "production",
       DATABASE_URL: "postgres://localhost/syntholo",
-      CLERK_SECRET_KEY: "sk_test_clerk",
-      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_clerk",
+      ...neon,
       STRIPE_SECRET_KEY: "sk_test_stripe",
       STRIPE_WEBHOOK_SECRET: "whsec_test",
     });
@@ -28,8 +34,7 @@ describe("parseRuntimeEnv", () => {
       vendorsConfigured: true,
       databaseUrl: "postgres://localhost/syntholo",
     });
-    expect(env).not.toHaveProperty("mongodb");
-    expect(env).not.toHaveProperty("highlevel");
+    expect(env.neonAuth?.baseUrl).toBe(neon.NEON_AUTH_BASE_URL);
     expect(env.mux).toBeUndefined();
   });
 });

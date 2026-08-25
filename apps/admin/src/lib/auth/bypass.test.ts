@@ -9,7 +9,17 @@ describe("assertProductionBypassDisabled", () => {
   it("throws when a production build has ADMIN_DEV_BYPASS_EMAIL set", () => {
     expect(() =>
       assertProductionBypassDisabled({ NODE_ENV: "production", ADMIN_DEV_BYPASS_EMAIL: "ops@syntholo.com" }),
-    ).toThrow(/ADMIN_DEV_BYPASS_EMAIL must not be set in a production build/);
+    ).toThrow(/ADMIN_DEV_BYPASS_EMAIL must not be set outside local development/);
+  });
+
+  it("throws when a Vercel preview build has ADMIN_DEV_BYPASS_EMAIL set", () => {
+    expect(() =>
+      assertProductionBypassDisabled({
+        NODE_ENV: "production",
+        VERCEL_ENV: "preview",
+        ADMIN_DEV_BYPASS_EMAIL: "ops@syntholo.com",
+      }),
+    ).toThrow(/ADMIN_DEV_BYPASS_EMAIL must not be set outside local development/);
   });
 
   it("allows production when the bypass env is unset", () => {
@@ -37,6 +47,6 @@ describe("resolveDevBypassEmail", () => {
   it("throws if the bypass path is invoked in production", () => {
     expect(() =>
       resolveDevBypassEmail({ NODE_ENV: "production", ADMIN_DEV_BYPASS_EMAIL: "ops@syntholo.com" }),
-    ).toThrow(/not reachable in a production build/);
+    ).toThrow(/not reachable outside local development/);
   });
 });

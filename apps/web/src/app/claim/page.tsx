@@ -83,7 +83,7 @@ export default async function ClaimPage({ searchParams }: { searchParams: Promis
         </h1>
         <p>
           {mismatch
-            ? `This purchase belongs to ${state.checkoutEmail}. Sign in with that Clerk email — do not attach it to a different account.`
+            ? `This purchase belongs to ${state.checkoutEmail}. Sign in with that email — do not attach it to a different account.`
             : state.mode === "paid"
             ? "Sign in with the email you used at checkout and your course will be waiting in your workspace."
             : state.detail ?? "Use the same verified email from checkout when you sign in."}

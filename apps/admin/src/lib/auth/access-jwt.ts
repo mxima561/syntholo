@@ -29,22 +29,23 @@ export function readAccessToken(input: { header: string | null; cookie: string |
 export async function verifyAccessJwt(
   token: string,
   options: { aud: string; issuer: string; jwks: JWTVerifyGetKey },
-): Promise<{ ok: true; email: string } | { ok: false }> {
+): Promise<{ ok: true } | { ok: false }> {
   try {
-    const { payload } = await jwtVerify(token, options.jwks, {
+    await jwtVerify(token, options.jwks, {
       issuer: options.issuer,
       audience: options.aud,
     });
-    const email = typeof payload.email === "string" ? payload.email.trim().toLowerCase() : "";
-    if (!email) return { ok: false };
-    return { ok: true, email };
+    return { ok: true };
   } catch {
     return { ok: false };
   }
 }
 
 export function accessIssuer(teamDomain: string): string {
-  return teamDomain.replace(/\/$/, "");
+  const trimmed = teamDomain.trim().replace(/\/$/, "");
+  if (!trimmed) return trimmed;
+  if (trimmed.startsWith("https://") || trimmed.startsWith("http://")) return trimmed;
+  return `https://${trimmed}`;
 }
 
 export function accessCertsUrl(teamDomain: string): string {

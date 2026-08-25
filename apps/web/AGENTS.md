@@ -10,5 +10,6 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Syntholo auth rules
 
-- Clerk is student-only and US data residency; do not persist student PII in Clerk metadata.
-- Never add staff identity, Cloudflare Access, or an `/admin` surface to this app.
+- Neon Auth is the canonical identity for students, teachers, and school admins in this app.
+- Do not persist passwords, session tokens, or auth secrets in application tables.
+- Never add staff identity, Cloudflare Access, or an `/admin` surface to this app. Platform operators use `apps/admin`.
