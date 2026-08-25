@@ -1,4 +1,6 @@
 export { academyCourse, allLessons } from "./course";
+export type { DomainEvent, DomainEventName } from "./events";
+export { nextAttempt } from "./jobs";
 export {
   GRANT_CAPABILITIES,
   HOLD_KINDS,

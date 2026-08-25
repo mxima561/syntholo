@@ -27,6 +27,21 @@ export {
 export { listAuditForTarget, writeAdminAudit } from "./audit";
 export type { AdminAuditInput } from "./audit";
 export {
+  appendAudit,
+  bootstrapOutboxModel,
+  claimJobs,
+  completeJob,
+  enqueueJob,
+  enqueueOutbox,
+  failJob,
+  markOutboxPublished,
+  mutateWithEvent,
+  recordHandlerReceipt,
+  safeJobErrorCode,
+  safeJobErrorMessage,
+} from "./outbox";
+export type { AuditActorKind, JobRecord, JobStatus } from "./outbox";
+export {
   applyPurchaseRefund,
   grantCourseEntitlement,
   listEnrollmentsForUser,

@@ -403,6 +403,8 @@ export async function getReadyDb(): Promise<DatabaseClient> {
     await seedSchoolCatalog(db);
     const { bootstrapAccountModel } = await import("./accounts");
     await bootstrapAccountModel(db);
+    const { bootstrapOutboxModel } = await import("./outbox");
+    await bootstrapOutboxModel(db);
   })().catch((error) => {
     readyPromise = undefined;
     throw error;

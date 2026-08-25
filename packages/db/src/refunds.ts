@@ -2,6 +2,7 @@ import type { EffectiveAccess } from "@syntholo/domain";
 import { loadEffectiveAccess } from "./access";
 import { ensureAccountForUser } from "./accounts";
 import { refundGrantsForPurchase, revokeEntitlementGrants, upsertEntitlementGrant } from "./entitlements";
+import { appendAudit, enqueueOutbox, mutateWithEvent } from "./outbox";
 import { withStaffScope } from "./scope";
 
 export type PurchaseSnapshot = {
@@ -84,17 +85,40 @@ export async function loadPurchaseRefundSnapshot(purchaseId: string): Promise<{
 }
 
 export async function applyPurchaseRefund(purchaseId: string): Promise<RefundResult | null> {
-  const snapshot = await loadPurchaseRefundSnapshot(purchaseId);
-  if (!snapshot) return null;
-  const transition = refundStateTransition(snapshot.purchase, snapshot.enrollments);
-  if (!transition.changed) return transition;
+  return mutateWithEvent(async (db) => {
+    const [row] = await db`SELECT * FROM purchases WHERE id = ${purchaseId}`;
+    if (!row) return null;
+    const purchase = mapPurchase(row);
+    const enrollmentRows = await db`
+      SELECT user_id, course_id, source_purchase_id
+      FROM enrollments WHERE source_purchase_id = ${purchaseId}
+    `;
+    const enrollments = enrollmentRows.map((enrollment) => ({
+      userId: String(enrollment.user_id),
+      courseId: String(enrollment.course_id),
+      sourcePurchaseId: enrollment.source_purchase_id ? String(enrollment.source_purchase_id) : null,
+    }));
+    const transition = refundStateTransition(purchase, enrollments);
+    if (!transition.changed) return transition;
 
-  await withStaffScope(async (db) => {
     await db`UPDATE purchases SET status = 'refunded' WHERE id = ${purchaseId}`;
     await db`DELETE FROM enrollments WHERE source_purchase_id = ${purchaseId}`;
     await refundGrantsForPurchase(purchaseId, db);
+    await appendAudit(db, {
+      actorKind: "system",
+      actorId: "applyPurchaseRefund",
+      action: "purchase.refunded",
+      targetType: "purchase",
+      targetId: purchaseId,
+      payload: { offer: purchase.offer, userId: purchase.userId },
+    });
+    await enqueueOutbox(db, {
+      eventName: "purchase.refunded.v1",
+      accountId: row.account_id ? String(row.account_id) : null,
+      payload: { purchaseId, offer: purchase.offer },
+    });
+    return transition;
   });
-  return transition;
 }
 
 export async function listPaidPurchases(limit = 50): Promise<PurchaseSnapshot[]> {
@@ -107,7 +131,7 @@ export async function listPaidPurchases(limit = 50): Promise<PurchaseSnapshot[]>
 }
 
 export async function grantCourseEntitlement(userId: string, courseId: string): Promise<EffectiveAccess> {
-  return withStaffScope(async (db) => {
+  return mutateWithEvent(async (db) => {
     const membership = await ensureAccountForUser(userId, {}, db);
     await db`
       INSERT INTO enrollments (account_id, user_id, course_id)
@@ -118,16 +142,44 @@ export async function grantCourseEntitlement(userId: string, courseId: string): 
       { accountId: membership.accountId, userId, capability: "academy_course", source: "admin" },
       db,
     );
-    return loadEffectiveAccess(membership.accountId, new Date(), db);
+    const access = await loadEffectiveAccess(membership.accountId, new Date(), db);
+    await appendAudit(db, {
+      actorKind: "system",
+      actorId: "grantCourseEntitlement",
+      action: "entitlement.granted",
+      targetType: "account",
+      targetId: membership.accountId,
+      payload: { userId, courseId, capability: "academy_course" },
+    });
+    await enqueueOutbox(db, {
+      eventName: "entitlement.granted.v1",
+      accountId: membership.accountId,
+      payload: { userId, courseId, capability: "academy_course" },
+    });
+    return access;
   });
 }
 
 export async function revokeCourseEntitlement(userId: string, courseId: string): Promise<EffectiveAccess> {
-  return withStaffScope(async (db) => {
+  return mutateWithEvent(async (db) => {
     const membership = await ensureAccountForUser(userId, {}, db);
     await db`DELETE FROM enrollments WHERE user_id = ${userId} AND course_id = ${courseId}`;
     await revokeEntitlementGrants(membership.accountId, "academy_course", db);
-    return loadEffectiveAccess(membership.accountId, new Date(), db);
+    const access = await loadEffectiveAccess(membership.accountId, new Date(), db);
+    await appendAudit(db, {
+      actorKind: "system",
+      actorId: "revokeCourseEntitlement",
+      action: "entitlement.revoked",
+      targetType: "account",
+      targetId: membership.accountId,
+      payload: { userId, courseId, capability: "academy_course" },
+    });
+    await enqueueOutbox(db, {
+      eventName: "entitlement.revoked.v1",
+      accountId: membership.accountId,
+      payload: { userId, courseId, capability: "academy_course" },
+    });
+    return access;
   });
 }
 

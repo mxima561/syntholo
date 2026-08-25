@@ -6,7 +6,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./course": "./src/course.ts",
+    "./events": "./src/events.ts",
     "./entitlements": "./src/entitlements.ts",
+    "./jobs": "./src/jobs.ts",
     "./identity": "./src/identity.ts",
     "./next-action": "./src/next-action.ts",
     "./offers": "./src/offers.ts",

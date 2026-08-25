@@ -12,10 +12,13 @@
   },
   "dependencies": {
     "@syntholo/contracts": "*",
+    "@syntholo/db": "*",
+    "@syntholo/domain": "*",
     "fastify": "^5.12.1"
   },
   "devDependencies": {
     "@types/node": "^24.7.2",
+    "postgres": "^3.4.9",
     "tsx": "^4.20.6",
     "typescript": "^5.9.3",
     "vitest": "4.1.10"
