@@ -37,4 +37,15 @@ describe("parseRuntimeEnv", () => {
     expect(env.neonAuth?.baseUrl).toBe(neon.NEON_AUTH_BASE_URL);
     expect(env.mux).toBeUndefined();
   });
+
+  it("accepts Stripe restricted sandbox keys", () => {
+    const env = parseRuntimeEnv({
+      APP_MODE: "production",
+      DATABASE_URL: "postgres://localhost/syntholo",
+      ...neon,
+      STRIPE_SECRET_KEY: "rkcs_test_restrictedsandboxkey",
+      STRIPE_WEBHOOK_SECRET: "whsec_test",
+    });
+    expect(env.stripe?.secretKey).toBe("rkcs_test_restrictedsandboxkey");
+  });
 });

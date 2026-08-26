@@ -9,7 +9,10 @@ const rawSchema = z.object({
   NEXT_PUBLIC_NEON_AUTH_URL: z.string().url().optional(),
   NEXT_PUBLIC_NEON_DATA_API_URL: z.string().url().optional(),
   NEXT_PUBLIC_NEON_AUTH_GOOGLE: z.enum(["true", "false"]).optional(),
-  STRIPE_SECRET_KEY: z.string().startsWith("sk_").optional(),
+  STRIPE_SECRET_KEY: z
+    .string()
+    .refine((value) => /^(sk|rk|rkcs)_(test|live)_/.test(value), "Stripe secret keys must start with sk_, rk_, or rkcs_")
+    .optional(),
   STRIPE_WEBHOOK_SECRET: z.string().startsWith("whsec_").optional(),
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().startsWith("pk_").optional(),
   MUX_TOKEN_ID: z.string().min(1).optional(),

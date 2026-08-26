@@ -162,7 +162,7 @@ export async function refundPurchaseAction(formData: FormData) {
     purchaseId,
     actorStaffId: staff.id,
     ...(await requestAuditContext()),
-    stripeRefund: process.env.STRIPE_SECRET_KEY?.startsWith("sk_")
+    stripeRefund: /^(sk|rk|rkcs)_(test|live)_/.test(process.env.STRIPE_SECRET_KEY ?? "")
       ? async (stripeSessionId: string) => {
           const Stripe = (await import("stripe")).default;
           const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
