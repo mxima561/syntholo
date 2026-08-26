@@ -1,5 +1,6 @@
 import { ArrowRight, Check, Minus } from "lucide-react";
 import Link from "next/link";
+import { MemberEntryCta } from "@/components/member-entry-cta";
 import { Button } from "@/components/ui/button";
 
 const plans = [
@@ -28,7 +29,7 @@ export default function PricingPage() {
     <main className="pricing-page">
       <header className="site-header shell">
         <Link className="brand" href="/"><span className="brand-mark">S</span><span>Syntholo</span></Link>
-        <Button href="/signin" size="small" variant="quiet">Member sign in</Button>
+        <MemberEntryCta />
       </header>
       <section className="pricing-hero shell">
         <span className="micro-label">SIMPLE OPTIONS, CLEAR OUTCOMES</span>
