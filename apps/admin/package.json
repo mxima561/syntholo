@@ -8,9 +8,10 @@
     "build": "next build",
     "start": "next start --port 3001",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run && node --experimental-strip-types --test src/lib/auth/cloudflare-security.node-test.ts"
   },
   "dependencies": {
+    "@syntholo/auth": "*",
     "@syntholo/db": "*",
     "@syntholo/domain": "*",
     "jose": "^6.1.0",

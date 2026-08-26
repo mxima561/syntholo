@@ -8,22 +8,37 @@ export {
   getInvitationPreview,
   inviteTeammate,
   listMemberships,
+  listMembershipsForUser,
   listPendingInvitations,
   listSeatMembers,
   revokeInvitation,
   revokeMembership,
+  setActiveAccount,
 } from "./accounts";
 export type { InvitationPreview, InvitationRecord, MembershipRecord, MembershipRole, SeatMember } from "./accounts";
 export type { AdminAuditLog, Staff, StaffRole, StaffStatus } from "./types";
 export { publicIdFromUuid } from "./ids";
 export {
+  bindStaffNeonUserId,
   findStaffByEmail,
+  findStaffByNeonUserId,
   insertStaff,
   listStaff,
   touchStaffLastSeen,
   updateStaffRole,
   updateStaffStatus,
 } from "./staff";
+export {
+  assertPlatformCapability,
+  assertSchoolPermission,
+  hasPlatformCapability,
+  hasSchoolPermission,
+  normalizePlatformAdminRole,
+  normalizeSchoolRole,
+  schoolRoleGrantsPlatformAccess,
+} from "./permissions";
+export type { PlatformAdminRole, PlatformCapability, SchoolPermission, SchoolRole } from "./permissions";
+export { recordIdentityMigration } from "./identity";
 export { listAuditForTarget, writeAdminAudit } from "./audit";
 export type { AdminAuditInput } from "./audit";
 export {

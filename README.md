@@ -5,8 +5,9 @@ Syntholo is a polished end-to-end platform for the **AI Operating System Academy
 ## What is included
 
 - Public homepage, pricing, 20-question readiness scorecard, report, and account claim
-- Real student authentication via Clerk (`/signin`, `/signout`) mapped to internal `app_users.id`
-- Separate admin app on `:3001` behind Cloudflare Access; authorization is the `staff` table (no auto-provisioning)
+- Real student authentication via Neon Auth (`/signin`, `/signup`, `/signout`) mapped to internal `app_users.neon_user_id`
+- Customer CRUD through the Neon Data API with PostgreSQL RLS; billing, entitlements, and telephony-like secrets stay on the server
+- Separate admin app on `:3001` / `admin.syntholo.com`: Cloudflare Access (reachability) + Neon Auth (identity) + `platform_admins` (authorization). No auto-provisioning.
 - **Stripe test-mode checkout** for all three offers, webhook-driven fulfillment (idempotent), subscription cancellation revoking access, and enrollment granting
 - Member command center, six-stage/18-lesson course (served from the database), lesson video playback (YouTube/Vimeo/MP4), and persistent lesson progress
 - **Persistent community**: DB-backed posts, spaces, and per-member likes
@@ -19,11 +20,11 @@ Syntholo is a polished end-to-end platform for the **AI Operating System Academy
 
 Requirements: Node.js 20.9 or newer.
 
-1. `npm install` from the repo root (npm workspaces: `apps/web`, `apps/admin`, `packages/db`, `packages/domain`)
-2. Set `DATABASE_URL` in the root `.env` (a Neon connection string, or any Postgres URL)
-3. For student sign-in: create a US [Clerk](https://dashboard.clerk.com) application, then set `CLERK_SECRET_KEY` and `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`. Do not store student PII in Clerk metadata.
+1. `npm install` from the repo root (npm workspaces: `apps/web`, `apps/admin`, `packages/*`)
+2. Set `DATABASE_URL` in the root `.env` (a Neon Postgres connection string)
+3. For student sign-in: enable Neon Auth on the project, then set `NEON_AUTH_BASE_URL`, `NEON_AUTH_COOKIE_SECRET`, `NEXT_PUBLIC_NEON_AUTH_URL`, and `NEXT_PUBLIC_NEON_DATA_API_URL`. See [Neon environment mapping](docs/operations/neon-environments.md).
 4. For payments: set `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` (test mode keys) and add a webhook endpoint at `{APP_URL}/api/webhooks/stripe` for `checkout.session.completed`, `customer.subscription.updated`, and `customer.subscription.deleted`
-5. Seed staff with `STAFF_BOOTSTRAP_EMAILS` and `npm run db:seed-staff`. Local admin: `ADMIN_DEV_BYPASS_EMAIL` (never in production, and only when `CF_ACCESS_AUD` is unset).
+5. Seed platform admins with `STAFF_BOOTSTRAP_EMAILS` and `npm run db:seed-staff`. Local admin: `ADMIN_DEV_BYPASS_EMAIL` may resolve a seeded `staff` row only during `next dev` when Access env is unset. Preview and production reject that bypass. Staff still need a `platform_admins` row and, when configured, a Neon Auth session. See [Cloudflare admin protection](docs/operations/cloudflare-admin-access.md).
 6. `npm run dev` (student app in `apps/web`). `npm run dev:admin` starts the admin app on port 3001.
 
 The database schema is created and the curriculum seeded automatically at server startup.
@@ -34,7 +35,7 @@ Useful entry points:
 - `/scorecard` — readiness assessment
 - `/pricing` — offers and disclosures
 - `/learn` — member workspace
-- `http://localhost:3001` — admin console (Cloudflare Access in production)
+- `http://localhost:3001` — admin console (Cloudflare Access + Neon Auth in production)
 - `/api/health` — runtime configuration state
 
 ## Quality checks

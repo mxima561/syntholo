@@ -3,7 +3,7 @@ import { upsertAccount, type Account } from "@/lib/server/accounts";
 
 /** Local unsigned-student identity. Not Northstar course fixtures. */
 export const DEMO_STUDENT = {
-  clerkId: "demo:maria",
+  neonUserId: "demo:maria",
   email: "maria@northstar.example",
   firstName: "Maria",
   lastName: "Chen",

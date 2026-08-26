@@ -10,5 +10,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Syntholo auth rules
 
-- Admin auth = Cloudflare Access. Never add Clerk to the admin app. Never read identity from an unverified header.
-- Every admin mutation re-checks role from the `staff` table and writes an audit row.
+- Cloudflare Access is an outer gate for this origin only. Never treat a valid Access JWT as Syntholo identity.
+- Neon Auth is the canonical identity. Authorize against `platform_admins` / `staff` after a verified Neon session.
+- Never add Clerk. Never read identity from an unverified header.
+- Every admin mutation re-checks role from `staff`/`platform_admins` and writes an audit row.

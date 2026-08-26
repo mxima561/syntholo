@@ -9,6 +9,7 @@ function staff(overrides: Partial<Staff> = {}): Staff {
     email: "ops@syntholo.com",
     role: "admin",
     status: "active",
+    neonUserId: null,
     createdAt: new Date(),
     lastSeenAt: null,
     ...overrides,

@@ -1,4 +1,5 @@
 import { getReadyDb, type DatabaseClient } from "./client";
+import type { SchoolRole } from "./permissions";
 
 export type ActorKind = "member" | "staff" | "system";
 
@@ -6,7 +7,7 @@ export type MembershipLike = {
   id: string;
   accountId: string;
   userId: string;
-  role: "owner" | "teammate";
+  role: SchoolRole;
   status: "active" | "removed";
 };
 

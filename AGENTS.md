@@ -10,7 +10,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 # Syntholo auth rules
 
-- Admin auth = Cloudflare Access. Never add Clerk to the admin app. Never read identity from an unverified header.
+- Neon Auth is the canonical identity for every person (students, teachers, school admins, and staff).
+- Cloudflare Access is an outer gate for `apps/admin` / admin.syntholo.com only. Never treat Access as identity.
+- Authorize customers via `memberships` and Postgres RLS. Authorize staff via `platform_admins` / `staff` after a verified Neon session.
+- Never add Clerk. Never read identity from an unverified header.
 - Every admin mutation re-checks role from the `staff` table and writes an audit row.
-- Clerk is student-only and US data residency; do not persist student PII in Clerk metadata.
+- Do not persist student PII or auth secrets in Neon Auth metadata or application tables.
 

@@ -1,9 +1,9 @@
 import { requireAcademyAccess } from "@/lib/server/accounts";
 import { getPrimaryCourse } from "@/lib/server/courses";
-import { getCertificate, listPendingInvitations, listSeatMembers } from "@syntholo/db";
+import { getCertificate, hasSchoolPermission, listPendingInvitations, listSeatMembers } from "@syntholo/db";
 import { remainingAcademySeats } from "@syntholo/domain";
 import { getPurchasesForUser } from "@/lib/server/purchases";
-import { revokeInvitationAction, revokeMembershipAction, updateProfileAction } from "@/app/learn/actions";
+import { revokeInvitationAction, revokeMembershipAction, switchAcademyAction, updateProfileAction } from "@/app/learn/actions";
 import { InviteTeammateForm } from "./invite-form";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -23,6 +23,7 @@ export default async function SettingsPage() {
   const occupied = access.reservedSeats;
   const remaining = remainingAcademySeats(occupied);
   const seatChangesHeld = access.holds.includes("seat_changes");
+  const canManageMembers = hasSchoolPermission(account.membershipRole, "manage_members");
 
   return (
     <div className="member-page simple-page">
@@ -34,6 +35,26 @@ export default async function SettingsPage() {
           <h2><code>{account.publicId}</code></h2>
           <p>Use this ID with support or operations. Internal record {account.id}.</p>
         </section>
+        {account.memberships.length > 1 ? (
+          <section>
+            <span className="micro-label">Active academy</span>
+            <h2>Switch workspace</h2>
+            <p>You belong to more than one academy account. Switching is validated against your memberships.</p>
+            <form action={switchAcademyAction} className="profile-form">
+              <label>
+                Academy
+                <select defaultValue={account.accountId} name="accountId">
+                  {account.memberships.map((item) => (
+                    <option key={item.accountId} value={item.accountId}>
+                      {item.name} · {item.role}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button size="small" type="submit">Use this academy</Button>
+            </form>
+          </section>
+        ) : null}
         <section>
           <span className="micro-label">Access</span>
           <h2>Academy access</h2>
@@ -73,7 +94,7 @@ export default async function SettingsPage() {
                   {member.firstName} {member.lastName} · {member.email} · {member.role}
                   {member.id === account.membershipId ? " (you)" : ""}
                 </span>
-                {account.membershipRole === "owner" && member.id !== account.membershipId && !seatChangesHeld ? (
+                {canManageMembers && member.id !== account.membershipId && !seatChangesHeld ? (
                   <form action={revokeMembershipAction}>
                     <input type="hidden" name="membershipId" value={member.id} />
                     <Button size="small" type="submit" variant="secondary">Remove</Button>
@@ -84,7 +105,7 @@ export default async function SettingsPage() {
             {invites.map((invite) => (
               <li key={invite.id}>
                 <span>{invite.email} · pending invite</span>
-                {account.membershipRole === "owner" && !seatChangesHeld ? (
+                {canManageMembers && !seatChangesHeld ? (
                   <form action={revokeInvitationAction}>
                     <input type="hidden" name="invitationId" value={invite.id} />
                     <Button size="small" type="submit" variant="secondary">Revoke</Button>
@@ -94,7 +115,7 @@ export default async function SettingsPage() {
             ))}
           </ul>
           {seatChangesHeld ? <p>Seat changes are on hold for this account.</p> : null}
-          {account.membershipRole === "owner" && remaining > 0 && !seatChangesHeld ? <InviteTeammateForm /> : null}
+          {canManageMembers && remaining > 0 && !seatChangesHeld ? <InviteTeammateForm /> : null}
         </section>
         <section>
           <span className="micro-label">Purchases</span>

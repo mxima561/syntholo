@@ -9,7 +9,7 @@ assertProductionBypassDisabled();
 const nextConfig: NextConfig = {
   typedRoutes: false,
   poweredByHeader: false,
-  transpilePackages: ["@syntholo/db", "@syntholo/domain"],
+  transpilePackages: ["@syntholo/auth", "@syntholo/db", "@syntholo/domain"],
 };
 
 export default nextConfig;

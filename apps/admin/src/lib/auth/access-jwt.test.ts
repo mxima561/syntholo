@@ -1,6 +1,6 @@
 import { exportJWK, generateKeyPair, SignJWT, createLocalJWKSet } from "jose";
 import { describe, expect, it } from "vitest";
-import { readAccessToken, verifyAccessJwt } from "./access-jwt";
+import { accessIssuer, readAccessToken, verifyAccessJwt } from "./access-jwt";
 
 async function signedToken(claims: Record<string, unknown>, audience = "aud-tag", issuer = "https://team.cloudflareaccess.com") {
   const { privateKey, publicKey } = await generateKeyPair("RS256");
@@ -30,11 +30,11 @@ describe("readAccessToken", () => {
 });
 
 describe("verifyAccessJwt", () => {
-  it("extracts email from a valid token", async () => {
+  it("accepts a JWT signed for the Access application audience", async () => {
     const { token, jwks } = await signedToken({ email: "ops@syntholo.com" });
     await expect(
       verifyAccessJwt(token, { aud: "aud-tag", issuer: "https://team.cloudflareaccess.com", jwks }),
-    ).resolves.toEqual({ ok: true, email: "ops@syntholo.com" });
+    ).resolves.toEqual({ ok: true });
   });
 
   it("rejects a forged token with the wrong audience", async () => {
@@ -44,10 +44,17 @@ describe("verifyAccessJwt", () => {
     ).resolves.toEqual({ ok: false });
   });
 
-  it("rejects a token with no email claim", async () => {
-    const { token, jwks } = await signedToken({});
+  it("does not require a Cloudflare email claim (identity is Neon Auth)", async () => {
+    const { token, jwks } = await signedToken({ common_name: "service-token" });
     await expect(
       verifyAccessJwt(token, { aud: "aud-tag", issuer: "https://team.cloudflareaccess.com", jwks }),
-    ).resolves.toEqual({ ok: false });
+    ).resolves.toEqual({ ok: true });
+  });
+});
+
+describe("accessIssuer", () => {
+  it("normalizes a team hostname to an https issuer", () => {
+    expect(accessIssuer("team.cloudflareaccess.com")).toBe("https://team.cloudflareaccess.com");
+    expect(accessIssuer("https://team.cloudflareaccess.com/")).toBe("https://team.cloudflareaccess.com");
   });
 });

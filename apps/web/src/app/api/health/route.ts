@@ -9,7 +9,7 @@ export function GET() {
       mode: env.mode,
       integrations: {
         database: Boolean(env.databaseUrl),
-        clerk: Boolean(env.clerk),
+        neonAuth: Boolean(env.neonAuth),
         stripe: Boolean(env.stripe),
         mux: Boolean(env.mux),
         resend: Boolean(env.resend),

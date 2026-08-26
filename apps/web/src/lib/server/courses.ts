@@ -135,7 +135,15 @@ export async function getInProgressLessonId(userId: string): Promise<string | nu
 
 export async function setLessonProgress(userId: string, lessonId: string, complete: boolean) {
   const { withUserAccountScope } = await import("@syntholo/db");
+  const { dataApiSetLessonProgress } = await import("@/lib/data-api/customer");
   await withUserAccountScope(userId, async (db, membership) => {
+    const viaDataApi = await dataApiSetLessonProgress({
+      accountId: membership.accountId,
+      userId,
+      lessonId,
+      complete,
+    }).catch(() => false);
+    if (viaDataApi) return;
     if (complete) {
       await db`
         INSERT INTO lesson_progress (account_id, user_id, lesson_id, status, completed_at)

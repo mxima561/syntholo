@@ -67,3 +67,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .signin-card ol { padding-left: 20px; display: grid; gap: 6px; }
 .signin-card code { padding: 2px 6px; border-radius: 6px; background: var(--canvas); font-size: 12px; }
 .signin-card .brand { margin-bottom: 6px; }
+.auth-form { display: grid; gap: 12px; }
+.auth-form label { display: grid; gap: 6px; color: var(--navy); font-size: 13px; font-weight: 600; }
+.auth-form input, .auth-form select { height: 44px; padding: 0 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--canvas); }
+.auth-error { color: #9b1c1c; font-size: 14px; }
+.auth-alt { display: flex; gap: 16px; flex-wrap: wrap; }

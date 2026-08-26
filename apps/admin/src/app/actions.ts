@@ -205,7 +205,7 @@ export async function createStaffAction(formData: FormData) {
   const actor = await staffOrForbidden("staff");
   const email = text(formData, "email").toLowerCase();
   const role = text(formData, "role");
-  if (!email || (role !== "admin" && role !== "instructor" && role !== "support")) return;
+  if (!email || (role !== "super_admin" && role !== "admin" && role !== "support" && role !== "finance")) return;
   const created = await insertStaff({ email, role: role as StaffRole });
   await audit("create_staff", "staff", created.id, null, created, actor.id);
   revalidatePath("/staff");
@@ -215,7 +215,7 @@ export async function setStaffRoleAction(formData: FormData) {
   const actor = await staffOrForbidden("staff");
   const staffId = text(formData, "staffId");
   const role = text(formData, "role");
-  if (!staffId || (role !== "admin" && role !== "instructor" && role !== "support")) return;
+  if (!staffId || (role !== "super_admin" && role !== "admin" && role !== "support" && role !== "finance")) return;
   const after = await updateStaffRole(staffId, role as StaffRole);
   await audit("set_staff_role", "staff", staffId, null, after, actor.id);
   revalidatePath("/staff");

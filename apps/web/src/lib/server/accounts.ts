@@ -1,27 +1,34 @@
 import { createHash } from "node:crypto";
-import { currentUser } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import {
   ensureAccountForUser,
   ensureDemoAcademyGrants,
   ensureStudentWorkspace,
+  listMembershipsForUser,
   loadEffectiveAccess,
   publicIdFromUuid,
+  recordIdentityMigration,
+  setActiveAccount,
   withSystemScope,
+  type MembershipRole,
 } from "@syntholo/db";
 import type { EffectiveAccess } from "@syntholo/domain";
+import { isNeonAuthConfigured } from "@syntholo/auth/config";
+import { getNeonAuthUser } from "@syntholo/auth/server";
 import { getReadyDb } from "@/lib/db/client";
 import { asAcademyUnavailable, isAcademyUnavailableError } from "@/lib/db/unavailable";
 
 export type AccountRole = "student";
-export type MembershipRole = "owner" | "teammate";
+export type { MembershipRole };
 
 export type Account = {
   id: string;
+  neonUserId: string | null;
   accountId: string;
   membershipId: string;
   membershipRole: MembershipRole;
+  memberships: Array<{ accountId: string; membershipId: string; role: MembershipRole; name: string }>;
   publicId: string;
   email: string;
   firstName: string;
@@ -33,17 +40,10 @@ export type Account = {
   initials: string;
 };
 
-export function isClerkConfigured(): boolean {
-  return Boolean(
-    process.env.CLERK_SECRET_KEY?.trim() &&
-      process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim(),
-  );
-}
-
 export function canUseDemoStudent(): boolean {
   if (process.env.NODE_ENV === "production") return false;
   const mode = process.env.APP_MODE?.trim() || "demo";
-  return !isClerkConfigured() && mode === "demo";
+  return !isNeonAuthConfigured() && mode === "demo";
 }
 
 export function initialsFor(firstName: string, lastName: string): string {
@@ -56,11 +56,26 @@ export function initialsFor(firstName: string, lastName: string): string {
 async function toAccount(row: Record<string, unknown>): Promise<Account> {
   const id = String(row.id);
   const membership = await withSystemScope((db) => ensureAccountForUser(id, {}, db));
+  const memberships = await withSystemScope(async (db) => {
+    const rows = await listMembershipsForUser(id, db);
+    if (rows.length === 0) return [];
+    const ids = rows.map((item) => item.accountId);
+    const names = await db`SELECT id, name FROM accounts WHERE id IN ${db(ids)}`;
+    const nameById = new Map(names.map((item) => [String(item.id), String(item.name ?? "Academy account")]));
+    return rows.map((item) => ({
+      accountId: item.accountId,
+      membershipId: item.id,
+      role: item.role,
+      name: nameById.get(item.accountId) ?? "Academy account",
+    }));
+  });
   return {
     id,
+    neonUserId: row.neon_user_id ? String(row.neon_user_id) : null,
     accountId: membership.accountId,
     membershipId: membership.id,
     membershipRole: membership.role,
+    memberships,
     publicId: row.public_id ? String(row.public_id) : publicIdFromUuid(id, "STU"),
     email: String(row.email),
     firstName: String(row.first_name ?? ""),
@@ -74,7 +89,7 @@ async function toAccount(row: Record<string, unknown>): Promise<Account> {
 }
 
 export async function upsertAccount(input: {
-  clerkId: string;
+  neonUserId: string;
   email: string;
   firstName: string;
   lastName: string;
@@ -82,23 +97,35 @@ export async function upsertAccount(input: {
   try {
     const db = await getReadyDb();
     const email = input.email.toLowerCase();
+    const displayName = `${input.firstName} ${input.lastName}`.trim();
 
+    const [existing] = await db`
+      SELECT id, clerk_id, neon_user_id FROM app_users WHERE email = ${email} OR neon_user_id = ${input.neonUserId}
+    `;
     const [row] = await db`
-      INSERT INTO app_users (clerk_id, email, first_name, last_name, role)
-      VALUES (${input.clerkId}, ${email}, ${input.firstName}, ${input.lastName}, 'student')
+      INSERT INTO app_users (neon_user_id, email, first_name, last_name, role, display_name)
+      VALUES (${input.neonUserId}, ${email}, ${input.firstName}, ${input.lastName}, 'student', ${displayName})
       ON CONFLICT (email) DO UPDATE SET
-        clerk_id = EXCLUDED.clerk_id,
+        neon_user_id = EXCLUDED.neon_user_id,
         first_name = CASE WHEN app_users.first_name = '' THEN EXCLUDED.first_name ELSE app_users.first_name END,
         last_name = CASE WHEN app_users.last_name = '' THEN EXCLUDED.last_name ELSE app_users.last_name END,
-        last_seen_at = now()
-      RETURNING id, public_id, email, first_name, last_name, business_name, job_title, timezone, role
+        display_name = CASE WHEN app_users.display_name = '' THEN EXCLUDED.display_name ELSE app_users.display_name END,
+        last_seen_at = now(),
+        updated_at = now()
+      RETURNING id, public_id, email, first_name, last_name, business_name, job_title, timezone, role, neon_user_id, clerk_id
     `;
+    if (existing?.clerk_id && input.neonUserId) {
+      await recordIdentityMigration({
+        clerkId: String(existing.clerk_id),
+        neonUserId: input.neonUserId,
+        appUserId: String(row.id),
+      });
+    }
     const account = await toAccount(row);
     if (!row.public_id) {
       await db`UPDATE app_users SET public_id = ${account.publicId} WHERE id = ${account.id} AND public_id IS NULL`;
     }
-    const displayName = `${account.firstName} ${account.lastName}`.trim() || account.email;
-    await ensureStudentWorkspace({ userId: account.id, displayName });
+    await ensureStudentWorkspace({ userId: account.id, displayName: displayName || account.email });
     return account;
   } catch (error) {
     throw asAcademyUnavailable(error);
@@ -106,25 +133,22 @@ export async function upsertAccount(input: {
 }
 
 /**
- * Resolves the signed-in Clerk visitor against the local database.
- * Returns null when nobody is signed in or Clerk is not configured yet.
- * Never writes staff rows and never persists student PII to Clerk metadata.
+ * Resolves the signed-in Neon Auth visitor against the local profile table.
+ * Returns null when nobody is signed in or Neon Auth is not configured yet.
+ * Never writes staff/platform_admins rows.
  */
 export const getCurrentAccount = cache(async (): Promise<Account | null> => {
-  if (!isClerkConfigured()) return null;
+  if (!isNeonAuthConfigured()) return null;
 
   try {
-    const user = await currentUser();
+    const user = await getNeonAuthUser();
     if (!user) return null;
-
-    const email = user.primaryEmailAddress?.emailAddress?.trim();
-    if (!email) return null;
-
+    const [firstName, ...rest] = user.name.trim().split(/\s+/);
     return await upsertAccount({
-      clerkId: user.id,
-      email,
-      firstName: user.firstName?.trim() || "",
-      lastName: user.lastName?.trim() || "",
+      neonUserId: user.id,
+      email: user.email,
+      firstName: firstName || "",
+      lastName: rest.join(" "),
     });
   } catch (error) {
     if (isAcademyUnavailableError(error)) throw error;
@@ -159,7 +183,6 @@ export const getAccountAccess = cache(async (): Promise<{ account: Account; acce
   }
 });
 
-/** Signed-in student with an active academy grant. Unpaid members go to pricing. */
 export async function requireAcademyAccess(): Promise<{ account: Account; access: EffectiveAccess }> {
   const result = await getAccountAccess();
   if (!result.access.capabilities.academy_course) redirect("/pricing");
@@ -171,7 +194,13 @@ export async function requireAcademyAccount(): Promise<Account> {
   return account;
 }
 
-/** Stable color seed for avatars so each account keeps a consistent look. */
+export async function switchAcademyAccount(accountId: string): Promise<Account> {
+  const account = await requireStudentAccount();
+  await setActiveAccount(account.id, accountId);
+  const refreshed = await getCurrentAccount();
+  return refreshed ?? account;
+}
+
 export function avatarHue(accountOrEmail: Account | string): number {
   const seed = typeof accountOrEmail === "string" ? accountOrEmail : accountOrEmail.email;
   return createHash("sha1").update(seed).digest()[0] % 360;

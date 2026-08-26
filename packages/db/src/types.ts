@@ -1,4 +1,6 @@
-export type StaffRole = "admin" | "instructor" | "support";
+import type { PlatformAdminRole } from "./permissions";
+
+export type StaffRole = PlatformAdminRole;
 export type StaffStatus = "active" | "suspended";
 
 export type Staff = {
@@ -7,6 +9,7 @@ export type Staff = {
   email: string;
   role: StaffRole;
   status: StaffStatus;
+  neonUserId: string | null;
   createdAt: Date;
   lastSeenAt: Date | null;
 };

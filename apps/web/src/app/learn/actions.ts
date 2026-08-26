@@ -22,7 +22,9 @@ import {
   type WorkflowStatus,
 } from "@syntholo/db";
 import { assertCapability, assertHoldClear, type GrantCapability } from "@syntholo/domain";
-import { requireAcademyAccess, type Account } from "@/lib/server/accounts";
+import { hasSchoolPermission } from "@syntholo/db";
+import { requireAcademyAccess, switchAcademyAccount, type Account } from "@/lib/server/accounts";
+import { dataApiUpdateProfile } from "@/lib/data-api/customer";
 import { getRuntimeEnv } from "@/lib/config/env";
 import {
   setLessonProgress,
@@ -297,24 +299,32 @@ export async function updateProfileAction(formData: FormData) {
   const firstName = String(formData.get("firstName") ?? "").trim();
   const lastName = String(formData.get("lastName") ?? "").trim();
   if (!firstName) return;
-  await updateStudentProfile({
+  const payload = {
     userId: account.id,
     firstName,
     lastName,
     businessName: String(formData.get("businessName") ?? "").trim(),
     jobTitle: String(formData.get("jobTitle") ?? "").trim(),
     timezone: String(formData.get("timezone") ?? "America/New_York").trim() || "America/New_York",
-  });
+  };
+  const viaDataApi = account.neonUserId
+    ? await dataApiUpdateProfile({ neonUserId: account.neonUserId, ...payload }).catch(() => false)
+    : false;
+  if (!viaDataApi) await updateStudentProfile(payload);
   await logStudent(account, "profile_updated", "user", account.id, `${firstName} ${lastName} updated their profile`);
   revalidatePath("/learn", "layout");
 }
 
 export type InviteState = { error?: string; inviteUrl?: string };
 
+function canManageMembers(account: Account) {
+  return hasSchoolPermission(account.membershipRole, "manage_members");
+}
+
 export async function inviteTeammateAction(_prev: InviteState, formData: FormData): Promise<InviteState> {
   const { account, access } = await requireMemberAction();
-  if (account.membershipRole !== "owner") {
-    return { error: "Only the account owner can invite teammates." };
+  if (!canManageMembers(account)) {
+    return { error: "You do not have permission to invite teammates." };
   }
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
   if (!email) return { error: "Enter an email address." };
@@ -336,7 +346,7 @@ export async function inviteTeammateAction(_prev: InviteState, formData: FormDat
 export async function revokeInvitationAction(formData: FormData) {
   const { account, access } = await requireMemberAction();
   assertHoldClear(access, "seat_changes");
-  if (account.membershipRole !== "owner") return;
+  if (!canManageMembers(account)) return;
   const invitationId = String(formData.get("invitationId") ?? "").trim();
   if (!invitationId) return;
   await revokeInvitation(account.accountId, invitationId);
@@ -346,9 +356,16 @@ export async function revokeInvitationAction(formData: FormData) {
 export async function revokeMembershipAction(formData: FormData) {
   const { account, access } = await requireMemberAction();
   assertHoldClear(access, "seat_changes");
-  if (account.membershipRole !== "owner") return;
+  if (!canManageMembers(account)) return;
   const membershipId = String(formData.get("membershipId") ?? "").trim();
   if (!membershipId || membershipId === account.membershipId) return;
   await revokeMembership(account.accountId, membershipId);
   revalidatePath("/learn/settings");
+}
+
+export async function switchAcademyAction(formData: FormData) {
+  const accountId = String(formData.get("accountId") ?? "").trim();
+  if (!accountId) return;
+  await switchAcademyAccount(accountId);
+  revalidatePath("/learn", "layout");
 }

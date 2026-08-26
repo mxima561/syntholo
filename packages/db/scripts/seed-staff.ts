@@ -19,10 +19,18 @@ async function main() {
   for (const email of emails) {
     await db`
       INSERT INTO staff (email, role, status)
-      VALUES (${email}, 'admin', 'active')
+      VALUES (${email}, 'super_admin', 'active')
       ON CONFLICT (email) DO NOTHING
     `;
-    console.log(`staff ready: ${email}`);
+    const [staff] = await db`SELECT id, role, status, neon_user_id FROM staff WHERE email = ${email}`;
+    if (staff) {
+      await db`
+        INSERT INTO platform_admins (staff_id, user_id, role, status)
+        VALUES (${staff.id}, ${staff.neon_user_id}, ${staff.role}, ${staff.status})
+        ON CONFLICT (staff_id) DO NOTHING
+      `;
+    }
+    console.log(`platform admin ready: ${email}`);
   }
   await db.end({ timeout: 5 });
 }

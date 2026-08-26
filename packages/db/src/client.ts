@@ -54,14 +54,47 @@ const schemaStatements = [
   END $$`;
   })(),
   `CREATE UNIQUE INDEX IF NOT EXISTS app_users_clerk_id_uidx ON app_users (clerk_id)`,
+  `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS neon_user_id TEXT`,
+  `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS display_name TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS avatar_url TEXT`,
+  `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS phone TEXT`,
+  `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS onboarding_status TEXT NOT NULL DEFAULT 'pending'`,
+  `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS preferences JSONB NOT NULL DEFAULT '{}'::jsonb`,
+  `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS active_account_id UUID`,
+  `ALTER TABLE app_users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS app_users_neon_user_id_uidx ON app_users (neon_user_id) WHERE neon_user_id IS NOT NULL`,
+  `UPDATE app_users SET display_name = trim(both from concat_ws(' ', first_name, last_name)) WHERE display_name = ''`,
   `CREATE TABLE IF NOT EXISTS staff (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     email CITEXT NOT NULL UNIQUE,
-    role TEXT NOT NULL CHECK (role IN ('admin', 'instructor', 'support')),
+    role TEXT NOT NULL CHECK (role IN ('admin', 'instructor', 'support', 'super_admin', 'finance')),
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_seen_at TIMESTAMPTZ
   )`,
+  `ALTER TABLE staff ADD COLUMN IF NOT EXISTS neon_user_id TEXT`,
+  `ALTER TABLE staff ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS staff_neon_user_id_uidx ON staff (neon_user_id) WHERE neon_user_id IS NOT NULL`,
+  `ALTER TABLE staff DROP CONSTRAINT IF EXISTS staff_role_check`,
+  `UPDATE staff SET role = 'super_admin' WHERE role = 'admin'`,
+  `UPDATE staff SET role = 'admin' WHERE role = 'instructor'`,
+  `DO $$ BEGIN
+    ALTER TABLE staff ADD CONSTRAINT staff_role_check
+      CHECK (role IN ('super_admin', 'admin', 'support', 'finance'));
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$`,
+  `CREATE TABLE IF NOT EXISTS platform_admins (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    staff_id UUID UNIQUE REFERENCES staff(id) ON DELETE CASCADE,
+    user_id TEXT UNIQUE,
+    role TEXT NOT NULL CHECK (role IN ('super_admin', 'admin', 'support', 'finance')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  )`,
+  `INSERT INTO platform_admins (staff_id, user_id, role, status)
+   SELECT s.id, s.neon_user_id, s.role, s.status FROM staff s
+   ON CONFLICT (staff_id) DO NOTHING`,
   `CREATE TABLE IF NOT EXISTS admin_audit_log (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     actor_staff_id UUID NOT NULL REFERENCES staff(id),
@@ -125,6 +158,26 @@ const schemaStatements = [
     PRIMARY KEY (user_id, course_id)
   )`,
   `ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS source_purchase_id UUID`,
+  `ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active'`,
+  `ALTER TABLE enrollments DROP CONSTRAINT IF EXISTS enrollments_status_check`,
+  `DO $$ BEGIN
+    ALTER TABLE enrollments ADD CONSTRAINT enrollments_status_check
+      CHECK (status IN ('active', 'completed', 'cancelled', 'expired'));
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$`,
+  `ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS enrolled_at TIMESTAMPTZ NOT NULL DEFAULT now()`,
+  `ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`,
+  `ALTER TABLE courses ADD COLUMN IF NOT EXISTS school_id UUID`,
+  `ALTER TABLE courses ADD COLUMN IF NOT EXISTS slug TEXT`,
+  `ALTER TABLE courses ADD COLUMN IF NOT EXISTS thumbnail_url TEXT`,
+  `ALTER TABLE courses ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES app_users(id)`,
+  `ALTER TABLE courses ADD COLUMN IF NOT EXISTS published_at TIMESTAMPTZ`,
+  `ALTER TABLE courses DROP CONSTRAINT IF EXISTS courses_status_check`,
+  `DO $$ BEGIN
+    ALTER TABLE courses ADD CONSTRAINT courses_status_check
+      CHECK (status IN ('draft', 'published', 'archived'));
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$`,
   `CREATE TABLE IF NOT EXISTS lesson_progress (
     user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
     lesson_id TEXT NOT NULL REFERENCES lessons(id) ON DELETE CASCADE,
@@ -258,6 +311,10 @@ const schemaStatements = [
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
   )`,
+  `ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES app_users(id)`,
+  `UPDATE artifacts SET created_by_user_id = user_id WHERE created_by_user_id IS NULL`,
+  `ALTER TABLE workflows ADD COLUMN IF NOT EXISTS created_by_user_id UUID REFERENCES app_users(id)`,
+  `UPDATE workflows SET created_by_user_id = user_id WHERE created_by_user_id IS NULL`,
   `CREATE TABLE IF NOT EXISTS live_sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
@@ -401,6 +458,10 @@ export async function getReadyDb(): Promise<DatabaseClient> {
     }
     await seedCurriculum(db);
     await seedSchoolCatalog(db);
+    const { IDENTITY_MIGRATION_SQL } = await import("./identity");
+    for (const statement of IDENTITY_MIGRATION_SQL) {
+      await db.unsafe(statement);
+    }
     const { bootstrapAccountModel } = await import("./accounts");
     await bootstrapAccountModel(db);
     const { bootstrapOutboxModel } = await import("./outbox");

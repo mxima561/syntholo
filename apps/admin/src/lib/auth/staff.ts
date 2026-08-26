@@ -1,7 +1,19 @@
 import { headers, cookies } from "next/headers";
-import { findStaffByEmail, touchStaffLastSeen, type Staff, type StaffRole } from "@syntholo/db";
+import {
+  bindStaffNeonUserId,
+  findStaffByEmail,
+  findStaffByNeonUserId,
+  hasPlatformCapability,
+  touchStaffLastSeen,
+  type PlatformCapability,
+  type Staff,
+  type StaffRole,
+} from "@syntholo/db";
+import { isNeonAuthConfigured } from "@syntholo/auth/config";
+import { getNeonAuthUser } from "@syntholo/auth/server";
 import { authorizeStaffRow } from "./authorize-staff";
-import { accessCertsUrl, accessIssuer, getCachedRemoteJwks, readAccessToken, verifyAccessJwt } from "./access-jwt";
+import { cloudflareAccessAllows } from "./access-gate";
+import { adminRuntime } from "./access-runtime";
 import { resolveDevBypassEmail } from "./bypass";
 
 export class AdminForbiddenError extends Error {
@@ -11,48 +23,59 @@ export class AdminForbiddenError extends Error {
   }
 }
 
-const CAPABILITIES = {
-  content: ["admin", "instructor"],
-  support: ["admin", "support"],
-  billing: ["admin"],
-  staff: ["admin"],
-} as const;
-
-export type StaffCapability = keyof typeof CAPABILITIES;
-
-async function verifiedEmail(): Promise<string> {
-  if (process.env.NODE_ENV !== "production") {
-    const bypass = resolveDevBypassEmail();
-    if (bypass) return bypass.toLowerCase();
+export class AdminUnauthenticatedError extends Error {
+  constructor() {
+    super("Unauthenticated");
+    this.name = "AdminUnauthenticatedError";
   }
+}
 
+export type StaffCapability = PlatformCapability;
+
+/**
+ * Cloudflare Access is reachability only. A valid Access JWT does not identify
+ * the Syntholo actor and does not grant platform_admins permissions.
+ */
+export async function assertCloudflareAccess(): Promise<void> {
   const headerStore = await headers();
   const cookieStore = await cookies();
-  const token = readAccessToken({
+  const allowed = await cloudflareAccessAllows({
     header: headerStore.get("cf-access-jwt-assertion"),
     cookie: cookieStore.get("CF_Authorization")?.value ?? null,
   });
-  const aud = process.env.CF_ACCESS_AUD?.trim();
-  const teamDomain = process.env.CF_ACCESS_TEAM_DOMAIN?.trim();
-  if (!token || !aud || !teamDomain) throw new AdminForbiddenError();
+  if (!allowed) throw new AdminForbiddenError();
+}
 
-  const verified = await verifyAccessJwt(token, {
-    aud,
-    issuer: accessIssuer(teamDomain),
-    jwks: getCachedRemoteJwks(accessCertsUrl(teamDomain)),
-  });
-  if (!verified.ok) throw new AdminForbiddenError();
-  return verified.email;
+async function resolvePlatformStaff(): Promise<Staff> {
+  if (isNeonAuthConfigured()) {
+    const user = await getNeonAuthUser();
+    if (!user) throw new AdminUnauthenticatedError();
+    const byNeon = await findStaffByNeonUserId(user.id);
+    if (byNeon) return byNeon;
+    const byEmail = await findStaffByEmail(user.email);
+    if (byEmail) {
+      return (await bindStaffNeonUserId(byEmail.id, user.id)) ?? byEmail;
+    }
+    throw new AdminForbiddenError();
+  }
+
+  if (adminRuntime() === "development") {
+    const bypass = resolveDevBypassEmail();
+    if (bypass) {
+      const staff = await findStaffByEmail(bypass.toLowerCase());
+      if (staff) return staff;
+    }
+  }
+  throw new AdminUnauthenticatedError();
 }
 
 export function staffHasCapability(role: StaffRole, capability: StaffCapability): boolean {
-  const allowed = CAPABILITIES[capability] as readonly StaffRole[];
-  return allowed.includes(role);
+  return hasPlatformCapability(role, capability);
 }
 
 export async function requireStaff(capability?: StaffCapability): Promise<Staff> {
-  const email = await verifiedEmail();
-  const staff = await findStaffByEmail(email);
+  await assertCloudflareAccess();
+  const staff = await resolvePlatformStaff();
   if (!authorizeStaffRow(staff)) throw new AdminForbiddenError();
   if (capability && !staffHasCapability(staff.role, capability)) throw new AdminForbiddenError();
   await touchStaffLastSeen(staff.id);

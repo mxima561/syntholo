@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { MemberShell } from "@/components/member-shell";
-import { isClerkConfigured, requireAcademyAccess } from "@/lib/server/accounts";
+import { isNeonAuthConfigured } from "@syntholo/auth/config";
+import { requireAcademyAccess } from "@/lib/server/accounts";
 import { getPrimaryCourse, ensureEnrollment } from "@/lib/server/courses";
 import { ensureWelcomeThread } from "@/lib/server/support";
 
@@ -22,7 +23,7 @@ export default async function LearnLayout({ children }: { children: ReactNode })
         initials: account.initials,
         name: `${account.firstName} ${account.lastName}`.trim() || account.email,
         subtitle: `${course?.title ?? "Academy"} · ${account.publicId}`,
-        authLabel: isClerkConfigured() ? "Signed in with Clerk" : "Local student session",
+        authLabel: isNeonAuthConfigured() ? "Signed in with Neon Auth" : "Local student session",
       }}
     >
       {children}
