@@ -193,6 +193,29 @@ describe.skipIf(!canReachScratchDatabase)("database layer (integration)", () => 
     expect(history[0].status).toBe("paid");
   });
 
+  it("attaches a guest checkout to the buyer when they later sign in", async () => {
+    const purchases = await import("@/lib/server/purchases");
+    const { loadEffectiveAccess, withSystemScope } = await import("@syntholo/db");
+    const email = `guest-claim-${Date.now()}@syntholo.test`;
+
+    await purchases.fulfillCheckout({
+      sessionId: `cs_guest_${Date.now()}`,
+      email,
+      offer: "self-paced",
+      kind: "payment",
+    });
+
+    const userId = await createTestUser(email, "Guest");
+    const claimed = await purchases.claimPaidPurchasesForUser(userId, email);
+    expect(claimed).toBeGreaterThan(0);
+
+    const [membership] = await withSystemScope(
+      (sql) => sql`SELECT account_id FROM memberships WHERE user_id = ${userId} AND status = 'active' LIMIT 1`,
+    );
+    const access = await loadEffectiveAccess(String(membership.account_id));
+    expect(access.capabilities.academy_course).toBe(true);
+  });
+
   it("cancels a subscription purchase and revokes only its enrollment", async () => {
     const purchases = await import("@/lib/server/purchases");
     const userId = await createTestUser("subscriber-test@syntholo.test", "Sub");

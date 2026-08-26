@@ -1,2 +1,2 @@
-export { fulfillCheckout, getPurchasesForUser, revokeSubscription } from "@syntholo/db";
+export { claimPaidPurchasesForUser, fulfillCheckout, getPurchasesForUser, revokeSubscription } from "@syntholo/db";
 export type { PurchaseRecord } from "@syntholo/db";

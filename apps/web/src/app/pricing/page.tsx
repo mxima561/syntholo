@@ -2,6 +2,9 @@ import { ArrowRight, Check, Minus } from "lucide-react";
 import Link from "next/link";
 import { MemberEntryCta } from "@/components/member-entry-cta";
 import { Button } from "@/components/ui/button";
+import { getCurrentAccount } from "@/lib/server/accounts";
+
+export const dynamic = "force-dynamic";
 
 const plans = [
   {
@@ -24,7 +27,8 @@ const plans = [
   },
 ] as const;
 
-export default function PricingPage() {
+export default async function PricingPage() {
+  const account = await getCurrentAccount();
   return (
     <main className="pricing-page">
       <header className="site-header shell">
@@ -34,7 +38,11 @@ export default function PricingPage() {
       <section className="pricing-hero shell">
         <span className="micro-label">SIMPLE OPTIONS, CLEAR OUTCOMES</span>
         <h1>Start with the academy.<br />Keep building when you are ready.</h1>
-        <p>Every academy purchase includes your owner workspace and two teammate seats. You never need to buy software to complete the course.</p>
+        <p>
+          {account
+            ? `You're signed in as ${account.email}. This account does not have academy access yet — buy a plan below, or sign in with the email from checkout.`
+            : "Every academy purchase includes your owner workspace and two teammate seats. You never need to buy software to complete the course."}
+        </p>
       </section>
       <section className="pricing-grid shell">
         {plans.map((plan) => (

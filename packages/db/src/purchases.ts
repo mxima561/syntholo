@@ -128,6 +128,9 @@ export async function fulfillCheckout(input: {
       const [existing] = await db`SELECT * FROM purchases WHERE stripe_session_id = ${input.sessionId}`;
       if (!existing) return { created: false };
       purchaseId = String(existing.id);
+      if (userId && existing.user_id && String(existing.user_id) !== userId) {
+        return { created: false };
+      }
       if (userId && accountId && !existing.user_id) {
         await db`
           UPDATE purchases
@@ -177,6 +180,61 @@ export async function revokeSubscription(input: { subscriptionId: string }) {
     await db`DELETE FROM enrollments WHERE source_purchase_id = ${purchase.id}`;
     await refundGrantsForPurchase(String(purchase.id), db);
     return true;
+  });
+}
+
+/**
+ * Attach paid guest checkouts (and fill missing grants) once the buyer signs in
+ * with the same email. Does not move a purchase that already belongs to another user.
+ */
+export async function claimPaidPurchasesForUser(userId: string, email: string): Promise<number> {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized) return 0;
+
+  return withSystemScope(async (db) => {
+    const membership = await ensureAccountForUser(userId, {}, db);
+    const rows = await db`
+      SELECT * FROM purchases
+      WHERE status = 'paid'
+        AND lower(email) = ${normalized}
+        AND (user_id IS NULL OR user_id = ${userId})
+    `;
+    let claimed = 0;
+    for (const row of rows) {
+      const purchase = mapPurchase(row);
+      if (!isOfferId(purchase.offer)) continue;
+      const offer = offers[purchase.offer];
+      if (!purchase.userId || !purchase.accountId) {
+        await db`
+          UPDATE purchases
+          SET user_id = ${userId}, account_id = ${membership.accountId}
+          WHERE id = ${purchase.id} AND (user_id IS NULL OR user_id = ${userId})
+        `;
+      }
+      const accountId = purchase.accountId ?? membership.accountId;
+      if (offer.grantsCourseId) {
+        await db`
+          INSERT INTO enrollments (account_id, user_id, course_id, source_purchase_id)
+          VALUES (${accountId}, ${userId}, ${offer.grantsCourseId}, ${purchase.id})
+          ON CONFLICT (user_id, course_id) DO NOTHING
+        `;
+      }
+      const [existingGrant] = await db`
+        SELECT id FROM entitlement_grants
+        WHERE account_id = ${accountId}
+          AND capability = 'academy_course'
+          AND status IN ('active', 'grace')
+        LIMIT 1
+      `;
+      await applyOfferGrants(db, {
+        accountId,
+        userId,
+        offerId: offer.id,
+        purchaseId: purchase.id,
+      });
+      if (!purchase.userId || !existingGrant) claimed += 1;
+    }
+    return claimed;
   });
 }
 

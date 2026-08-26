@@ -2,9 +2,12 @@ import { createHash } from "node:crypto";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import {
+  claimPaidPurchasesForUser,
   ensureAccountForUser,
   ensureDemoAcademyGrants,
+  ensureStaffAcademyGrants,
   ensureStudentWorkspace,
+  isActiveStaffIdentity,
   listMembershipsForUser,
   loadEffectiveAccess,
   publicIdFromUuid,
@@ -170,13 +173,29 @@ export async function requireStudentAccount(): Promise<Account> {
   redirect("/signin");
 }
 
+export async function resolveAcademyEntitlements(account: Account): Promise<EffectiveAccess> {
+  if (canUseDemoStudent()) {
+    await ensureDemoAcademyGrants(account.accountId, account.id);
+  }
+  let access = await loadEffectiveAccess(account.accountId);
+  if (!access.capabilities.academy_course) {
+    await claimPaidPurchasesForUser(account.id, account.email);
+    access = await loadEffectiveAccess(account.accountId);
+  }
+  if (
+    !access.capabilities.academy_course &&
+    (await isActiveStaffIdentity({ email: account.email, neonUserId: account.neonUserId }))
+  ) {
+    await ensureStaffAcademyGrants(account.accountId, account.id);
+    access = await loadEffectiveAccess(account.accountId);
+  }
+  return access;
+}
+
 export const getAccountAccess = cache(async (): Promise<{ account: Account; access: EffectiveAccess }> => {
   const account = await requireStudentAccount();
   try {
-    if (canUseDemoStudent()) {
-      await ensureDemoAcademyGrants(account.accountId, account.id);
-    }
-    const access = await loadEffectiveAccess(account.accountId);
+    const access = await resolveAcademyEntitlements(account);
     return { account, access };
   } catch (error) {
     throw asAcademyUnavailable(error);
