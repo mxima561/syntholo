@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { authClient } from "@syntholo/auth/client";
 import { Button } from "@/components/ui/button";
+import { MEMBER_HOME_PATH, goToMemberHome, resetPasswordUrl } from "@/lib/auth/member-destination";
 
 type Mode = "signin" | "signup" | "forgot";
 
@@ -16,14 +16,15 @@ function splitName(fullName: string) {
 export function NeonAuthForm({
   googleEnabled,
   initialMode = "signin",
+  passwordUpdated = false,
 }: {
   googleEnabled: boolean;
   initialMode?: Mode;
+  passwordUpdated?: boolean;
 }) {
-  const router = useRouter();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(passwordUpdated ? "Password updated. Sign in with your new password." : "");
   const [pending, setPending] = useState(false);
 
   async function onSubmit(formData: FormData) {
@@ -37,7 +38,7 @@ export function NeonAuthForm({
       if (mode === "forgot") {
         const { error: resetError } = await authClient.requestPasswordReset({
           email,
-          redirectTo: `${window.location.origin}/signin`,
+          redirectTo: resetPasswordUrl(),
         });
         if (resetError) {
           setError(resetError.message ?? "Could not send a reset email.");
@@ -52,22 +53,25 @@ export function NeonAuthForm({
           email,
           password,
           name: `${first} ${last}`.trim() || email,
+          callbackURL: MEMBER_HOME_PATH,
         });
         if (signUpError) {
           setError(signUpError.message ?? "Could not create that account.");
           return;
         }
-        router.push("/learn");
-        router.refresh();
+        goToMemberHome();
         return;
       }
-      const { error: signInError } = await authClient.signIn.email({ email, password });
+      const { error: signInError } = await authClient.signIn.email({
+        email,
+        password,
+        callbackURL: MEMBER_HOME_PATH,
+      });
       if (signInError) {
         setError(signInError.message ?? "Could not sign in with those details.");
         return;
       }
-      router.push("/learn");
-      router.refresh();
+      goToMemberHome();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Authentication failed.");
     } finally {
@@ -79,7 +83,7 @@ export function NeonAuthForm({
     setError("");
     const { error: socialError } = await authClient.signIn.social({
       provider: "google",
-      callbackURL: "/learn",
+      callbackURL: MEMBER_HOME_PATH,
     });
     if (socialError) setError(socialError.message ?? "Google sign-in is not available.");
   }

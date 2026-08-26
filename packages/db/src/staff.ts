@@ -1,4 +1,5 @@
 import { getReadyDb } from "./client";
+import { withSystemScope } from "./scope";
 import { publicIdFromUuid } from "./ids";
 import { normalizePlatformAdminRole, type PlatformAdminRole } from "./permissions";
 import type { Staff, StaffRole, StaffStatus } from "./types";
@@ -32,6 +33,27 @@ async function upsertPlatformAdmin(staff: Staff) {
       status = EXCLUDED.status,
       updated_at = now()
   `;
+}
+
+export async function isActiveStaffIdentity(input: {
+  email: string;
+  neonUserId?: string | null;
+}): Promise<boolean> {
+  const email = input.email.trim().toLowerCase();
+  const neonUserId = input.neonUserId?.trim() || null;
+  if (!email && !neonUserId) return false;
+  return withSystemScope(async (db) => {
+    const [row] = await db`
+      SELECT id FROM staff
+      WHERE status = 'active'
+        AND (
+          email = ${email}
+          OR (${neonUserId}::text IS NOT NULL AND neon_user_id = ${neonUserId})
+        )
+      LIMIT 1
+    `;
+    return Boolean(row);
+  });
 }
 
 export async function findStaffByEmail(email: string): Promise<Staff | null> {

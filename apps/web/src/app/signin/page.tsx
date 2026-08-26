@@ -1,11 +1,18 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import type { Route } from "next";
 import { isNeonAuthConfigured } from "@syntholo/auth/config";
 import { neonGoogleAuthEnabled } from "@/lib/neon";
+import { RESET_PASSWORD_PATH } from "@/lib/auth/member-destination";
 import { getCurrentAccount } from "@/lib/server/accounts";
 import { NeonAuthForm } from "./neon-auth-form";
 
 export const dynamic = "force-dynamic";
+
+function firstQueryValue(value: string | string[] | undefined): string {
+  if (Array.isArray(value)) return value[0] ?? "";
+  return value ?? "";
+}
 
 function SetupNotice() {
   return (
@@ -30,12 +37,31 @@ function SetupNotice() {
   );
 }
 
-export default async function SignInPage() {
+export default async function SignInPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ token?: string | string[]; error?: string | string[]; reset?: string | string[] }>;
+}) {
+  const params = await searchParams;
+  const token = firstQueryValue(params.token);
+  const resetError = firstQueryValue(params.error);
+  if (token || resetError) {
+    const next = new URLSearchParams();
+    if (token) next.set("token", token);
+    if (resetError) next.set("error", resetError);
+    redirect(`${RESET_PASSWORD_PATH}?${next.toString()}` as Route);
+  }
+
   const account = await getCurrentAccount();
   if (account) redirect("/learn");
 
   if (!isNeonAuthConfigured()) {
     return <SetupNotice />;
   }
-  return <NeonAuthForm googleEnabled={neonGoogleAuthEnabled()} />;
+  return (
+    <NeonAuthForm
+      googleEnabled={neonGoogleAuthEnabled()}
+      passwordUpdated={firstQueryValue(params.reset) === "1"}
+    />
+  );
 }

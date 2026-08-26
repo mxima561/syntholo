@@ -22,6 +22,7 @@ export {
   bindStaffNeonUserId,
   findStaffByEmail,
   findStaffByNeonUserId,
+  isActiveStaffIdentity,
   insertStaff,
   listStaff,
   touchStaffLastSeen,
@@ -67,6 +68,7 @@ export {
 } from "./refunds";
 export {
   ensureDemoAcademyGrants,
+  ensureStaffAcademyGrants,
   listGrantsForAccount,
   listGrantsForUser,
   refundGrantsForPurchase,
@@ -78,7 +80,7 @@ export { hasActiveCapability, loadEffectiveAccess } from "./access";
 export { clearAccountHold, listAccountHolds, setAccountHold } from "./holds";
 export type { EntitlementGrantRecord } from "./entitlements";
 export type { EnrollmentSnapshot, PurchaseSnapshot, RefundResult } from "./refunds";
-export { fulfillCheckout, getPurchasesForUser, revokeSubscription } from "./purchases";
+export { claimPaidPurchasesForUser, fulfillCheckout, getPurchasesForUser, revokeSubscription } from "./purchases";
 export type { PurchaseRecord } from "./purchases";
 export { dispatchStripeEvent, handleCheckoutCompleted, handleSubscriptionCanceled } from "./stripe-events";
 export { PgWebhookReceiptStore } from "./webhook-receipts";

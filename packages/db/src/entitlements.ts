@@ -120,6 +120,15 @@ export async function ensureDemoAcademyGrants(accountId: string, userId: string)
   });
 }
 
+/** Lets active Syntholo staff open the student academy to operate and QA it. */
+export async function ensureStaffAcademyGrants(accountId: string, userId: string) {
+  await withSystemScope(async (db) => {
+    await upsertEntitlementGrant({ accountId, userId, capability: "academy_course", source: "admin" }, db);
+    await upsertEntitlementGrant({ accountId, userId, capability: "support", source: "admin" }, db);
+    await upsertEntitlementGrant({ accountId, userId, capability: "circle_write", source: "admin" }, db);
+  });
+}
+
 export function supportWindowEnd(from = new Date()) {
   const ends = new Date(from);
   ends.setUTCFullYear(ends.getUTCFullYear() + 1);

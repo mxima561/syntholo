@@ -8,6 +8,7 @@ import {
   Workflow,
 } from "lucide-react";
 import Link from "next/link";
+import { MemberEntryCta } from "@/components/member-entry-cta";
 import { Button } from "@/components/ui/button";
 
 const outcomes = [
@@ -42,9 +43,7 @@ export default function HomePage() {
           <Link href="/pricing">Pricing</Link>
         </nav>
         <div className="header-actions">
-          <Button href="/signin" size="small" variant="quiet">
-            Member sign in
-          </Button>
+          <MemberEntryCta />
           <Button href="/scorecard" size="small">
             Take the scorecard
           </Button>
