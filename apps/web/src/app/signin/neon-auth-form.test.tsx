@@ -6,7 +6,9 @@ describe("NeonAuthForm post-login destination", () => {
     const source = readFileSync("src/app/signin/neon-auth-form.tsx", "utf8");
     expect(source).toContain("callbackURL: MEMBER_HOME_PATH");
     expect(source).toContain("goToMemberHome()");
+    expect(source).toContain("resetPasswordUrl()");
     expect(source).not.toContain('router.push("/learn")');
     expect(source).not.toContain("router.refresh()");
+    expect(source).not.toContain('redirectTo: `${window.location.origin}/signin`');
   });
 });

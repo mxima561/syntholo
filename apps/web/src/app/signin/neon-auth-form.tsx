@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { authClient } from "@syntholo/auth/client";
 import { Button } from "@/components/ui/button";
-import { MEMBER_HOME_PATH, goToMemberHome } from "@/lib/auth/member-destination";
+import { MEMBER_HOME_PATH, goToMemberHome, resetPasswordUrl } from "@/lib/auth/member-destination";
 
 type Mode = "signin" | "signup" | "forgot";
 
@@ -16,13 +16,15 @@ function splitName(fullName: string) {
 export function NeonAuthForm({
   googleEnabled,
   initialMode = "signin",
+  passwordUpdated = false,
 }: {
   googleEnabled: boolean;
   initialMode?: Mode;
+  passwordUpdated?: boolean;
 }) {
   const [mode, setMode] = useState<Mode>(initialMode);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(passwordUpdated ? "Password updated. Sign in with your new password." : "");
   const [pending, setPending] = useState(false);
 
   async function onSubmit(formData: FormData) {
@@ -36,7 +38,7 @@ export function NeonAuthForm({
       if (mode === "forgot") {
         const { error: resetError } = await authClient.requestPasswordReset({
           email,
-          redirectTo: `${window.location.origin}/signin`,
+          redirectTo: resetPasswordUrl(),
         });
         if (resetError) {
           setError(resetError.message ?? "Could not send a reset email.");
