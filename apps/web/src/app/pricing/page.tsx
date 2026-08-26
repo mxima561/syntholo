@@ -2,7 +2,7 @@ import { ArrowRight, Check, Minus } from "lucide-react";
 import Link from "next/link";
 import { MemberEntryCta } from "@/components/member-entry-cta";
 import { Button } from "@/components/ui/button";
-import { getCurrentAccount } from "@/lib/server/accounts";
+import { getCurrentAccount, redirectToAcademyIfEntitled } from "@/lib/server/accounts";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +29,7 @@ const plans = [
 
 export default async function PricingPage() {
   const account = await getCurrentAccount();
+  await redirectToAcademyIfEntitled(account);
   return (
     <main className="pricing-page">
       <header className="site-header shell">

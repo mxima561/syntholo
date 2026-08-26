@@ -208,6 +208,13 @@ export async function requireAcademyAccess(): Promise<{ account: Account; access
   return result;
 }
 
+/** Staff preview and paid access skip closed checkout / pricing. */
+export async function redirectToAcademyIfEntitled(account: Account | null): Promise<void> {
+  if (!account) return;
+  const access = await resolveAcademyEntitlements(account);
+  if (access.capabilities.academy_course) redirect("/learn");
+}
+
 export async function requireAcademyAccount(): Promise<Account> {
   const { account } = await requireAcademyAccess();
   return account;
