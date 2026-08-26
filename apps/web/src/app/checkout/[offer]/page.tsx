@@ -2,7 +2,7 @@ import { ArrowLeft, ArrowRight, Check, LockKeyhole } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { getCurrentAccount } from "@/lib/server/accounts";
+import { getCurrentAccount, redirectToAcademyIfEntitled } from "@/lib/server/accounts";
 import { getRuntimeEnv } from "@/lib/config/env";
 import { checkoutErrorCopy } from "@syntholo/domain";
 import { isOfferId, offers } from "@/lib/domain/offers";
@@ -23,6 +23,7 @@ export default async function CheckoutPage({
   if (!isOfferId(offer)) notFound();
   const selected = offers[offer];
   const account = await getCurrentAccount();
+  await redirectToAcademyIfEntitled(account);
   const stripeReady = Boolean(getRuntimeEnv().stripe);
   const resolved = resolveCheckoutOffer(offer, await loadCheckoutContext(account), process.env);
   if (!resolved) notFound();

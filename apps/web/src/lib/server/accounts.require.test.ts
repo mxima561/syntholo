@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AcademyUnavailableError } from "@/lib/db/unavailable";
-import { canUseDemoStudent, requireStudentAccount, resolveAcademyEntitlements, type Account } from "./accounts";
+import {
+  canUseDemoStudent,
+  redirectToAcademyIfEntitled,
+  requireStudentAccount,
+  resolveAcademyEntitlements,
+  type Account,
+} from "./accounts";
 
 const redirect = vi.hoisted(() =>
   vi.fn(() => {
@@ -141,5 +147,34 @@ describe("resolveAcademyEntitlements", () => {
     const result = await resolveAcademyEntitlements(member);
     expect(result.capabilities.academy_course).toBe(false);
     expect(ensureStaffAcademyGrants).not.toHaveBeenCalled();
+  });
+});
+
+describe("redirectToAcademyIfEntitled", () => {
+  it("sends staff and paid members to the academy instead of closed checkout", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEON_AUTH_BASE_URL", "https://auth.neon.example/auth");
+    vi.stubEnv("NEON_AUTH_COOKIE_SECRET", "n".repeat(32));
+    loadEffectiveAccess.mockResolvedValueOnce(access(false)).mockResolvedValueOnce(access(true));
+    claimPaidPurchasesForUser.mockResolvedValue(1);
+    await expect(redirectToAcademyIfEntitled(member)).rejects.toThrow(/NEXT_REDIRECT/);
+    expect(redirect).toHaveBeenCalledWith("/learn");
+  });
+
+  it("leaves unpaid visitors on pricing and checkout", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEON_AUTH_BASE_URL", "https://auth.neon.example/auth");
+    vi.stubEnv("NEON_AUTH_COOKIE_SECRET", "n".repeat(32));
+    loadEffectiveAccess.mockResolvedValue(access(false));
+    claimPaidPurchasesForUser.mockResolvedValue(0);
+    isActiveStaffIdentity.mockResolvedValue(false);
+    await expect(redirectToAcademyIfEntitled(member)).resolves.toBeUndefined();
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("does nothing when nobody is signed in", async () => {
+    await redirectToAcademyIfEntitled(null);
+    expect(loadEffectiveAccess).not.toHaveBeenCalled();
+    expect(redirect).not.toHaveBeenCalled();
   });
 });

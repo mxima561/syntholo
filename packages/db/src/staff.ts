@@ -35,32 +35,50 @@ async function upsertPlatformAdmin(staff: Staff) {
   `;
 }
 
+export async function findActiveStaffForIdentity(input: {
+  email: string;
+  neonUserId?: string | null;
+}): Promise<Staff | null> {
+  const email = input.email.trim().toLowerCase();
+  const neonUserId = input.neonUserId?.trim() || null;
+  if (!email && !neonUserId) return null;
+  return withSystemScope(async (db) => {
+    const [row] = await db`
+      SELECT s.id, s.public_id, s.email, s.role, s.status, s.neon_user_id, s.created_at, s.last_seen_at
+      FROM staff s
+      WHERE s.status = 'active'
+        AND (
+          (${email} <> '' AND lower(s.email::text) = ${email})
+          OR (${neonUserId}::text IS NOT NULL AND s.neon_user_id = ${neonUserId})
+          OR (
+            ${neonUserId}::text IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM platform_admins pa
+              WHERE pa.staff_id = s.id
+                AND pa.status = 'active'
+                AND pa.user_id = ${neonUserId}
+            )
+          )
+        )
+      LIMIT 1
+    `;
+    return row ? mapStaff(row) : null;
+  });
+}
+
 export async function isActiveStaffIdentity(input: {
   email: string;
   neonUserId?: string | null;
 }): Promise<boolean> {
-  const email = input.email.trim().toLowerCase();
-  const neonUserId = input.neonUserId?.trim() || null;
-  if (!email && !neonUserId) return false;
-  return withSystemScope(async (db) => {
-    const [row] = await db`
-      SELECT id FROM staff
-      WHERE status = 'active'
-        AND (
-          email = ${email}
-          OR (${neonUserId}::text IS NOT NULL AND neon_user_id = ${neonUserId})
-        )
-      LIMIT 1
-    `;
-    return Boolean(row);
-  });
+  return Boolean(await findActiveStaffForIdentity(input));
 }
 
 export async function findStaffByEmail(email: string): Promise<Staff | null> {
+  const normalized = email.trim().toLowerCase();
   const db = await getReadyDb();
   const [row] = await db`
     SELECT id, public_id, email, role, status, neon_user_id, created_at, last_seen_at
-    FROM staff WHERE email = ${email}
+    FROM staff WHERE lower(email::text) = ${normalized}
   `;
   return row ? mapStaff(row) : null;
 }

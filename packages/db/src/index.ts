@@ -20,6 +20,7 @@ export type { AdminAuditLog, Staff, StaffRole, StaffStatus } from "./types";
 export { publicIdFromUuid } from "./ids";
 export {
   bindStaffNeonUserId,
+  findActiveStaffForIdentity,
   findStaffByEmail,
   findStaffByNeonUserId,
   isActiveStaffIdentity,
